@@ -1,5 +1,10 @@
-# http://www.gnu.org/software/automake
+# Compiled objects and binaries.
+.*
+*.o
+/config.h
 
+# http://www.gnu.org/software/automake
+Makefile
 Makefile.in
 /ar-lib
 /mdate-sh
@@ -16,6 +21,8 @@ Makefile.in
 /compile
 /config.guess
 /config.h.in
+/config.log
+/config.status
 /config.sub
 /configure
 /configure.scan
