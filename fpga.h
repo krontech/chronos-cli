@@ -42,13 +42,52 @@ struct fpga_sensor {
 
 struct fpga_seq {
     uint16_t control;
+    uint16_t __reserved0[1];
     uint16_t status;
+    uint16_t __reserved1[1];
     uint16_t frame_size;
+    uint16_t __reserved2[1];
     uint16_t region_start;
+    uint16_t __reserved3[1];
     uint16_t region_stop;
-    uint16_t live_addr[3];
+    uint16_t __reserved4[1];
+    uint32_t live_addr[3];
     uint16_t trig_delay;
+    uint16_t __reserved5[1];
     uint16_t md_fifo_read;
+};
+
+struct fpga_display {
+    uint16_t control;
+    uint16_t __reserved0[1];
+    uint16_t frame_address;
+    uint16_t __reserved1[1];
+    uint16_t fpn_address;
+    uint16_t __reserved2[1];
+    uint16_t gain;
+    uint16_t __reserved3[1];
+    uint16_t h_period;
+    uint16_t __reserved4[1];
+    uint16_t v_period;
+    uint16_t __reserved5[1];
+    uint16_t h_sync_len;
+    uint16_t __reserved6[1];
+    uint16_t v_sync_len;
+    uint16_t __reserved7[1];
+    uint16_t h_back_porch;
+    uint16_t __reserved8[1];
+    uint16_t v_back_porch;
+    uint16_t __reserved9[1];
+    uint16_t h_res;
+    uint16_t __reserved11[1];
+    uint16_t v_res;
+    uint16_t __reserved12[1];
+    uint16_t h_out_res;
+    uint16_t __reserved13[1];
+    uint16_t v_out_res;
+    uint16_t __reserved14[1];
+    uint16_t peaking_thresh;
+    uint16_t __reserved15[1];
 };
 
 //Register definitions from control register verilog file (in 16 bit word addresses)
@@ -267,9 +306,10 @@ struct fpga {
     volatile uint16_t *reg;
     volatile uint16_t *ram;
 
-    /* TODO: Structured access to FPGA registers. */
+    /* Structured access to FPGA registers. */
     volatile struct fpga_sensor *sensor;
     volatile struct fpga_seq    *seq;
+    volatile struct fpga_display *display;
 };
 
 struct fpga *fpga_open(void);
@@ -277,5 +317,6 @@ void fpga_close(struct fpga *fpga);
 
 /* SCI Accesses */
 uint16_t fpga_sci_read(struct fpga *fpga, uint8_t addr);
+void fpga_sci_write(struct fpga *fpga, uint8_t addr, uint16_t value);
 
 #endif /* _GPMC_H */

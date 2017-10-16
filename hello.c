@@ -4,7 +4,6 @@
 
 #include "cli.h"
 #include "fpga.h"
-#include "fpga-lux1310.h"
 
 extern int optind;
 
@@ -20,7 +19,6 @@ main(int argc, char *const argv[])
 		{"version", no_argument, NULL, 'v'},
 		{0, 0, 0, 0}
 	};
-
 
 	/*
 	 * Parse command line options until we encounter the first positional

@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <getopt.h>
 
 #include "cli.h"
 #include "fpga.h"
@@ -88,7 +89,20 @@ static const struct lux1310_regmap lux1310_map[] = {
     {0, 0}
 };
 
-static int
+static uint32_t
+lookup(const char *name)
+{
+    int i;
+    for (i = 0; lux1310_map[i].name; i++) {
+        if (strcasecmp(name, lux1310_map[i].name) == 0) {
+            return lux1310_map[i].reg;
+        }
+    }
+    /* Otherwise, no such register was found. */
+    return 0;
+}
+
+static uint16_t
 getbits(uint16_t value, uint16_t mask)
 {
     if (!mask) {
@@ -100,27 +114,101 @@ getbits(uint16_t value, uint16_t mask)
     }
 }
 
-static int
-do_lux1310(struct fpga *fpga, char *const argv[], int argc)
+static uint16_t
+setbits(uint16_t value, uint16_t mask)
 {
-    const char *header = "\t%-6s %-6s %-6s %24s  %s\n";
-    const char *format = "\t0x%02x   0x%04x 0x%04x %24s  0x%x\n";
+    if (!mask) {
+        return 0;
+    }
+    else {
+        uint16_t lsb = (~mask + 1) & mask;
+        return (value * lsb) & mask;
+    }
+}
+
+static const char *header = "\t%-6s %-6s %-6s %24s  %s\n";
+static const char *format = "\t0x%02x   0x%04x 0x%04x %24s  0x%x\n";
+
+/* Dump all registers to stdout. */
+static int
+do_lux1310_dump(struct fpga *fpga)
+{
     uint16_t regs[LUX1310_SCI_REGISTER_COUNT];
     int i;
 
     /* Read the contents of the SCI memory. */
     for (i = 0; i < LUX1310_SCI_REGISTER_COUNT; i++) {
         regs[i] = fpga_sci_read(fpga, i);
-    } /* for */
+    }
 
     /* Print the register mapping. */
-    printf(header, "ADDR", "READ", "MASK", "NAME", "VALUE");
     for (i = 0; lux1310_map[i].name; i++) {
         const struct lux1310_regmap *r = &lux1310_map[i];
         uint8_t addr = (r->reg >> LUX1310_SCI_REG_ADDR);
         uint16_t mask = (r->reg & LUX1310_SCI_REG_MASK);
         printf(format, addr, regs[addr], mask, r->name, getbits(regs[addr], mask));
-    } /* for */
+    }
+}
+
+/* Dump a single register to stdout. */
+static int
+do_lux1310_read(struct fpga *fpga, const char *name, uint32_t reg)
+{
+    uint16_t addr = reg >> LUX1310_SCI_REG_ADDR;
+    uint16_t mask = reg & LUX1310_SCI_REG_MASK;
+    uint16_t value = fpga_sci_read(fpga, addr);
+    printf(format, addr, value, mask, name, getbits(value, mask));
+}
+
+/* Write a single register and then dump it back to stdout. */
+static int
+do_lux1310_write(struct fpga *fpga, const char *name, uint32_t reg, uint16_t value)
+{
+    uint16_t addr = reg >> LUX1310_SCI_REG_ADDR;
+    uint16_t mask = reg & LUX1310_SCI_REG_MASK;
+    uint16_t x = fpga_sci_read(fpga, addr) & ~mask;
+    fprintf(stderr, "debug: value 0x%04x -> read 0x%04x -> write 0x%04x\n", value, x, x | setbits(value, mask));
+    fpga_sci_write(fpga, addr, x | setbits(value, mask));
+    do_lux1310_read(fpga, name, reg);
+}
+
+static int
+do_lux1310(struct fpga *fpga, char *const argv[], int argc)
+{
+	optind = 1;
+
+    printf(header, "ADDR", "READ", "MASK", "NAME", "VALUE");
+
+    /* If no arguments were provided, then dump all registers. */
+    if (argc <= 1) {
+        return do_lux1310_dump(fpga);
+    }
+
+    /* For each register listed, read and/or write it. */
+    while (optind < argc) {
+        char *name = argv[optind++];
+        char *value = strchr(name, '=');
+        uint32_t reg;
+        if (value) *value++ = '\0';
+        reg = lookup(name);
+        if (!reg) {
+            fprintf(stderr, "No such register found: \'%s\'\n", name);
+            continue;
+        }
+        if (value) {
+            char *end;
+            unsigned long x = strtoul(value, &end, 0);
+            if (*end != '\0') {
+                fprintf(stderr, "Unable to parse register value: \'%s\'\n", value);
+                continue;
+            }
+            do_lux1310_write(fpga, name, reg, x);
+        }
+        else {
+            do_lux1310_read(fpga, name, reg);
+        }
+    }
+    return 0;
 } /* do_lux1310 */
 
 /* The lux1310 subcommand */
