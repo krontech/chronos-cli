@@ -5,6 +5,7 @@
 #include <getopt.h>
 
 #include "cli.h"
+#include "cli-utils.h"
 #include "fpga.h"
 #include "fpga-lux1310.h"
 
@@ -102,30 +103,6 @@ lookup(const char *name)
     return 0;
 }
 
-static uint16_t
-getbits(uint16_t value, uint16_t mask)
-{
-    if (!mask) {
-        return 0;
-    }
-    else {
-        uint16_t lsb = (~mask + 1) & mask;
-        return (value & mask) / lsb;
-    }
-}
-
-static uint16_t
-setbits(uint16_t value, uint16_t mask)
-{
-    if (!mask) {
-        return 0;
-    }
-    else {
-        uint16_t lsb = (~mask + 1) & mask;
-        return (value * lsb) & mask;
-    }
-}
-
 static const char *header = "\t%-6s %-6s %-6s %24s  %s\n";
 static const char *format = "\t0x%02x   0x%04x 0x%04x %24s  0x%x\n";
 
@@ -167,7 +144,7 @@ do_lux1310_write(struct fpga *fpga, const char *name, uint32_t reg, uint16_t val
     uint16_t addr = reg >> LUX1310_SCI_REG_ADDR;
     uint16_t mask = reg & LUX1310_SCI_REG_MASK;
     uint16_t x = fpga_sci_read(fpga, addr) & ~mask;
-    fprintf(stderr, "debug: value 0x%04x -> read 0x%04x -> write 0x%04x\n", value, x, x | setbits(value, mask));
+    fprintf(stderr, "debug: value 0x%04x -> read 0x%04x -> write 0x%04lx\n", value, x, x | setbits(value, mask));
     fpga_sci_write(fpga, addr, x | setbits(value, mask));
     do_lux1310_read(fpga, name, reg);
 }
