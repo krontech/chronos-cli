@@ -32,8 +32,8 @@ setbits(unsigned long value, unsigned long mask)
 
 /* Used to store arrays of name/value pairs for UI helpers. */
 struct enumval {
-    const char *name;
     unsigned long value;
+    const char *name;
 };
 
 static inline const char *
@@ -60,6 +60,6 @@ gpio_read(int fd)
 } /* gpio_read */
 
 #define gpio_write(_fd_, _val_) \
-    write(_fd_, (_val_) ? "1" : "0", 1)
+    (void)write(_fd_, (_val_) ? "1" : "0", 1)
 
 #endif /* _CLI_UTILS_H */

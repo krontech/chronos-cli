@@ -25,7 +25,7 @@ do_info(struct fpga *fpga, char *const argv[], int argc)
     int fd, err, slot, colorfd;
     char serial[EEPROM_CAMERA_SERIAL_LEN];
 
-	if ((fd = open(EEPROM_I2C_BUS, O_WRONLY | O_CREAT, 0666)) < 0) {
+	if ((fd = open(EEPROM_I2C_BUS, O_RDWR)) < 0) {
 		fprintf(stderr, "Failed to open i2c bus (%s)\n", strerror(errno));
 	    return -1;
     }
