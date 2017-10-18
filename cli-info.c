@@ -20,26 +20,9 @@
 #define EEPROM_CAMERA_SERIAL_LEN    32
 
 static int
-gpio_read(const char *filename)
-{
-    char buf[2];
-    int fd = open(filename, O_RDONLY);
-    if (fd < 0) {
-        return -1;
-    }
-    lseek(fd, 0, SEEK_SET);
-    if (read(fd, buf, sizeof(buf)) < 0) {
-        close(fd);
-        return -1;
-    }
-    close(fd);
-    return buf[0] == '1';
-} /* gpio_read */
-
-static int
 do_info(struct fpga *fpga, char *const argv[], int argc)
 {
-    int fd, err, slot;
+    int fd, err, slot, colorfd;
     char serial[EEPROM_CAMERA_SERIAL_LEN];
 
 	if ((fd = open(EEPROM_I2C_BUS, O_WRONLY | O_CREAT, 0666)) < 0) {
@@ -56,7 +39,11 @@ do_info(struct fpga *fpga, char *const argv[], int argc)
     }
     printf("FPGA Version: %d\n", fpga->reg[FPGA_VERSION]);
     printf("Camera Serial: %.*s\n", sizeof(serial), serial);
-    printf("Image Sensor: LUX1310 %s\n", gpio_read(LUX1310_COLOR_DETECT) ? "Color" : "Monochome");
+    colorfd = open(LUX1310_COLOR_DETECT, O_RDONLY);
+    if (colorfd >= 0) {
+        printf("Image Sensor: LUX1310 %s\n", gpio_read(colorfd) ? "Color" : "Monochome");
+        close(colorfd);
+    }
 
     /* Attempt to read the DDR3 SPD info for slots 0 and 1 */
     for (slot = 0; slot < 2; slot++) {

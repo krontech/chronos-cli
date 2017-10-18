@@ -3,6 +3,7 @@
 #define _GPMC_H
 
 #include <stdint.h>
+#include <stdio.h>
 
 #define	GPMC_BASE                   0x50000000
 #define	GPMC_RANGE_BASE             0x1000000
@@ -314,6 +315,7 @@ struct fpga {
 
 struct fpga *fpga_open(void);
 void fpga_close(struct fpga *fpga);
+int fpga_load(const char *spi, const char *bitstream, FILE *log);
 
 /* SCI Accesses */
 uint16_t fpga_sci_read(struct fpga *fpga, uint8_t addr);
