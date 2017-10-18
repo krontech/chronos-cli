@@ -77,6 +77,24 @@
 #define ECP5_STATUS_BYPASS_MODE     (1 << 30)
 #define ECP5_STATUS_FLOW_THROUGH    (1 << 31)
 
+const struct enumval fpga_target_vals[] = {
+    {ECP5_STATUS_CFG_TARGET_SRAM,   "SRAM"},
+    {ECP5_STATUS_CFG_TARGET_EFUSE,  "Efuse"},
+    {0, 0}
+};
+
+const struct enumval fpga_bse_vals[] = {
+    {ECP5_STATUS_BSE_ERROR_NONE,        "No Error"},
+    {ECP5_STATUS_BSE_ERROR_ID,          "ID Error"},
+    {ECP5_STATUS_BSE_ERROR_CMD,         "Illegal Command"},
+    {ECP5_STATUS_BSE_ERROR_CRC,         "CRC Error"},
+    {ECP5_STATUS_BSE_ERROR_PREAMBLE,    "Preamble Error"},
+    {ECP5_STATUS_BSE_ERROR_ABORT,       "Configuration Aborted"},
+    {ECP5_STATUS_BSE_ERROR_OVERFLOW,    "Data Overflow"},
+    {ECP5_STATUS_BSE_ERROR_SRAM,        "Bitstream Exceeds SRAM Array"},
+    {0, 0}
+};
+
 static int
 fpga_spidev_open(const char *spi)
 {
@@ -177,14 +195,41 @@ fpga_spi_sendbits(int fd, int csel, int bitfd)
 static void
 fpga_fprint_status(FILE *stream, uint32_t status)
 {
-    fprintf(stream, "FPGA Device Status: 0x%08x\n", status);
+    unsigned long val = status & ECP5_STATUS_CFG_TARGET;
     fprintf(stream, "\tTransparent Mode: %ld\n", getbits(status, ECP5_STATUS_TRANSPARENT));
-    fprintf(stream, "\tConfig Target: %ld\n", getbits(status, ECP5_STATUS_CFG_TARGET));
-    fprintf(stream, "\tJTAG Active: %ld\n", getbits(status, ECP5_STATUS_JTAG_ACTIVE));
+    fprintf(stream, "\tConfig Target: %s (%ld)\n", enumval_name(fpga_target_vals, val, "Unknown"), val);
     fprintf(stream, "\tPassword Protect: %ld\n", getbits(status, ECP5_STATUS_PWD_PROTECTION));
-    fprintf(stream, "\tDecrypt Enable: %ld\n", getbits(status, ECP5_STATUS_DECRYPT_ENABLE));
-    fprintf(stream, "\tDONE: %ld\n", getbits(status, ECP5_STATUS_DONE));
-    fprintf(stream, "\tBSE Error: %ld\n", getbits(status, ECP5_STATUS_BSE_ERROR));
+
+    fprintf(stream, "\tEnabled:");
+    if (status & ECP5_STATUS_DECRYPT_ENABLE) fprintf(stream, " DECRYPT");
+    if (status & ECP5_STATUS_ISC_ENABLE) fprintf(stream, " ISC");
+    if (status & ECP5_STATUS_READ_ENABLE) fprintf(stream, " READ");
+    if (status & ECP5_STATUS_WRITE_ENABLE) fprintf(stream, " WRITE");
+    if (status & ECP5_STATUS_PWD_ENABLE) fprintf(stream, " PWD");
+
+    fprintf(stream, "\n\tStatus:");
+    if (status & ECP5_STATUS_JTAG_ACTIVE) fprintf(stream, " JTAG");
+    if (status & ECP5_STATUS_DONE) fprintf(stream, " DONE");
+    if (status & ECP5_STATUS_BUSY_FLAG) fprintf(stream, " BUSY");
+    if (status & ECP5_STATUS_FAIL_FLAG) fprintf(stream, " FAIL");
+    if (status & ECP5_STATUS_FEA_OTP) fprintf(stream, " OTP");
+    fprintf(stream, "\n");
+
+    fprintf(stream, "\tDecrypt Only: %ld\n", getbits(status, ECP5_STATUS_DECRYPT_ONLY));
+    fprintf(stream, "\tEncrypt Preamble: %ld\n", getbits(status, ECP5_STATUS_ENCRYPT_PREAMBLE));
+    fprintf(stream, "\tStandard Preamble: %ld\n", getbits(status, ECP5_STATUS_STANDARD_PREAMBLE));
+    val = getbits(status, ECP5_STATUS_BSE_ERROR);
+    fprintf(stream, "\tBSE Error: %s (%ld)\n", enumval_name(fpga_bse_vals, val, "Unknown"), val);
+
+    fprintf(stream, "\tErrors:");
+    if (status & ECP5_STATUS_EXECUTION_ERROR) fprintf(stream, " EXEC");
+    if (status & ECP5_STATUS_ID_ERROR) fprintf(stream, " ID");
+    if (status & ECP5_STATUS_INVALID_CMD) fprintf(stream, " CMD");
+    if (status & ECP5_STATUS_SED_ERROR) fprintf(stream, " SED");
+    if (status & ECP5_STAUTS_SPIM_FAIL_1) fprintf(stream, " SPIm");
+    
+    fprintf(stream, "\n\tBypass Mode: %ld\n", getbits(status, ECP5_STATUS_BYPASS_MODE));
+    fprintf(stream, "\tFlow Through: %ld\n", getbits(status, ECP5_STATUS_FLOW_THROUGH));
 } /* fpga_fprint_status */
 
 int
@@ -267,6 +312,7 @@ fpga_load(const char *spi, const char *bitstream, FILE *log)
         }
         status = be32toh(status);
         if (log) {
+            fprintf(log, "fpga_load: Device Status: 0x%08x\n", status);
             fpga_fprint_status(log, status);
         }
         if (!(status & ECP5_STATUS_DONE)) {
@@ -281,6 +327,10 @@ fpga_load(const char *spi, const char *bitstream, FILE *log)
             fprintf(stderr, "Failed to issue FPGA write disable command: %s\n", strerror(errno));
             break;
         }
+        if (log) {
+            fprintf(log, "fpga_load: Programming Successful\n");
+        }
+
     } while(0);
 
     close(fd);
