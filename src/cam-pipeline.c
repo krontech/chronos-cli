@@ -11,28 +11,35 @@
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
 
+/* How do we want to do scaling? */
+#define CAM_SCALE_FULL      0
+#define CAM_SCALE_ASPECT    1
+#define CAM_SCALE_CROP      2
+
 /* Signal handlering */
+static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
 static sig_atomic_t catch_sigint = 0;
 static void handle_sigint(int sig) { catch_sigint = 1; }
-static void handle_sighup(int sig) { /* nop */ }
+static void handle_sighup(int sig) { scaler_mode = (sig == SIGUSR1) ? CAM_SCALE_CROP : CAM_SCALE_ASPECT; }
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
 static GstElement *
-cam_pipeline(struct fpga *fpga)
+cam_pipeline(struct fpga *fpga, int mode)
 {
     gboolean ret;
 	GstElement *pipeline;
     GstElement *source, *queue, *scaler, *vbox, *sink;
     GstCaps *caps;
+    unsigned int scale_hres = CAM_LCD_HRES;
+    unsigned int scale_vres = CAM_LCD_VRES;
     
     /* Build the GStreamer Pipeline */
     pipeline =	gst_pipeline_new ("cam-pipeline");
 	source =    gst_element_factory_make("omx_camera",      "vfcc-source");
-	queue =     gst_element_factory_make("queue",           "queue");
-    scaler =    gst_element_factory_make("omx_mdeiscaler",  "h264-encoder");
-    vbox =      gst_element_factory_make("videobox",        "vbox");
+    queue =     gst_element_factory_make("queue",           "queue");
+    scaler =    gst_element_factory_make("omx_mdeiscaler",  "scaler");
     sink =      gst_element_factory_make("v4l2sink",        "sink");
-    if (!pipeline || !source || !queue || !scaler || !vbox || !sink) {
+    if (!pipeline || !source || !queue || !scaler || !sink) {
         return NULL;
     }
 
@@ -47,23 +54,6 @@ cam_pipeline(struct fpga *fpga)
 	g_object_set(G_OBJECT(sink), "device", "/dev/video2", NULL);
 
 	gst_bin_add_many(GST_BIN(pipeline), source, queue, scaler, vbox, sink, NULL);
-
-    /* DEBUG: Print video frame size. */
-    fprintf(stderr, "FPGA Display Configuration:\n");
-    fprintf(stderr, "\tframe_address: 0x%04x\n", fpga->display->frame_address);
-    fprintf(stderr, "\tfpn_address: 0x%04x\n", fpga->display->fpn_address);
-    fprintf(stderr, "\tgain: 0x%04x\n", fpga->display->gain);
-    fprintf(stderr, "\th_period: 0x%04x\n", fpga->display->h_period);
-    fprintf(stderr, "\tv_period: 0x%04x\n", fpga->display->v_period);
-    fprintf(stderr, "\th_sync_len: 0x%04x\n", fpga->display->h_sync_len);
-    fprintf(stderr, "\tv_sync_len: 0x%04x\n", fpga->display->v_sync_len);
-    fprintf(stderr, "\th_back_porch: 0x%04x\n", fpga->display->h_back_porch);
-    fprintf(stderr, "\tv_back_porch: 0x%04x\n", fpga->display->v_back_porch);
-    fprintf(stderr, "\th_res: 0x%04x\n", fpga->display->h_res);
-    fprintf(stderr, "\tv_res: 0x%04x\n", fpga->display->v_res);
-    fprintf(stderr, "\th_out_res: 0x%04x\n", fpga->display->h_out_res);
-    fprintf(stderr, "\tv_out_res: 0x%04x\n", fpga->display->v_out_res);
-    fprintf(stderr, "\tpeaking_thresh: 0x%04x\n", fpga->display->peaking_thresh);
     
     /* Link OMX Source input capabilities. */
 	caps = gst_caps_new_simple ("video/x-raw-yuv",
@@ -75,42 +65,46 @@ cam_pipeline(struct fpga *fpga)
                 "buffer-count-requested", G_TYPE_INT, 4,
                 NULL);
     ret = gst_element_link_filtered(source, queue, caps);
+    if (!ret) {
+        gst_object_unref(GST_OBJECT(pipeline));
+        return NULL;
+    }
     gst_caps_unref(caps);
 
-    /* Video scaling should maintain the same aspect ratio, so we should check
-     * if we're constrained by horizontal resolution, or vertical resolution
-     */
-#if 1
-    /* If (LCD_HRES / CAM_VRES) > (VID_HRES / VID_VRES) */
-    if ((CAM_LCD_HRES * fpga->display->v_res) > (CAM_LCD_VRES * fpga->display->h_res)) {
-        /* Scaling is constrained by vertical resoluton */
-        unsigned int scale_hres = (CAM_LCD_VRES * fpga->display->h_res) / fpga->display->v_res;
-        fprintf(stderr, "Debug: scaling %dx%d to %d%d\n",
-            fpga->display->h_res, fpga->display->v_res, scale_hres, CAM_LCD_VRES);
+    /* No scaling, just let the pipeline crop as necessary. */
+    if (mode == CAM_SCALE_CROP) {
         caps = gst_caps_new_simple ("video/x-raw-yuv",
-                    "width", G_TYPE_INT, scale_hres,
+                    "width", G_TYPE_INT, fpga->display->h_res,
+                    "height", G_TYPE_INT, fpga->display->v_res,
+                    NULL);
+    }
+    else if (mode == CAM_SCALE_FULL) {
+        /* Scale image to full screen, possibly stretching it out of proprortion. */
+        caps = gst_caps_new_simple ("video/x-raw-yuv",
+                    "width", G_TYPE_INT, CAM_LCD_HRES,
+                    "height", G_TYPE_INT, CAM_LCD_VRES,
+                    NULL);
+    }
+    /* Otherwise, scale the image while retaining the same aspect ratio. */
+    else if ((CAM_LCD_HRES * fpga->display->v_res) > (CAM_LCD_VRES * fpga->display->h_res)) {
+        caps = gst_caps_new_simple ("video/x-raw-yuv",
+                    "width", G_TYPE_INT, (CAM_LCD_VRES * fpga->display->h_res) / fpga->display->v_res,
                     "height", G_TYPE_INT, CAM_LCD_VRES,
                     NULL);
     }
     else {
-        /* Scaling is constrained by horizontal resolution. */
-        unsigned int scale_vres = (CAM_LCD_HRES * fpga->display->v_res) / fpga->display->h_res;
-        fprintf(stderr, "Debug: scaling %dx%d to %dx%d\n",
-            fpga->display->h_res, fpga->display->v_res, CAM_LCD_HRES, scale_vres);
         caps = gst_caps_new_simple ("video/x-raw-yuv",
                     "width", G_TYPE_INT, CAM_LCD_HRES,
-                    "height", G_TYPE_INT, scale_vres,
+                    "height", G_TYPE_INT, (CAM_LCD_HRES * fpga->display->v_res) / fpga->display->h_res,
                     NULL);
     }
-#else
-    caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "width", G_TYPE_INT, CAM_LCD_HRES,
-                "height", G_TYPE_INT, CAM_LCD_VRES,
-                NULL);
-#endif
 
     /* Link LCD Output capabilities. */
     ret = gst_element_link_pads_filtered(scaler, "src_00", sink, "sink", caps);
+    if (!ret) {
+        gst_object_unref(GST_OBJECT(pipeline));
+        return NULL;
+    }
     gst_caps_unref(caps);
 
     /* Link the rest of the pipeline together */
@@ -140,9 +134,11 @@ main(int argc, char * argv[])
     signal(SIGTERM, handle_sigint);
     signal(SIGINT, handle_sigint);
     signal(SIGHUP, handle_sighup);
+    signal(SIGUSR1, handle_sighup);
+    signal(SIGUSR2, handle_sighup);
     do {
         /* Launch the pipeline to run live video. */
-        GstElement *pipeline = cam_pipeline(fpga);
+        GstElement *pipeline = cam_pipeline(fpga, scaler_mode);
         GstEvent *event;
         if (!pipeline) {
             fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
