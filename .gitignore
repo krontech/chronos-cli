@@ -2,7 +2,9 @@
 .*
 *.o
 /config.h
-/cam-cli
+/src/cam-cli
+/src/cam-pipeline
+/src/libcamera.a
 
 # http://www.gnu.org/software/automake
 Makefile

@@ -182,6 +182,7 @@ fpga_open(void)
 	/* Setup structured access to FPGA internals. */
 	fpga->sensor = (struct fpga_sensor *)(fpga->reg + SENSOR_CONTROL);
 	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CTL);
+	fpga->display = (struct fpga_seq *)(fpga->reg + DISPLAY_CTL);
 	return fpga;
 } /* fpga_open */
 
