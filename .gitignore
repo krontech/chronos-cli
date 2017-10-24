@@ -3,6 +3,7 @@
 *.o
 /config.h
 /src/cam-cli
+/src/cam-loader
 /src/cam-pipeline
 /src/libcamera.a
 
