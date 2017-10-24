@@ -53,7 +53,7 @@ cam_pipeline(struct fpga *fpga, int mode)
 	g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
 	g_object_set(G_OBJECT(sink), "device", "/dev/video2", NULL);
 
-	gst_bin_add_many(GST_BIN(pipeline), source, queue, scaler, vbox, sink, NULL);
+	gst_bin_add_many(GST_BIN(pipeline), source, queue, scaler, sink, NULL);
     
     /* Link OMX Source input capabilities. */
 	caps = gst_caps_new_simple ("video/x-raw-yuv",
