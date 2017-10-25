@@ -28,13 +28,8 @@
 #include <linux/types.h>
 #include <linux/spi/spidev.h>
 
+#include "fpga.h"
 #include "cli-utils.h"
-
-#define FPGA_PROGN_PATH		    "/sys/class/gpio/gpio47/value"
-#define FPGA_INIT_PATH			"/sys/class/gpio/gpio45/value"
-#define FPGA_DONE_PATH			"/sys/class/gpio/gpio52/value"
-#define FPGA_CSEL_PATH			"/sys/class/gpio/gpio58/value"
-#define FPGA_HOLDN_PATH			"/sys/class/gpio/gpio53/value"
 
 #define FPGA_BITSTREAM_CHUNK    1024
 
@@ -261,11 +256,11 @@ fpga_load(const char *spi, const char *bitstream, FILE *log)
     if (fd < 0) {
         return -1;
     }
-    csel = open(FPGA_CSEL_PATH, O_WRONLY);
-    holdn = open(FPGA_HOLDN_PATH, O_WRONLY);
-    progn = open(FPGA_PROGN_PATH, O_WRONLY);
-    init = open(FPGA_INIT_PATH, O_RDONLY);
-    done = open(FPGA_DONE_PATH, O_RDONLY);
+    csel = open(GPIO_FPGA_CSEL, O_WRONLY);
+    holdn = open(GPIO_FPGA_HOLDN, O_WRONLY);
+    progn = open(GPIO_FPGA_PROGN, O_WRONLY);
+    init = open(GPIO_FPGA_INIT, O_RDONLY);
+    done = open(GPIO_FPGA_DONE, O_RDONLY);
     bitfd = open(bitstream, O_RDONLY);
 
     gpio_write(progn, 1);

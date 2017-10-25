@@ -100,4 +100,6 @@
 
 #define LUX1310_SCI_REGISTER_COUNT  0x7f
 
+int lux1310_init(struct fpga *fpga, const char *spidev);
+
 #endif /* _FPGA_LUX1310_H */

@@ -5,7 +5,7 @@ bin_PROGRAMS = cam-cli cam-loader cam-pipeline
 ## Bundle the common FPGA and image sensor tools into a library.
 libcamera_a_SOURCES = fpga-loader.c
 libcamera_a_SOURCES += fpga-mmap.c
-libcamera_a_SOURCES += fpga-sci.c
+libcamera_a_SOURCES += fpga-lux1310.c
 libcamera_a_SOURCES += i2c-eeprom.c
 libcamera_a_SOURCES += i2c-spd.c
 
@@ -16,6 +16,7 @@ cam_cli_SOURCES += cli/cli-table.c
 cam_cli_SOURCES += cli/cli-help.c
 cam_cli_SOURCES += cli/cli-fpgaload.c
 cam_cli_SOURCES += cli/cli-info.c
+cam_cli_SOURCES += cli/cli-led.c
 cam_cli_SOURCES += cli/cli-lux1310.c
 
 ## CLI Program to load the FPGA image and setup peripherals.

@@ -316,11 +316,44 @@ struct fpga_display {
 
 #define	DCG_MEM_START_ADDR				(DCG_MEM_START * 2)
 
+/* Runtime GPIO pins */
+#define GPIO_DAC_CS             "/sys/class/gpio/gpio33/value"
+#define GPIO_COLOR_SEL          "/sys/class/gpio/gpio34/value"
+#define GPIO_TRIG_IO            "/sys/class/gpio/gpio127/value"
+#define GPIO_ENCODER_A          "/sys/class/gpio/gpio20/value"
+#define GPIO_ENCODER_B          "/sys/class/gpio/gpio26/value"
+#define GPIO_ENCODER_SWITCH     "/sys/class/gpio/gpio27/value"
+#define GPIO_SHUTTER_SWITCH     "/sys/class/gpio/gpio66/value"
+#define GPIO_RECORD_LED_FRONT   "/sys/class/gpio/gpio41/value"
+#define GPIO_RECORD_LED_BACK    "/sys/class/gpio/gpio25/value"
+#define GPIO_FRAME_IRQ          "/sys/class/gpio/gpio51/value"
+
+/* FPGA Programming pins */
+#define GPIO_FPGA_PROGN         "/sys/class/gpio/gpio47/value"
+#define GPIO_FPGA_INIT          "/sys/class/gpio/gpio45/value"
+#define GPIO_FPGA_DONE          "/sys/class/gpio/gpio52/value"
+#define GPIO_FPGA_CSEL          "/sys/class/gpio/gpio58/value"
+#define GPIO_FPGA_HOLDN         "/sys/class/gpio/gpio53/value"
+
 struct fpga {
     /* Memory mapping. */
     int fd;
     volatile uint16_t *reg;
     volatile uint16_t *ram;
+
+    /* GPIOs and other peripherals */
+    struct {
+        int dac_cs;
+        int color_sel;
+        int trig_io;
+        int enc_a;
+        int enc_b;
+        int enc_sw;
+        int shutter;
+        int led_front;
+        int led_back;
+        int frame_irq;
+    } gpio;
 
     /* Structured access to FPGA registers. */
     volatile struct fpga_sensor *sensor;

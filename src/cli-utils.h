@@ -74,7 +74,10 @@ gpio_read(int fd)
     return buf[0] == '1';
 } /* gpio_read */
 
-#define gpio_write(_fd_, _val_) \
-    (void)write(_fd_, (_val_) ? "1" : "0", 1)
+static inline int
+gpio_write(int fd, int val)
+{
+    return write(fd, val ? "1" : "0", 1);
+} /* gpio_write */
 
 #endif /* _CLI_UTILS_H */

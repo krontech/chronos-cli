@@ -64,10 +64,26 @@ fpga_open(void)
 		return NULL;
 	}
 
+	/* Open GPIOs */
+	fpga->gpio.enc_a = open(GPIO_ENCODER_A, O_RDONLY | O_NONBLOCK);
+	fpga->gpio.enc_b = open(GPIO_ENCODER_B, O_RDONLY | O_NONBLOCK);
+	fpga->gpio.enc_sw = open(GPIO_ENCODER_SWITCH, O_RDONLY);
+	fpga->gpio.shutter = open(GPIO_SHUTTER_SWITCH, O_RDONLY);
+	fpga->gpio.led_front = open(GPIO_RECORD_LED_FRONT, O_WRONLY);
+	fpga->gpio.led_back = open(GPIO_RECORD_LED_BACK, O_WRONLY);
+	fpga->gpio.frame_irq = open(GPIO_FRAME_IRQ, O_RDONLY | O_NONBLOCK);
+	if ((fpga->gpio.enc_a < 0) || (fpga->gpio.enc_b < 0) || (fpga->gpio.enc_sw < 0) ||
+		(fpga->gpio.shutter < 0) || (fpga->gpio.led_front < 0) || (fpga->gpio.led_back < 0) ||
+		(fpga->gpio.frame_irq < 0)) {
+		fprintf(stderr, "Failed to open GPIO devices: %s\n", strerror(errno));
+		fpga_close(fpga);
+		return NULL;
+	}
+
 	/* Setup structured access to FPGA internals. */
 	fpga->sensor = (struct fpga_sensor *)(fpga->reg + SENSOR_CONTROL);
 	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CTL);
-	fpga->display = (struct fpga_seq *)(fpga->reg + DISPLAY_CTL);
+	fpga->display = (struct fpga_display *)(fpga->reg + DISPLAY_CTL);
 	return fpga;
 } /* fpga_open */
 
@@ -75,8 +91,15 @@ void
 fpga_close(struct fpga *fpga)
 {
 	if (fpga) {
-		munmap((void *)fpga->reg, 16 * SIZE_MB);
-		munmap((void *)fpga->ram, 16 * SIZE_MB);
+		if (fpga->gpio.enc_a >= 0) close(fpga->gpio.enc_a);
+		if (fpga->gpio.enc_b >= 0) close(fpga->gpio.enc_b);
+		if (fpga->gpio.enc_sw >= 0) close(fpga->gpio.enc_sw);
+		if (fpga->gpio.shutter >= 0) close(fpga->gpio.shutter);
+		if (fpga->gpio.led_front >= 0) close(fpga->gpio.led_front);
+		if (fpga->gpio.led_back >= 0) close(fpga->gpio.led_back);
+		if (fpga->gpio.frame_irq >= 0) close(fpga->gpio.frame_irq);
+		if (fpga->reg != MAP_FAILED) munmap((void *)fpga->reg, 16 * SIZE_MB);
+		if (fpga->ram != MAP_FAILED) munmap((void *)fpga->ram, 16 * SIZE_MB);
 		close(fpga->fd);
 		free(fpga);
 	}

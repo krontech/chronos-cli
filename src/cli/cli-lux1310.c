@@ -165,6 +165,13 @@ do_lux1310_write(struct fpga *fpga, const char *name, uint32_t reg, uint16_t val
 }
 
 static int
+do_lux1310_init(struct fpga *fpga)
+{
+    /* TODO: Should the basic DAC setup be handled be cam-loader instead? */
+    return (lux1310_init(fpga, "/dev/spidev3.0") < 0);
+} /* do_lux1310_init */
+
+static int
 do_lux1310(struct fpga *fpga, char *const argv[], int argc)
 {
 	optind = 1;
@@ -174,6 +181,10 @@ do_lux1310(struct fpga *fpga, char *const argv[], int argc)
     /* If no arguments were provided, then dump all registers. */
     if (argc <= 1) {
         return do_lux1310_dump(fpga);
+    }
+    /* Intercept special commands */
+    else if (strcmp(argv[optind], "init") == 0) {
+        return do_lux1310_init(fpga);
     }
 
     /* For each register listed, read and/or write it. */

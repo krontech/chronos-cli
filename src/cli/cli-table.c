@@ -20,6 +20,7 @@
 extern struct cli_subcmd cli_cmd_fpga;
 extern struct cli_subcmd cli_cmd_fpgaload;
 extern struct cli_subcmd cli_cmd_info;
+extern struct cli_subcmd cli_cmd_led;
 extern struct cli_subcmd cli_cmd_lux1310;
 
 const struct cli_subcmd *cli_cmd_table[] = {
@@ -27,6 +28,7 @@ const struct cli_subcmd *cli_cmd_table[] = {
     &cli_cmd_fpgaload,
     &cli_cmd_info,
     &cli_cmd_lux1310,
+    &cli_cmd_led,
     /* End of list */
     NULL
 };
