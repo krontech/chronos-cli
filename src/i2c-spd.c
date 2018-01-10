@@ -126,22 +126,30 @@ spd_fprint_timing(const struct ddr3_spd *spd, FILE *stream)
     /* TODO: t_faw is a multibyte value. */
 } /* spd_fprint_timing */
 
-/* Return the slot size as a human readable string, or NULL if unsupported. */
-const char *
-spd_size_readable(const struct ddr3_spd *spd, char *dst, size_t maxlen)
+/* Return the slot size in bytes. */
+unsigned long long
+spd_size_bytes(const struct ddr3_spd *spd)
 {
     if (spd->type != SPD_MEMORY_TYPE_DDR3) {
-        return NULL;
+        return 0;
     }
     else {
         unsigned long long wordsz = (1 << SPD_DATA_BITS(spd->ecc)) / 8;
         unsigned long bits = SPD_BANK_ADDR_BITS(spd->banks) + SPD_ROW_ADDR_BITS(spd->rowcol) + SPD_COL_ADDR_BITS(spd->rowcol);
-        unsigned long long sz = (wordsz << bits) * SPD_RANKS(spd->ranks);
-        int i = 0;
-        while ((sz >> i) > 1024) {
-            i += 10;
-        }
-        snprintf(dst, maxlen, "%llu %sB", sz >> i, bitsize_prefix(i));
-        return dst;
+        return (wordsz << bits) * SPD_RANKS(spd->ranks);
     }
+}
+
+/* Return the slot size as a human readable string, or NULL if unsupported. */
+const char *
+spd_size_readable(const struct ddr3_spd *spd, char *dst, size_t maxlen)
+{
+    unsigned long long sz = spd_size_bytes(spd);
+    int i = 0;
+    if (!sz) {
+        return NULL;
+    }
+    for (i = 0; (sz >> i) > 1024; i += 10) { /* nop */ }
+    snprintf(dst, maxlen, "%llu %sB", sz >> i, bitsize_prefix(i));
+    return dst;
 } /* spd_size_readable */

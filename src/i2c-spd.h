@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <cli-utils.h>
 
+#define SPD_I2C_ADDR(_x_)       (0x50 + (_x_))
+
 #define SPD_VERSION_MAJOR       (0xf << 4)
 #define SPD_VERSION_MINOR       (0xf << 0)
 #define SPD_MEMORY_TYPE_SDRAM   4
@@ -103,6 +105,7 @@ extern const struct enumval spd_ram_types[];
 extern const struct enumval spd_mod_types[];
 
 const char *spd_size_readable(const struct ddr3_spd *spd, char *dst, size_t maxlen);
+unsigned long long spd_size_bytes(const struct ddr3_spd *spd);
 void spd_fprint(const struct ddr3_spd *spd, FILE *stream);
 void spd_fprint_timing(const struct ddr3_spd *spd, FILE *stream);
 

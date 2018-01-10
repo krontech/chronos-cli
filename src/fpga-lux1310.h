@@ -98,8 +98,37 @@
 #define LUX1310_SCI_CLK_SYNC            LUX1310_SCI_REG(0x7d, 0x0001)
 #define LUX1310_SCI_SRESET_B            LUX1310_SCI_REG(0x7e, 0x0001)
 
+/* Undocumented Registers */
+#define LUX1310_SCI_STATE_IDLE_CTRL0    LUX1310_SCI_REG(0x2d, 0xffff)
+#define LUX1310_SCI_STATE_IDLE_CTRL1    LUX1310_SCI_REG(0x2e, 0xffff)
+#define LUX1310_SCI_STATE_IDLE_CTRL2    LUX1310_SCI_REG(0x2f, 0xffff)
+#define LUX1310_SCI_ADC_CLOCK_CTRL      LUX1310_SCI_REG(0x5c, 0xffff)
+#define LUX1310_SCI_LINE_VALID_DLY      LUX1310_SCI_REG(0x71, 0xffff)
+#define LUX1310_SCI_INT_CLK_TIMING      LUX1310_SCI_REG(0x74, 0xffff)
+#define LUX1310_SCI_WAVETAB_SIZE        LUX1310_SCI_REG(0x7a, 0xffff)
+
 #define LUX1310_SCI_REGISTER_COUNT  0x7f
 
+/* TODO: Add a function to generate this dynamically */
+struct lux1310_wavetab {
+    unsigned int read_delay;
+    unsigned int start_delay;
+    size_t len;
+    uint8_t table[];
+};
+
 int lux1310_init(struct fpga *fpga, const char *spidev);
+unsigned int lux1310_read(struct fpga *fpga, unsigned int reg);
+void lux1310_write(struct fpga *fpga, unsigned int reg, unsigned int val);
+void lux1310_write_many(struct fpga *fpga, ...);
+void lux1310_write_wavetab(struct fpga *fpga, const struct lux1310_wavetab *wave);
+
+/* Some built-in wavetables. */
+const struct lux1310_wavetab lux1310_wt_sram80;
+const struct lux1310_wavetab lux1310_wt_sram39_blk;
+const struct lux1310_wavetab lux1310_wt_sram39;
+const struct lux1310_wavetab lux1310_wt_sram30;
+const struct lux1310_wavetab lux1310_wt_sram25;
+const struct lux1310_wavetab lux1310_wt_sram20;
 
 #endif /* _FPGA_LUX1310_H */

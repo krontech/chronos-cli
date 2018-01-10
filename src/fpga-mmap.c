@@ -80,10 +80,11 @@ fpga_open(void)
 		return NULL;
 	}
 
-	/* Setup structured access to FPGA internals. */
+	/* Setup structured access to FPGA registers. */
 	fpga->sensor = (struct fpga_sensor *)(fpga->reg + SENSOR_CONTROL);
 	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CTL);
 	fpga->display = (struct fpga_display *)(fpga->reg + DISPLAY_CTL);
+	fpga->cc_matrix = (uint32_t *)(fpga->reg + CCM_ADDR);
 	return fpga;
 } /* fpga_open */
 

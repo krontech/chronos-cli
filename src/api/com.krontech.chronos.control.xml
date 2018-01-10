@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE node PUBLIC
+    "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+    "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd" >
+<node>
+  <interface name="com.krontech.chronos.control">
+    <method name="get_video_settings">
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
+    <method name="set_video_settings">
+      <arg name="data" direction="in" type="a{sv}"/>
+    </method>
+    <method name="get_sensor_data">
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
+  </interface>
+</node>

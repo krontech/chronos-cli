@@ -27,10 +27,7 @@
 #include "i2c.h"
 #include "i2c-spd.h"
 
-#define LUX1310_COLOR_DETECT        "/sys/class/gpio/gpio34/value"
-#define EEPROM_I2C_BUS              "/dev/i2c-1"
 #define EEPROM_I2C_ADDR_CAMERA      0x54
-#define EEPROM_I2C_ADDR_SPD(_x_)    (0x50 + (_x_))
 
 #define EEPROM_CAMERA_SERIAL_OFFSET 0
 #define EEPROM_CAMERA_SERIAL_LEN    32
@@ -55,17 +52,15 @@ do_info(struct fpga *fpga, char *const argv[], int argc)
     }
     printf("FPGA Version: %d\n", fpga->reg[FPGA_VERSION]);
     printf("Camera Serial: %.*s\n", sizeof(serial), serial);
-    colorfd = open(LUX1310_COLOR_DETECT, O_RDONLY);
-    if (colorfd >= 0) {
-        printf("Image Sensor: LUX1310 %s\n", gpio_read(colorfd) ? "Color" : "Monochome");
-        close(colorfd);
+    if (fpga->gpio.color_sel >= 0) {
+        printf("Image Sensor: LUX1310 %s\n", gpio_read(fpga->gpio.color_sel) ? "Color" : "Monochome");
     }
 
     /* Attempt to read the DDR3 SPD info for slots 0 and 1 */
     for (slot = 0; slot < 2; slot++) {
         struct ddr3_spd spd;
         char sz_readable[32];
-        err = i2c_eeprom_read(fd, EEPROM_I2C_ADDR_SPD(slot), 0, &spd, sizeof(spd));
+        err = i2c_eeprom_read(fd, SPD_I2C_ADDR(slot), 0, &spd, sizeof(spd));
         if (err < 0) {
             continue;
         }
