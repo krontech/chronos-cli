@@ -35,35 +35,85 @@
 #include "utils.h"
 #include "ioport.h"
 
-#define LUX1310_CLOCK_RATE      90000000
-#define LUX1310_MIN_EXPOSURE    1000
-#define LUX1310_MAGIC_ABN_DELAY 26
+#define LUX1310_SENSOR_CLOCK_RATE   90000000
+#define LUX1310_TIMING_CLOCK_RATE   100000000
+#define LUX1310_MIN_EXPOSURE        1000
+#define LUX1310_MIN_WAVETABLE_SIZE  20
+#define LUX1310_MAGIC_ABN_DELAY     26
+#define LUX1310_HRES_INCREMENT      16
 
 struct lux1310_private_data {
     struct image_sensor sensor;
     volatile struct fpga_sensor *reg;
+    const struct lux1310_wavetab *wavetab;
     int spifd;
     int daccs;
+};
 
-    /* Internal knobs */
-    unsigned int start_delay;
+/* Gain Configuration Table */
+static const struct lux1310_gaintab lux1310_gain_data[] = {
+    {   /* x1 - 0dB */
+        .vrstb = 2700,
+        .vrst = 3300,
+        .vrsth = 3600,
+        .sampling = 0x7f,
+        .feedback = 0x7f,
+        .gain_bit = 3,
+        .analog_gain = 0,
+    },
+    { /* x2 - 6dB */
+        .vrstb = 2700,
+        .vrst = 3300,
+        .vrsth = 3600,
+        .sampling = 0xfff,
+        .feedback = 0x7f,
+        .gain_bit = 3,
+        .analog_gain = 6,
+    },
+    { /* x4 - 12dB */
+        .vrstb = 2700,
+        .vrst = 3300,
+        .vrsth = 3600,
+        .sampling = 0xfff,
+        .feedback = 0x7f,
+        .gain_bit = 0,
+        .analog_gain = 12,
+    },
+    { /* x8 - 18dB */
+        .vrstb = 1700,
+        .vrst = 2300,
+        .vrsth = 2600,
+        .sampling = 0xfff,
+        .feedback = 0x7,
+        .gain_bit = 0,
+        .analog_gain = 18,
+    },
+    { /* x16 - 24dB */
+        .vrstb = 1700,
+        .vrst = 2300,
+        .vrsth = 2600,
+        .sampling = 0xfff,
+        .feedback = 0x1,
+        .gain_bit = 0,
+        .analog_gain = 24,
+    }
 };
 
 static uint16_t
-lux1310_sci_read(struct fpga *fpga, uint8_t addr)
+lux1310_sci_read(struct lux1310_private_data *data, uint8_t addr)
 {
     uint16_t first;
     int i;
 
     /* Set RW, address and length. */
-    fpga->sensor->sci_control |= SENSOR_SCI_CONTROL_RW_MASK;
-    fpga->sensor->sci_address = addr;
-    fpga->sensor->sci_datalen = 2;
+    data->reg->sci_control |= SENSOR_SCI_CONTROL_RW_MASK;
+    data->reg->sci_address = addr;
+    data->reg->sci_datalen = 2;
 
     /* Start the transfer and then wait for completion. */
-    fpga->sensor->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
-    first = fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK;
-    while (fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) {
+    data->reg->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
+    first = data->reg->sci_control & SENSOR_SCI_CONTROL_RUN_MASK;
+    while (data->reg->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) {
         i++;
     }
 
@@ -75,26 +125,26 @@ lux1310_sci_read(struct fpga *fpga, uint8_t addr)
     }
 
     usleep(1000);
-    return fpga->sensor->sci_fifo_data;
+    return data->reg->sci_fifo_data;
 } /* lux1310_sci_read */
 
 static void
-lux1310_sci_write(struct fpga *fpga, uint8_t addr, uint16_t value)
+lux1310_sci_write(struct lux1310_private_data *data, uint8_t addr, uint16_t value)
 {
     uint16_t first;
     int i;
 
     /* Clear RW, and setup the transfer and fill the FIFO */
-    fpga->sensor->sci_control &= ~SENSOR_SCI_CONTROL_RW_MASK;
-    fpga->sensor->sci_address = addr;
-    fpga->sensor->sci_datalen = 2;
-    fpga->sensor->sci_fifo_addr = (value >> 8) & 0xff;
-    fpga->sensor->sci_fifo_addr = (value >> 0) & 0xff;
+    data->reg->sci_control &= ~SENSOR_SCI_CONTROL_RW_MASK;
+    data->reg->sci_address = addr;
+    data->reg->sci_datalen = 2;
+    data->reg->sci_fifo_addr = (value >> 8) & 0xff;
+    data->reg->sci_fifo_addr = (value >> 0) & 0xff;
 
     /* Start the transfer and then wait for completion. */
-    fpga->sensor->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
-    first = fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK;
-    while (fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) {
+    data->reg->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
+    first = data->reg->sci_control & SENSOR_SCI_CONTROL_RUN_MASK;
+    while (data->reg->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) {
         i++;
     }
     if (!first && (i != 0)) {
@@ -106,22 +156,22 @@ lux1310_sci_write(struct fpga *fpga, uint8_t addr, uint16_t value)
 } /* lux1310_sci_write */
 
 static void
-lux1310_sci_writebuf(struct fpga *fpga, uint8_t addr, const void *buf, size_t len)
+lux1310_sci_writebuf(struct lux1310_private_data *data, uint8_t addr, const void *buf, size_t len)
 {
     size_t i;
     const uint8_t *p = buf;
 
     /* Clear RW, and setup the transfer and fill the FIFO */
-    fpga->sensor->sci_control &= ~SENSOR_SCI_CONTROL_RW_MASK;
-    fpga->sensor->sci_address = addr;
-    fpga->sensor->sci_datalen = len;
+    data->reg->sci_control &= ~SENSOR_SCI_CONTROL_RW_MASK;
+    data->reg->sci_address = addr;
+    data->reg->sci_datalen = len;
     for (i = 0; i < len; i++) {
-        fpga->sensor->sci_fifo_addr = *p++;
+        data->reg->sci_fifo_addr = *p++;
     }
 
     /* Start the transfer and then wait for completion. */
-    fpga->sensor->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
-    while((fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) != 0) { /*nop */ }
+    data->reg->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
+    while((data->reg->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) != 0) { /*nop */ }
 } /* lux1310_sci_writebuf */
 
 /* DAC Constants for programming the image sensor analog voltage rails. */
@@ -150,7 +200,9 @@ lux1310_sci_writebuf(struct fpga *fpga, uint8_t addr, const void *buf, size_t le
 /* Write a voltage level to the DAC */
 static int
 lux1310_set_voltage(struct lux1310_private_data *data, int channel, float value)
-{   
+{
+    /* TODO: This needs some fixup (ie: actually set the values) */
+#if 0
     uint16_t reg = htobe16((((channel & 0x7) << 12) | 0x0fff));
     int err; 
 
@@ -158,12 +210,13 @@ lux1310_set_voltage(struct lux1310_private_data *data, int channel, float value)
     err = write(data->spifd, &reg, sizeof(reg));
     gpio_write(data->daccs, 1);
     return err;
+#endif
 } /* lux1310_set_voltage */
 
 static unsigned int
 lux1310_read(struct lux1310_private_data *data, unsigned int reg)
 {
-    unsigned int val = lux1310_sci_read(data->sensor.fpga, reg >> LUX1310_SCI_REG_ADDR);
+    unsigned int val = lux1310_sci_read(data, reg >> LUX1310_SCI_REG_ADDR);
     return getbits(val, reg & LUX1310_SCI_REG_MASK);
 } /* lux1310_read */
 
@@ -171,7 +224,7 @@ lux1310_read(struct lux1310_private_data *data, unsigned int reg)
 static void
 lux1310_write(struct lux1310_private_data *data, unsigned int reg, unsigned int val)
 {
-    lux1310_sci_write(data->sensor.fpga, reg >> LUX1310_SCI_REG_ADDR, setbits(val, reg & LUX1310_SCI_REG_MASK));
+    lux1310_sci_write(data, reg >> LUX1310_SCI_REG_ADDR, setbits(val, reg & LUX1310_SCI_REG_MASK));
 } /* lux1310_write */
 
 /* Write multiple registers at the same address. */
@@ -188,18 +241,20 @@ lux1310_write_many(struct lux1310_private_data *data, ...)
         val |= setbits(va_arg(ap, unsigned int), reg & LUX1310_SCI_REG_MASK);
     }
     va_end(ap);
-    lux1310_sci_write(data->sensor.fpga, addr, val);
+    lux1310_sci_write(data, addr, val);
 } /* lux1310_write_many */
 
 /* Program a wave table into the image sensor and configure the readout delays to match. */
 static void
 lux1310_write_wavetab(struct lux1310_private_data *data, const struct lux1310_wavetab *wave)
 {
+    /* Store the current wavetable for later. */
+    data->wavetab = wave;
+
     lux1310_write(data, LUX1310_SCI_TIMING_EN, 0);
     lux1310_write(data, LUX1310_SCI_RDOUT_DLY, wave->read_delay);
     lux1310_write(data, LUX1310_SCI_WAVETAB_SIZE, wave->read_delay);
-    lux1310_sci_writebuf(data->sensor.fpga, 0x7F, wave->table, wave->len);
-    data->sensor.fpga->reg[SENSOR_MAGIC_START_DELAY] = wave->start_delay;
+    lux1310_sci_writebuf(data, 0x7F, wave->table, wave->len);
 } /* lux1310_write_wavetab */
 
 static int
@@ -234,7 +289,21 @@ lux1310_auto_phase_cal(struct lux1310_private_data *data)
     return 0;
 } /* lux1310_auto_phase_cal */
 
-#define LUX1310_HRES_INCREMENT 16
+/* Return the minimum period (in clocks) for a given resolution and wave table length. */
+static unsigned long long
+lux1310_min_period(unsigned long hres, unsigned long vres, unsigned long int wavelen)
+{
+    const unsigned long t_hblank = 2;
+    const unsigned long t_tx = 25;
+    const unsigned long t_fovf = 50;
+    const unsigned long t_fovb = 50; /* Duration between PRSTN falling and TXN falling (I think) */
+    
+    /* Sum up the minimum number of clocks to read a frame at this resolution */
+    unsigned long t_read = (hres / LUX1310_HRES_INCREMENT);
+    unsigned long t_row = max(t_read + t_hblank, wavelen + 3);
+    return (t_row * vres) + t_tx + t_fovf + t_fovb;
+} /* lux1310_min_period */
+
 
 /* Configure the sensor to a given resolution, or return -1 on error. */
 static int
@@ -249,7 +318,7 @@ lux1310_set_resolution(struct image_sensor *s, unsigned long hres, unsigned long
 	lux1310_write(data, LUX1310_SCI_Y_START, voff);
 	lux1310_write(data, LUX1310_SCI_Y_END, voff + vres);
     return 0;
-}
+} /* lux1310_set_resolution */
 
 /* Round the exposure timing to the nearest value the sensor can accept. */
 static unsigned long long
@@ -258,32 +327,100 @@ lux1310_round_exposure(struct image_sensor *sensor, unsigned long hres, unsigned
     if (nsec < LUX1310_MIN_EXPOSURE) {
         return LUX1310_MIN_EXPOSURE;
     }
-    /* Round up to the nearest clock tick. */
-    nsec += ((1000000000 / LUX1310_CLOCK_RATE) / 2);
-    return nsec - (nsec % (1000000000 / LUX1310_CLOCK_RATE));
-}
+    /* Round up to the nearest FPGA timing clock tick. */
+    nsec += ((1000000000 / LUX1310_TIMING_CLOCK_RATE) / 2);
+    return nsec - (nsec % (1000000000 / LUX1310_TIMING_CLOCK_RATE));
+} /* lux1310_round_exposure */
 
 static unsigned long long
 lux1310_round_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
 {
-    const unsigned long t_hblank = 2;
-    const unsigned long t_tx = 25;
-    const unsigned long t_fovf = 50;
-    const unsigned long t_fovb = 50; /* Duration between PRSTN falling and TXN falling (I think) */
-    
-    /* Sum up the minimum number of clocks to read a frame at this resolution */
-    unsigned long t_read = (hres / LUX1310_HRES_INCREMENT);
-    unsigned long t_wavetable = 80; /* TODO: Wavetable size from where? */
-    unsigned long t_row = max(t_read + t_hblank, t_wavetable + 3);
-    unsigned long t_frame = t_row * vres + t_tx + t_fovf + t_fovb;
+    unsigned long t_period = (nsec * 1000000000) / LUX1310_SENSOR_CLOCK_RATE;
+    unsigned long t_frame = lux1310_min_period(hres, vres, LUX1310_MIN_WAVETABLE_SIZE);
+    return (max(t_frame, t_period) * LUX1310_SENSOR_CLOCK_RATE) / 1000000000;
+} /* lux1310_round_period */
 
-    return max((t_frame * 1000000000) / LUX1310_CLOCK_RATE, nsec);
-}
+static int
+lux1310_set_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+{
+    struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
+    unsigned long t_frame = ((nsec * 1000000000) + LUX1310_SENSOR_CLOCK_RATE - 1) / LUX1310_SENSOR_CLOCK_RATE;
+    data->reg->frame_period = t_frame;
+
+    /* Program the longest wavetable for this frame period. */
+    /* TODO: Replace this with a loop over a database of known tables. */
+    /* TODO: Automagic wavetable generation would go here. */
+    if (t_frame >= lux1310_min_period(hres, vres, 80)) {
+        lux1310_write_wavetab(data, &lux1310_wt_sram80);
+    }
+    else if (t_frame >= lux1310_min_period(hres, vres, 39)) {
+        lux1310_write_wavetab(data, &lux1310_wt_sram39);
+    }
+    else if (t_frame >= lux1310_min_period(hres, vres, 30)) {
+        lux1310_write_wavetab(data, &lux1310_wt_sram30);
+    }
+    else if (t_frame >= lux1310_min_period(hres, vres, 25)) {
+        lux1310_write_wavetab(data, &lux1310_wt_sram25);
+    }
+    else {
+        lux1310_write_wavetab(data, &lux1310_wt_sram20);
+    }
+
+    /* Setup the timing generator to handle the the line period and start delay. */
+    /* TODO: Would it be cleaner to move these registers into the block of sensor stuff? */
+    sensor->fpga->reg[SENSOR_MAGIC_START_DELAY] = data->wavetab->start_delay;
+    sensor->fpga->reg[SENSOR_LINE_PERIOD] = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->len + 3)) - 1;
+    return 0;
+} /* lux1310_set_period */
+
+static int
+lux1310_set_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+{
+    struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
+    /* Compute timing first in units of sensor clock periods. */
+    unsigned long t_line = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->len + 3));
+    unsigned long t_exposure = (nsec * LUX1310_SENSOR_CLOCK_RATE + 500000000) / 1000000000;
+    unsigned long t_start = LUX1310_MAGIC_ABN_DELAY;
+
+    /*
+     * Set the exposure time in units of FPGA timing clock periods, while keeping the
+     * exposure as a multiple of the horizontal readout time (to fix the horizontal
+     * line issue).
+     */
+    uint32_t exp_lines = (t_exposure + t_line/2) / t_line;
+    data->reg->int_time = (t_start + (t_line * exp_lines)) * LUX1310_TIMING_CLOCK_RATE / LUX1310_SENSOR_CLOCK_RATE;
+} /* lux1310_set_exposure */
+
+static int
+lux1310_set_gain(struct image_sensor *sensor, int gain)
+{
+    struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
+    int i;
+    for (i = 0; i < ARRAY_SIZE(lux1310_gain_data); i++) {
+        if (lux1310_gain_data[i].analog_gain != gain) continue;
+        /* Program the voltage references. */
+        lux1310_set_voltage(data, LUX1310_DAC_VRSTB_VOLTAGE, lux1310_gain_data[i].vrstb);
+        lux1310_set_voltage(data, LUX1310_DAC_VRST_VOLTAGE, lux1310_gain_data[i].vrst);
+        lux1310_set_voltage(data, LUX1310_DAC_VRSTH_VOLTAGE, lux1310_gain_data[i].vrsth);
+        /* Program the gain calibration. */
+        lux1310_write(data, LUX1310_SCI_GAIN_SEL_SAMP, lux1310_gain_data[i].sampling);
+        lux1310_write(data, LUX1310_SCI_GAIN_SEL_FB, lux1310_gain_data[i].feedback);
+        lux1310_write(data, LUX1310_SCI_GAIN_BIT, lux1310_gain_data[i].gain_bit);
+        return 0;
+    }
+
+    /* Not a valid gain for the LUX1310. */
+    return -1;
+} /* lux1310_set_gain */
 
 static const struct image_sensor_ops lux1310_ops = {
     .round_exposure = lux1310_round_exposure,
     .round_period = lux1310_round_period,
+    .set_exposure = lux1310_set_exposure,
+    .set_period = lux1310_set_period,
     .set_resolution = lux1310_set_resolution,
+    .set_gain = lux1310_set_gain,
+    /* TODO: Calibration Data and API */
 };
 
 struct image_sensor *
@@ -303,13 +440,13 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     if (!data) {
         return NULL;
     }
-    data->spifd = open(ioport_find_by_name(iops, "lux1310-spidev"), O_RDWR);
+    data->spifd = ioport_open(iops, "lux1310-spidev", O_RDWR);
     if (data->spifd < 0) {
         fprintf(stderr, "Failed to open spidev device: %s\n", strerror(errno));
         free(data);
         return NULL;
     }
-    data->daccs = open(ioport_find_by_name(iops, "lux1310-dac-cs"), O_WRONLY);
+    data->daccs = ioport_open(iops, "lux1310-dac-cs", O_WRONLY);
     if (data->daccs < 0) {
         fprintf(stderr, "Failed to open DAC chipselect: %s\n", strerror(errno));
         close(data->spifd);
@@ -329,8 +466,9 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
         fprintf(stderr, "Failed to set SPI clock speed: %s\n", strerror(errno));
         goto err;
     }
-    data->start_delay = LUX1310_MAGIC_ABN_DELAY;
     data->reg = fpga->sensor;
+    data->reg->fifo_start = 0x100;
+    data->reg->fifo_stop = 0x100;
 
     /* Setup the sensor limits */
     data->sensor.fpga = fpga;
@@ -348,7 +486,7 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     data->sensor.pixel_rate = data->sensor.h_max_res * data->sensor.v_max_res * 1057;
 
     /* Determine the sensor type and set the appropriate pixel format. */
-    color = open(ioport_find_by_name(iops, "lux1310-color"), O_RDONLY);
+    color = ioport_open(iops, "lux1310-color", O_RDONLY);
     if (color < 0) {
         data->sensor.format = FOURCC_CODE('Y', '1', '2', ' ');
     }
@@ -362,8 +500,8 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     }
 
     /* Disable integration */
-    fpga->sensor->frame_period = 100 * 4000;
-    fpga->sensor->int_time = 100 * 4100;
+    data->reg->frame_period = 100 * 4000;
+    data->reg->int_time = 100 * 4100;
 
     /* Setup the DAC to automatically update values on write. */
     gpio_write(data->daccs, 0);
@@ -385,13 +523,13 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
 
     /* Wait for the voltage levels to settle and strobe the reset low. */
     usleep(10000);
-    fpga->sensor->control |= IMAGE_SENSOR_RESET_MASK;
+    data->reg->control |= IMAGE_SENSOR_RESET_MASK;
     usleep(100);
-    fpga->sensor->control &= ~IMAGE_SENSOR_RESET_MASK;
+    data->reg->control &= ~IMAGE_SENSOR_RESET_MASK;
     usleep(1000);
 
     /* Reset the SCI registers to default. */
-    lux1310_sci_write(fpga, LUX1310_SCI_SRESET_B >> LUX1310_SCI_REG_ADDR, 0);
+    lux1310_sci_write(data, LUX1310_SCI_SRESET_B >> LUX1310_SCI_REG_ADDR, 0);
 
     /* Perform automatic phase calibration. */
     err = lux1310_auto_phase_cal(data);
@@ -418,14 +556,14 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     fprintf(stderr, "configuring for LUX1310 silicon rev %d\n", rev);
     switch (rev) {
         case 2:
-            lux1310_sci_write(fpga, 0x5B, 0x307f);
-            lux1310_sci_write(fpga, 0x7B, 0x3007);
+            lux1310_sci_write(data, 0x5B, 0x307f);
+            lux1310_sci_write(data, 0x7B, 0x3007);
             break;
 
         case 1:
         default:
-            lux1310_sci_write(fpga, 0x5B, 0x301f);
-            lux1310_sci_write(fpga, 0x7B, 0x3001);
+            lux1310_sci_write(data, 0x5B, 0x301f);
+            lux1310_sci_write(data, 0x7B, 0x3001);
             break;
     } /* switch */
 
@@ -444,8 +582,8 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     /* Enable the sensor timing engine. */
     lux1310_write(data, LUX1310_SCI_TIMING_EN, 1);
     usleep(10000);
-    fpga->sensor->frame_period = 100 * 4000;
-    fpga->sensor->int_time = 100 * 3900;
+    data->reg->frame_period = 100 * 4000;
+    data->reg->int_time = 100 * 3900;
     usleep(50000);
     return &data->sensor;
 

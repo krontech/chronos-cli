@@ -138,17 +138,24 @@ cam_set_live_timing(struct image_sensor *sensor,
 int
 cam_init(struct image_sensor *sensor)
 {
-    /* Configure default default timing to the maximum resolution, framerate and exposure. */
-    image_sensor_set_resolution(sensor, sensor->h_max_res, sensor->v_max_res, 0, 0);
-    cam_set_live_timing(sensor, sensor->h_max_res, sensor->v_max_res, sensor->h_max_res, sensor->v_max_res, 60);
+    unsigned long long exposure;
+    unsigned long long period;
 
     /* Configure the FIFO threshold and image sequencer */
-    sensor->fpga->sensor->fifo_start = 0x100;
-    sensor->fpga->sensor->fifo_stop = 0x100;
     sensor->fpga->seq->live_addr[0] = MAX_FRAME_LENGTH;
     sensor->fpga->seq->live_addr[1] = MAX_FRAME_LENGTH*2;
     sensor->fpga->seq->live_addr[2] = MAX_FRAME_LENGTH*3;
     sensor->fpga->seq->region_start = REC_START_ADDR;
+
+    /* Configure default default timing to the maximum resolution, framerate and exposure. */
+    /* TODO: Configure Gain */
+    period = image_sensor_round_period(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / 60);
+    exposure = image_sensor_round_exposure(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / 60);
+    image_sensor_set_resolution(sensor, sensor->h_max_res, sensor->v_max_res, 0, 0);
+    image_sensor_set_period(sensor, sensor->h_max_res, sensor->v_max_res, period);
+    image_sensor_set_exposure(sensor, sensor->h_max_res, sensor->v_max_res, exposure);
+
+    cam_set_live_timing(sensor, sensor->h_max_res, sensor->v_max_res, sensor->h_max_res, sensor->v_max_res, 60);
 
     /* Load the default color correction and white balance matricies */
     /* TODO: Why are there two white balance matricies in the original code? */

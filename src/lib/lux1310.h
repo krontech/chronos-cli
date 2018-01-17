@@ -126,4 +126,18 @@ const struct lux1310_wavetab lux1310_wt_sram30;
 const struct lux1310_wavetab lux1310_wt_sram25;
 const struct lux1310_wavetab lux1310_wt_sram20;
 
+/* Gain Calibration Data */
+struct lux1310_gaintab {
+    /* Voltage DAC settings (mV) */
+    unsigned int vrstb;
+    unsigned int vrst;
+    unsigned int vrsth;
+    /* Register tuning. */
+    unsigned int sampling;
+    unsigned int feedback;
+    unsigned int gain_bit;
+    /* Analog gain, in dB provied by this setting. */
+    int analog_gain;
+};
+
 #endif /* _LUX1310_H */

@@ -1,6 +1,6 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a libcam-dbus.a
-bin_PROGRAMS = cam-daemon cam-loader cam-pipeline cam-testdbus cam-json
+bin_PROGRAMS = cam-daemon cam-loader cam-pipeline cam-json
 AM_CFLAGS = -I ${srcdir}/lib
 
 ## Bundle the common FPGA and image sensor tools into a library.
@@ -62,17 +62,6 @@ cam_json_SOURCES = client/cam-json.c
 cam_json_SOURCES += client/jsmn.c
 cam_json_SOURCES += client/jsmn.h
 cam_json_SOURCES += api/cam-dbus-client.h
-
-## Camera DBus test
-cam_testdbus_LDADD = libcam-dbus.a
-cam_testdbus_CFLAGS = ${AM_CFLAGS}
-cam_testdbus_CFLAGS += -I ${prefix}/usr/include/dbus-1.0
-cam_testdbus_CFLAGS += -I ${prefix}/usr/include/glib-2.0
-cam_testdbus_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
-cam_testdbus_LDFLAGS = -L ${prefix}/usr/lib
-cam_testdbus_LDADD += -ldl -l:libdbus-glib-1.so.2 -l:libdbus-1.so.3 -lgmodule-2.0 -lgobject-2.0 -lm -lpthread -lgthread-2.0 -lrt -lglib-2.0
-cam_testdbus_SOURCES = cam-testdbus.c
-cam_testdbus_SOURCES += api/cam-dbus-client.h
 
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.

@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include <stdint.h>
+#include <fcntl.h>
 
 struct ioport {
     const char *name;
@@ -35,6 +36,14 @@ ioport_find_by_name(const struct ioport *iops, const char *name)
         iops++;
     }
     return NULL;
+}
+
+/* Wrapper to open() an IO port by name. */
+static inline int
+ioport_open(const struct ioport *iops, const char *name, int oflag)
+{
+    const char *path = ioport_find_by_name(iops, name);
+    return (path) ? open(path, oflag) : -1;
 }
 
 #endif /* _IOPORT_H */
