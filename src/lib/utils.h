@@ -19,6 +19,29 @@
 
 #include <unistd.h>
 
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(_x_) (sizeof(_x_)/sizeof((_x_)[0]))
+#endif
+
+#ifndef OFFSET_OF
+#define OFFSET_OF(_type_, _member_) (size_t)(&((_type_ *)0)->_member_)
+#endif
+
+#ifndef CONTAINER_OF
+#define CONTAINER_OF(_p_, _type_, _member_) \
+    (_type_ *)((char *)(_p_) - OFFSET_OF(_type_, _member_))
+#endif
+
+#ifndef min
+#define min(_a_, _b_) \
+    ((_a_) > (_b_)) ? (_a_) : (_b_)
+#endif
+
+#ifndef max
+#define max(_a_, _b_) \
+    ((_a_) > (_b_)) ? (_a_) : (_b_)
+#endif
+
 /* Bit hacking to extract a value from a bitmask and shift it down. */
 static inline unsigned long
 getbits(unsigned long value, unsigned long mask)
@@ -79,5 +102,7 @@ gpio_write(int fd, int val)
 {
     return write(fd, val ? "1" : "0", 1);
 } /* gpio_write */
+
+
 
 #endif /* _CLI_UTILS_H */

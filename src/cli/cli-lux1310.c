@@ -20,9 +20,9 @@
 #include <getopt.h>
 
 #include "cli.h"
-#include "cli-utils.h"
+#include "utils.h"
 #include "fpga.h"
-#include "fpga-lux1310.h"
+#include "lux1310.h"
 
 struct lux1310_regmap {
     uint32_t reg;

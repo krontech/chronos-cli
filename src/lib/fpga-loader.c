@@ -29,7 +29,7 @@
 #include <linux/spi/spidev.h>
 
 #include "fpga.h"
-#include "cli-utils.h"
+#include "utils.h"
 
 #define FPGA_BITSTREAM_CHUNK    1024
 

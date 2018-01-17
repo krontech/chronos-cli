@@ -2,6 +2,8 @@
 .*
 *.o
 /config.h
+/src/cam-daemon
+/src/cam-json
 /src/cam-cli
 /src/cam-loader
 /src/cam-pipeline

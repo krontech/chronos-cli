@@ -10,6 +10,9 @@
     <method name="set_video_settings">
       <arg name="data" direction="in" type="a{sv}"/>
     </method>
+    <method name="get_camera_data">
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
     <method name="get_sensor_data">
       <arg name="data" direction="out" type="a{sv}"/>
     </method>

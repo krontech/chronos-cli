@@ -77,6 +77,36 @@ com_krontech_chronos_control_set_video_settings_async (DBusGProxy *proxy, const 
   return dbus_g_proxy_begin_call (proxy, "set_video_settings", com_krontech_chronos_control_set_video_settings_async_callback, stuff, _dbus_glib_async_data_free, dbus_g_type_get_map ("GHashTable", G_TYPE_STRING, G_TYPE_VALUE), IN_data, G_TYPE_INVALID);
 }
 static inline gboolean
+com_krontech_chronos_control_get_camera_data (DBusGProxy *proxy, GHashTable** OUT_data, GError **error)
+
+{
+  return dbus_g_proxy_call (proxy, "get_camera_data", error, G_TYPE_INVALID, dbus_g_type_get_map ("GHashTable", G_TYPE_STRING, G_TYPE_VALUE), OUT_data, G_TYPE_INVALID);
+}
+
+typedef void (*com_krontech_chronos_control_get_camera_data_reply) (DBusGProxy *proxy, GHashTable *OUT_data, GError *error, gpointer userdata);
+
+static void
+com_krontech_chronos_control_get_camera_data_async_callback (DBusGProxy *proxy, DBusGProxyCall *call, void *user_data)
+{
+  DBusGAsyncData *data = (DBusGAsyncData*) user_data;
+  GError *error = NULL;
+  GHashTable* OUT_data;
+  dbus_g_proxy_end_call (proxy, call, &error, dbus_g_type_get_map ("GHashTable", G_TYPE_STRING, G_TYPE_VALUE), &OUT_data, G_TYPE_INVALID);
+  (*(com_krontech_chronos_control_get_camera_data_reply)data->cb) (proxy, OUT_data, error, data->userdata);
+  return;
+}
+
+static inline DBusGProxyCall*
+com_krontech_chronos_control_get_camera_data_async (DBusGProxy *proxy, com_krontech_chronos_control_get_camera_data_reply callback, gpointer userdata)
+
+{
+  DBusGAsyncData *stuff;
+  stuff = g_slice_new (DBusGAsyncData);
+  stuff->cb = G_CALLBACK (callback);
+  stuff->userdata = userdata;
+  return dbus_g_proxy_begin_call (proxy, "get_camera_data", com_krontech_chronos_control_get_camera_data_async_callback, stuff, _dbus_glib_async_data_free, G_TYPE_INVALID);
+}
+static inline gboolean
 com_krontech_chronos_control_get_sensor_data (DBusGProxy *proxy, GHashTable** OUT_data, GError **error)
 
 {

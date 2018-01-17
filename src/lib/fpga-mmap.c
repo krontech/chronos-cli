@@ -82,9 +82,10 @@ fpga_open(void)
 
 	/* Setup structured access to FPGA registers. */
 	fpga->sensor = (struct fpga_sensor *)(fpga->reg + SENSOR_CONTROL);
-	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CTL);
+	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CONTROL);
 	fpga->display = (struct fpga_display *)(fpga->reg + DISPLAY_CTL);
 	fpga->cc_matrix = (uint32_t *)(fpga->reg + CCM_ADDR);
+	fprintf(stderr, "%s: %p %p %p\n", __func__, fpga->sensor, fpga->seq, fpga->display);
 	return fpga;
 } /* fpga_open */
 

@@ -22,7 +22,7 @@
 #include <getopt.h>
 #include <fcntl.h>
 
-#include "cli-utils.h"
+#include "utils.h"
 #include "i2c-spd.h"
 
 const struct enumval spd_ram_types[] = {

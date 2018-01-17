@@ -6,7 +6,6 @@
 #include <dbus/dbus-glib.h>
 
 #include "api/cam-rpc.h"
-#include "api/cam-dbus-client.h"
 
 /* Output a UTF-8 string, with the necessary escaping for JSON. */
 static void
@@ -60,9 +59,9 @@ json_printf_gval(FILE *fp, gconstpointer val)
 
 #define JSON_TAB_SIZE   3
 static int
-json_printf_indent(FILE *fp, unsigned int depth, unsigned int nocomma)
+json_printf_indent(FILE *fp, unsigned int depth, unsigned int comma)
 {
-    fprintf(fp, nocomma ? "\n%*.s" : ",\n%*.s", depth * JSON_TAB_SIZE, "");
+    fprintf(fp, comma ? ",\n%*.s" : "\n%*.s", depth * JSON_TAB_SIZE, "");
     return 0;
 }
 
@@ -71,28 +70,38 @@ json_printf_dict(FILE *fp, GHashTable *h, unsigned int depth)
 {
     GHashTableIter i;
     gpointer key, value;
-    unsigned int first = 1;
+    unsigned int count = 0;
 
     fputs("{", fp);
     g_hash_table_iter_init(&i, h);
     while (g_hash_table_iter_next(&i, &key, &value)) {
         /* Append the comma and intent the next line as necessary. */
-        first = json_printf_indent(fp, depth+1, first);
+        json_printf_indent(fp, depth+1, count++);
 
         /* Print out the "name": value pair in JSON form. */
         json_printf_utf8(fp, key);
         fputs(": ", fp);
         json_printf_gval(fp, value);
     }
-    if (!first) json_printf_indent(fp, depth, 1);
+    if (count) json_printf_indent(fp, depth, 0);
     fputs("}", fp);
 }
 
 #define OPT_FLAG_RPC    (1<<0)
+#define OPT_FLAG_CGI    (1<<1)
+
+/* Standard JSON-RPC Error Codes. */
+#define JSONRPC_ERR_PARSE_ERROR         (-32700)
+#define JSONRPC_ERR_INVALID_REQUEST     (-32600)
+#define JSONRPC_ERR_METHOD_NOT_FOUND    (-32601)
+#define JSONRPC_ERR_INVALID_PARAMETERS  (-32602)
+#define JSONRPC_ERR_INTERNAL_ERROR      (-32603)
+#define JSONRPC_ERR_SERVER_ERROR        (-32604)
 
 static void
 handle_error(int code, const char *message, unsigned long flags)
 {
+
     if (flags & OPT_FLAG_RPC) {
         fputs("{\n", stdout);
         fprintf(stdout, "%*.s\"jsonrpc\": \"2.0\",\n", JSON_TAB_SIZE, "");
@@ -103,6 +112,28 @@ handle_error(int code, const char *message, unsigned long flags)
         json_printf_utf8(stdout, message);
         fprintf(stdout, "\n%*.s}\n", JSON_TAB_SIZE, "");
         fputs("}\n", stdout);
+    }
+    else if (flags & OPT_FLAG_CGI) {
+        fprintf(stdout, "Content-type: application/json\n");
+        switch (code) {
+            case JSONRPC_ERR_PARSE_ERROR:
+            case JSONRPC_ERR_INVALID_REQUEST:
+            case JSONRPC_ERR_INVALID_PARAMETERS:
+                fprintf(stdout, "Status: 400 Bad Request\n");
+                break;
+
+            case JSONRPC_ERR_METHOD_NOT_FOUND:
+                fprintf(stdout, "Status: 404 Not Found\n");
+                break;
+            
+            case JSONRPC_ERR_INTERNAL_ERROR:
+            case JSONRPC_ERR_SERVER_ERROR:
+                fprintf(stdout, "Status: 500 Internal Server Error\n");
+        }
+        fputs("\n{\n", stdout);
+        fprintf(stdout, "%*.s\"error\": ", JSON_TAB_SIZE, "");
+        json_printf_utf8(stdout, message);
+        fprintf(stdout, "\n}\n");
     }
     else {
         fprintf(stderr, "RPC Call Failed: %s\n", message);
@@ -134,9 +165,10 @@ main(int argc, char * const argv[])
     unsigned long flags = 0;
     
     /* Option Parsing */
-    const char *short_options = "rh";
+    const char *short_options = "rch";
     const struct option long_options[] = {
         {"rpc",     no_argument,    0, 'r'},
+        {"cgi",     no_argument,    0, 'c'},
         {"help",    no_argument,    0, 'h'},
         {0, 0, 0, 0}
     };
@@ -148,6 +180,10 @@ main(int argc, char * const argv[])
                 flags |= OPT_FLAG_RPC;
                 break;
             
+            case 'c':
+                flags |= OPT_FLAG_CGI;
+                break;
+
             case 'h':
                 usage(stdout, argc, argv);
                 return EXIT_SUCCESS;
@@ -156,14 +192,29 @@ main(int argc, char * const argv[])
                 return EXIT_FAILURE;
         }
     }
-    /* Parse the method name. */
-    if (optind >= argc) {
+    /* If CGI, get the requested method from the PATH_INFO variable. */
+    if (flags & OPT_FLAG_CGI) {
+        method = getenv("PATH_INFO");
+        if (!method) {
+            fprintf(stderr, "Missing variable: PATH_INFO\n");
+            fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
+            return EXIT_FAILURE;
+        }
+        /* Stip leading slashes from PATH_INFO */
+        while (*method == '/') method++;
+    }
+    /* Otherwise, the method name is passed in via the command line. */
+    else if (optind >= argc) {
         fprintf(stderr, "Missing argument: METHOD\n");
         fprintf(stderr, "Try '%s --help' for more information.\n", argv[0]);
         return EXIT_FAILURE;
     }
-    method = argv[optind];
+    else {
+        method = argv[optind];
+    }
+
     /* TODO: Parse JSON from stdin to get the request parameters, if any. */
+
 
     /* Initialize the GType/GObject system. */
     g_type_init();
@@ -178,6 +229,12 @@ main(int argc, char * const argv[])
     if (!dbus_g_proxy_call(proxy, method, &error, G_TYPE_INVALID,
             CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID)) {
         handle_error(error->code, error->message, flags);
+    }
+
+    /* Output CGI header data */
+    if (flags & OPT_FLAG_CGI) {
+        fprintf(stdout, "Content-type: application/json\n");
+        fprintf(stdout, "\n");
     }
 
     /* Output format: JSON-RPC */

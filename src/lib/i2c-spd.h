@@ -18,7 +18,7 @@
 #define _I2C_SPD_H
 
 #include <stdint.h>
-#include <cli-utils.h>
+#include <utils.h>
 
 #define SPD_I2C_ADDR(_x_)       (0x50 + (_x_))
 

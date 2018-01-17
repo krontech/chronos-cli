@@ -82,6 +82,25 @@ cam_dbus_dict_add_string(GHashTable *h, const char *name, const char *value)
     }
 }
 
+static inline void
+cam_dbus_dict_add_printf(GHashTable *h, const char *name, const char *fmt, ...)
+{
+    GValue *gval;
+    if (h && (gval = g_new0(GValue, 1))) {
+        va_list ap;
+        va_start(ap, fmt);
+        gchar *s = g_strdup_vprintf(fmt, ap);
+        va_end(ap);
+        g_value_init(gval, G_TYPE_STRING);
+        if (s) {
+            g_value_take_string(gval, s);
+            cam_dbus_dict_add(h, name, gval);
+        } else {
+            g_free(gval);
+        }
+    }
+}
+
 static inline gboolean
 cam_dbus_dict_get_boolean(GHashTable *h, const char *name)
 {

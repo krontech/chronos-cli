@@ -47,11 +47,11 @@ i2c_eeprom_write_chunk(int fd, unsigned int addr, uint8_t offset, const void *bu
     };
     int i;
 
-    for (i = 8 * (offsz - 1); i >= 0; i -= 8) {
-        wbuf[i] = (offset >> i) & 0xff;
-    };
-    memcpy(wbuf + i, buf, len);
-
+    for (i = offsz-1; i >= 0; i--) {
+        wbuf[i] = offset & 0xff;
+        offset >>= 8;
+    }
+    memcpy(wbuf + offsz, buf, len);
     return ioctl(fd, I2C_RDWR, &rdwr);
 } /* i2c_eeprom_write_chunk */
 
@@ -59,7 +59,7 @@ static int
 i2c_eeprom_do_write(int fd, unsigned int addr, unsigned int offset, const uint8_t *buf, size_t len, int offsz)
 {
     /* Write chunks until the request is satisified. */
-    while (len) {
+    do {
         size_t chunksz = len;
         int err;
         if (chunksz > MAX_BYTES) {
@@ -72,7 +72,7 @@ i2c_eeprom_do_write(int fd, unsigned int addr, unsigned int offset, const uint8_
         buf += chunksz;
         offset += chunksz;
         len -= chunksz;
-    } /* while*/
+    } while(len > 0);
 
     return 0;
 } /* i2c_eeprom_do_write */
@@ -91,8 +91,9 @@ i2c_eeprom_do_read(int fd, unsigned int addr, unsigned int offset, uint8_t *buf,
     if (err < 0) {
         return err;
     }
- 
-    return read(fd, buf, len);
+    usleep(1000);
+    err = read(fd, buf, len);
+    return err;
 } /* i2c_eeprom_do_read */
 
 int

@@ -92,7 +92,7 @@ struct fpga_display {
 #define SENSOR_SCI_FIFO_WR_ADDR		24
 #define SENSOR_SCI_READ_DATA		26
 
-#define	SEQ_CTL						32
+#define	SEQ_CONTROL 				32
 #define	SEQ_STATUS					34
 #define	SEQ_FRAME_SIZE				36
 #define	SEQ_REC_REGION_START		38
@@ -156,6 +156,7 @@ struct fpga_display {
 
 #define	SYSTEM_RESET				0x300
 #define FPGA_VERSION				0x302
+#define FPGA_SUBVERSION             0x304
 #define	DCG_MEM_START				0x800
 
 //Image sensor control register
@@ -271,10 +272,5 @@ struct fpga {
 struct fpga *fpga_open(void);
 void fpga_close(struct fpga *fpga);
 int fpga_load(const char *spi, const char *bitstream, FILE *log);
-
-/* SCI Accesses */
-uint16_t fpga_sci_read(struct fpga *fpga, uint8_t addr);
-void fpga_sci_write(struct fpga *fpga, uint8_t addr, uint16_t value);
-void fpga_sci_writebuf(struct fpga *fpga, uint8_t addr, const void *data, size_t len);
 
 #endif /* _FPGA_H */

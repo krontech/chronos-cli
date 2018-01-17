@@ -1,5 +1,5 @@
 /****************************************************************************
- *  Copyright (C) 2017 Kron Technologies Inc <http://www.krontech.ca>.      *
+ *  Copyright (C) 2017-2018 Kron Technologies Inc <http://www.krontech.ca>. *
  *                                                                          *
  *  This program is free software: you can redistribute it and/or modify    *
  *  it under the terms of the GNU General Public License as published by    *
@@ -17,55 +17,52 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <errno.h>
 #include <unistd.h>
-#include <getopt.h>
 #include <fcntl.h>
+#include <errno.h>
+#include <getopt.h>
 
-#include "cli.h"
+#include "camera.h"
 #include "utils.h"
+#include "fpga.h"
+#include "fpga-sensor.h"
+#include "i2c.h"
+#include "i2c-spd.h"
 
-extern int optind;
-
-static int
-do_led(struct fpga *fpga, char *const argv[], int argc)
+/* DDR initialization */
+unsigned int
+mem_init(struct fpga *fpga)
 {
-    const char *val;
-	optind = 1;
+    unsigned int ram_size0 = 0;
+    unsigned int ram_size1 = 0;
+    struct ddr3_spd spd;
+    int fd;
 
-    /* If no arguments were provided, then dump all registers. */
-    if (argc <= 1) {
-        fprintf(stderr, "Missing argument: STATE\n");
-        return 1;
+    /* Read the I2C SPD data, and program the FPGA's MMU to remap it
+     * into a contiguous block. */
+	if ((fd = open(EEPROM_I2C_BUS, O_RDWR)) < 0) {
+		fprintf(stderr, "Failed to open i2c bus (%s)\n", strerror(errno));
+	    return 0;
     }
+    if (i2c_eeprom_read(fd, SPD_I2C_ADDR(0), 0, &spd, sizeof(spd)) >= 0) {
+        ram_size0 = spd_size_bytes(&spd) >> 30;
+    }
+    if (i2c_eeprom_read(fd, SPD_I2C_ADDR(1), 0, &spd, sizeof(spd)) >= 0) {
+        ram_size1 = spd_size_bytes(&spd) >> 30;
+    }
+    close(fd);
 
-    /* Try to parse a boolean state... */
-    val = argv[optind];
-    if ((strcasecmp(val, "on") == 0) || (strcasecmp(val, "true") == 0)) {
-        gpio_write(fpga->gpio.led_front, 1);
-        gpio_write(fpga->gpio.led_back, 1);
+    if (ram_size1 > ram_size0) {
+        fpga->reg[MMU_CONFIG] = MMU_INVERT_CS;
+        fprintf(stderr, "MMU: Invert CS remap\n");
     }
-    else if ((strcasecmp(val, "off") == 0) || (strcasecmp(val, "false") == 0)) {
-        gpio_write(fpga->gpio.led_front, 0);
-        gpio_write(fpga->gpio.led_back, 0);
+    else if ((ram_size0 < 16) && (ram_size1 < 16)) {
+        fpga->reg[MMU_CONFIG] = MMU_SWITCH_STUFFED;
+        fprintf(stderr, "MMU: switch stuffed remap\n");
     }
     else {
-        unsigned long x;
-        char *end;
-        x = (strtoul(val, &end, 0) != 0);
-        if (*end != '\0') {
-            fprintf(stderr, "Malformed STATE: \'%s\'\n", val);
-            return 1;
-        }
-        gpio_write(fpga->gpio.led_front, x);
-        gpio_write(fpga->gpio.led_back, x);
+        fpga->reg[MMU_CONFIG] = 0;
+        fprintf(stderr, "MMU: no remap applied\n");
     }
-    return 0;
-} /* do_info */
-
-/* The eeprom subcommand */
-const struct cli_subcmd cli_cmd_led = {
-    .name = "led",
-    .desc = "Enable or disable the record LED",
-    .function = do_led,
-};
+    return (ram_size0 + ram_size1);
+} /* mem_init */

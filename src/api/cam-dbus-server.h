@@ -157,13 +157,14 @@ G_END_DECLS
 static const DBusGMethodInfo dbus_glib_cam_dbus_methods[] = {
   { (GCallback) cam_dbus_get_video_settings, dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER, 0 },
   { (GCallback) cam_dbus_set_video_settings, dbus_glib_marshal_cam_dbus_BOOLEAN__BOXED_POINTER, 68 },
-  { (GCallback) cam_dbus_get_sensor_data, dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER, 132 },
+  { (GCallback) cam_dbus_get_camera_data, dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER, 132 },
+  { (GCallback) cam_dbus_get_sensor_data, dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER, 197 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_dbus_object_info = {  1,
   dbus_glib_cam_dbus_methods,
-  3,
-"com.krontech.chronos.control\0get_video_settings\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0set_video_settings\0S\0data\0I\0a{sv}\0\0com.krontech.chronos.control\0get_sensor_data\0S\0data\0O\0F\0N\0a{sv}\0\0\0",
+  4,
+"com.krontech.chronos.control\0get_video_settings\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0set_video_settings\0S\0data\0I\0a{sv}\0\0com.krontech.chronos.control\0get_camera_data\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0get_sensor_data\0S\0data\0O\0F\0N\0a{sv}\0\0\0",
 "\0",
 "\0"
 };

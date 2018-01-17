@@ -4,15 +4,12 @@
 #include <dbus/dbus-glib.h>
 
 #include "api/cam-rpc.h"
+#include "camera.h"
 
-typedef struct {
-    GObject parent;
-} CamObject;
-
-typedef struct {
-    GObjectClass parent;
-} CamObjectClass;
-
+/*-------------------------------------
+ * DBUS/GObject Registration Mapping
+ *-------------------------------------
+ */
 static gboolean cam_dbus_get_video_settings(CamObject *cam, GHashTable **data, GError **error);
 static gboolean cam_dbus_set_video_settings(CamObject *cam, GHashTable *data, GError **error);
 static gboolean cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GError **error);
@@ -23,27 +20,11 @@ static gboolean cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GErr
  * DBUS/GObject Registration Mapping
  *-------------------------------------
  */
-GType cam_object_get_type(void);
-
-#define CAM_OBJECT_TYPE    (cam_object_get_type())
-
-#define CAM_OBJECT(_obj_) \
-    (G_TYPE_CHECK_INSTANCE_CAST((_obj_), CAM_OBJECT_TYPE, CamObject))
-#define CAM_OBJECT_CLASS(_kclass_) \
-    (G_TYPE_CHECK_CLASS_CAST((_kclass_), CAM_OBJECT_TYPE, CamObjectClass))
-#define CAM_IS_OBJECT(_obj_) \
-    (G_TYPE_CHECK_INSTANCE_TYPE(_obj_), CAM_OBJECT_TYPE))
-#define CAM_IS_CLASS(_kclass_) \
-    (G_TYPE_CHECK_CLASS_TYPE(_kclass_), CAM_OBJECT_TYPE))
-#define CAM_GET_CLASS(_obj_) \
-    (G_TYPE_INSTANCE_GET_CLASS(_obj_), CAM_OBJECT_TYPE, CamObjectClass))
-
-G_DEFINE_TYPE(CamObject, cam_object, G_TYPE_OBJECT)
-
 static void
 cam_object_init(CamObject *cam)
 {
     g_assert(cam != NULL);
+    memset((char *)cam + sizeof(cam->parent), 0, sizeof(CamObject) - sizeof(cam->parent));
 }
 
 static void

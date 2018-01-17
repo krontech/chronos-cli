@@ -14,10 +14,11 @@
  *  You should have received a copy of the GNU General Public License       *
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.   *
  ****************************************************************************/
-#ifndef _FPGA_LUX1310_H
-#define _FPGA_LUX1310_H
+#ifndef _LUX1310_H
+#define _LUX1310_H
 
 #include <stdint.h>
+#include <sys/types.h>
 
 /* Pack an address and mask together into one word. */
 #define LUX1310_SCI_REG_MASK            0xffff
@@ -113,15 +114,9 @@
 struct lux1310_wavetab {
     unsigned int read_delay;
     unsigned int start_delay;
+    const uint8_t *table;
     size_t len;
-    uint8_t table[];
 };
-
-int lux1310_init(struct fpga *fpga, const char *spidev);
-unsigned int lux1310_read(struct fpga *fpga, unsigned int reg);
-void lux1310_write(struct fpga *fpga, unsigned int reg, unsigned int val);
-void lux1310_write_many(struct fpga *fpga, ...);
-void lux1310_write_wavetab(struct fpga *fpga, const struct lux1310_wavetab *wave);
 
 /* Some built-in wavetables. */
 const struct lux1310_wavetab lux1310_wt_sram80;
@@ -131,4 +126,4 @@ const struct lux1310_wavetab lux1310_wt_sram30;
 const struct lux1310_wavetab lux1310_wt_sram25;
 const struct lux1310_wavetab lux1310_wt_sram20;
 
-#endif /* _FPGA_LUX1310_H */
+#endif /* _LUX1310_H */

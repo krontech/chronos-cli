@@ -23,9 +23,9 @@
 #include <getopt.h>
 
 #include "cli.h"
-#include "cli-utils.h"
+#include "utils.h"
 #include "fpga.h"
-#include "fpga-lux1310.h"
+#include "lux1310.h"
 #include "i2c.h"
 #include "i2c-spd.h"
 
