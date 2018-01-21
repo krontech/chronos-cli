@@ -44,18 +44,18 @@ cam_pipeline(struct fpga *fpga, int mode)
 {
     gboolean ret;
 	GstElement *pipeline;
-    GstElement *source, *queue, *scaler, *vbox, *sink;
+    GstElement *source, *queue, *scaler, *ctrl, *sink;
     GstCaps *caps;
-    unsigned int scale_hres = CAM_LCD_HRES;
-    unsigned int scale_vres = CAM_LCD_VRES;
+    unsigned int scale_mul = 1, scale_div = 1;
     
     /* Build the GStreamer Pipeline */
     pipeline =	gst_pipeline_new ("cam-pipeline");
 	source =    gst_element_factory_make("omx_camera",      "vfcc-source");
     queue =     gst_element_factory_make("queue",           "queue");
     scaler =    gst_element_factory_make("omx_mdeiscaler",  "scaler");
-    sink =      gst_element_factory_make("v4l2sink",        "sink");
-    if (!pipeline || !source || !queue || !scaler || !sink) {
+    ctrl =      gst_element_factory_make("omx_ctrl",        "ctrl");
+    sink =      gst_element_factory_make("omx_videosink",   "sink");
+    if (!pipeline || !source || !queue || !scaler || !ctrl || !sink) {
         return NULL;
     }
 
@@ -67,9 +67,12 @@ cam_pipeline(struct fpga *fpga, int mode)
     g_object_set(G_OBJECT(source), "skip-frames", (guint)0, NULL);
 
 	g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
-	g_object_set(G_OBJECT(sink), "device", "/dev/video2", NULL);
+	g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+	g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
+	g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+	g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
 
-	gst_bin_add_many(GST_BIN(pipeline), source, queue, scaler, sink, NULL);
+	gst_bin_add_many(GST_BIN(pipeline), source, queue, scaler, ctrl, sink, NULL);
     
     /* Link OMX Source input capabilities. */
 	caps = gst_caps_new_simple ("video/x-raw-yuv",
@@ -88,6 +91,7 @@ cam_pipeline(struct fpga *fpga, int mode)
     gst_caps_unref(caps);
 
     /* No scaling, just let the pipeline crop as necessary. */
+#if 0
     if (mode == CAM_SCALE_CROP) {
         caps = gst_caps_new_simple ("video/x-raw-yuv",
                     "width", G_TYPE_INT, fpga->display->h_res,
@@ -102,21 +106,29 @@ cam_pipeline(struct fpga *fpga, int mode)
                     NULL);
     }
     /* Otherwise, scale the image while retaining the same aspect ratio. */
-    else if ((CAM_LCD_HRES * fpga->display->v_res) > (CAM_LCD_VRES * fpga->display->h_res)) {
-        caps = gst_caps_new_simple ("video/x-raw-yuv",
-                    "width", G_TYPE_INT, (CAM_LCD_VRES * fpga->display->h_res) / fpga->display->v_res,
-                    "height", G_TYPE_INT, CAM_LCD_VRES,
-                    NULL);
+    else
+#endif
+    if ((CAM_LCD_HRES * fpga->display->v_res) > (CAM_LCD_VRES * fpga->display->h_res)) {
+        scale_mul = CAM_LCD_VRES;
+        scale_div = fpga->display->v_res;
     }
     else {
-        caps = gst_caps_new_simple ("video/x-raw-yuv",
-                    "width", G_TYPE_INT, CAM_LCD_HRES,
-                    "height", G_TYPE_INT, (CAM_LCD_HRES * fpga->display->v_res) / fpga->display->h_res,
-                    NULL);
+        scale_mul = CAM_LCD_HRES;
+        scale_div = fpga->display->h_res;
     }
 
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
+    fprintf(stderr, "DEBUG: input = [%u, %u]\n", fpga->display->h_res, fpga->display->v_res);
+    fprintf(stderr, "DEBUG: output = [%u, %u]\n", (fpga->display->h_res * scale_mul) / scale_div, (fpga->display->v_res * scale_mul) / scale_div);
+#endif
+    caps = gst_caps_new_simple ("video/x-raw-yuv",
+                "width", G_TYPE_INT, ((fpga->display->h_res * scale_mul) / scale_div) & ~0xF,
+                "height", G_TYPE_INT, (fpga->display->v_res * scale_mul) / scale_div,
+                NULL);
+
     /* Link LCD Output capabilities. */
-    ret = gst_element_link_pads_filtered(scaler, "src_00", sink, "sink", caps);
+    ret = gst_element_link_pads_filtered(scaler, "src_00", ctrl, "sink", caps);
     if (!ret) {
         gst_object_unref(GST_OBJECT(pipeline));
         return NULL;
@@ -125,6 +137,7 @@ cam_pipeline(struct fpga *fpga, int mode)
 
     /* Link the rest of the pipeline together */
     gst_element_link_many(queue, scaler, NULL);
+    gst_element_link_many(ctrl, sink, NULL);
 
     return pipeline;
 } /* cam_pipeline */
