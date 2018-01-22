@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <getopt.h>
 #include <signal.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -32,6 +33,13 @@
 #define CAM_SCALE_ASPECT    1
 #define CAM_SCALE_CROP      2
 
+struct display_config {
+    unsigned long hres;
+    unsigned long vres;
+    unsigned long xoff;
+    unsigned long yoff;
+};
+
 /* Signal handlering */
 static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
 static sig_atomic_t catch_sigint = 0;
@@ -40,13 +48,15 @@ static void handle_sighup(int sig) { scaler_mode = (sig == SIGUSR1) ? CAM_SCALE_
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
 static GstElement *
-cam_pipeline(struct fpga *fpga, int mode)
+cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
 {
     gboolean ret;
 	GstElement *pipeline;
     GstElement *source, *queue, *scaler, *ctrl, *sink;
     GstCaps *caps;
     unsigned int scale_mul = 1, scale_div = 1;
+    unsigned int hout, vout;
+    unsigned int hoff, voff;
     
     /* Build the GStreamer Pipeline */
     pipeline =	gst_pipeline_new ("cam-pipeline");
@@ -108,23 +118,30 @@ cam_pipeline(struct fpga *fpga, int mode)
     /* Otherwise, scale the image while retaining the same aspect ratio. */
     else
 #endif
-    if ((CAM_LCD_HRES * fpga->display->v_res) > (CAM_LCD_VRES * fpga->display->h_res)) {
-        scale_mul = CAM_LCD_VRES;
+    if ((config->hres * fpga->display->v_res) > (config->vres * fpga->display->h_res)) {
+        scale_mul = config->vres;
         scale_div = fpga->display->v_res;
     }
     else {
-        scale_mul = CAM_LCD_HRES;
+        scale_mul = config->hres;
         scale_div = fpga->display->h_res;
     }
+    hout = ((fpga->display->h_res * scale_mul) / scale_div) & ~0xF;
+    vout = ((fpga->display->v_res * scale_mul) / scale_div) & ~0x1;
+    hoff = (config->xoff + (config->hres - hout) / 2) & ~0x1;
+    voff = (config->yoff + (config->vres - vout) / 2) & ~0x1;
 
 #ifdef DEBUG
     fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
     fprintf(stderr, "DEBUG: input = [%u, %u]\n", fpga->display->h_res, fpga->display->v_res);
-    fprintf(stderr, "DEBUG: output = [%u, %u]\n", (fpga->display->h_res * scale_mul) / scale_div, (fpga->display->v_res * scale_mul) / scale_div);
+    fprintf(stderr, "DEBUG: output = [%u, %u]\n", hout, vout);
+    fprintf(stderr, "DEBUG: offset = [%u, %u]\n", hoff, voff);
 #endif
+	g_object_set(G_OBJECT(sink), "top", (guint)voff, NULL);
+	g_object_set(G_OBJECT(sink), "left", (guint)hoff, NULL);
     caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "width", G_TYPE_INT, ((fpga->display->h_res * scale_mul) / scale_div) & ~0xF,
-                "height", G_TYPE_INT, (fpga->display->v_res * scale_mul) / scale_div,
+                "width", G_TYPE_INT, hout,
+                "height", G_TYPE_INT, vout,
                 NULL);
 
     /* Link LCD Output capabilities. */
@@ -142,10 +159,75 @@ cam_pipeline(struct fpga *fpga, int mode)
     return pipeline;
 } /* cam_pipeline */
 
+static void
+usage(FILE *fp, int argc, char *argv[])
+{
+    fprintf(fp, "usage : %s [options] [RES]\n\n", argv[0]);
+
+    fprintf(fp, "Operate the video pipeline on the Chronos camera.\n\n");
+    fprintf(fp, "The output resolution may be provided as a string with the\n");
+    fprintf(fp, "horizontal and vertical resolutions separated with an 'x' (ie:\n");
+    fprintf(fp, "640x480). Otherwise, the default resolution is %ux%u\n\n", CAM_LCD_HRES, CAM_LCD_VRES);
+
+    fprintf(fp, "options:\n");
+    fprintf(fp, "\t-o, --offset OFFS  offset the output by OFFS pixels\n");
+    fprintf(fp, "\t-h, --help         display this help and exit\n");
+} /* usage */
+
+static void
+parse_resolution(const char *str, const char *name, unsigned long *x, unsigned long *y)
+{
+    while (1) {
+        char *end;
+        *x = strtoul(str, &end, 10);
+        if (*end != 'x') break;
+        *y = strtoul(end+1, &end, 10);
+        if (*end != '\0') break;
+        return;
+    }
+    fprintf(stderr, "Failed to parse %s from \'%s\'\n", name, str);
+    exit(EXIT_FAILURE);
+} /* parse_resolution */
+
 int
 main(int argc, char * argv[])
 {
     struct fpga *fpga;
+    /* Default to use the entire LCD screen. */
+    struct display_config config = {
+        .hres = CAM_LCD_HRES,
+        .vres = CAM_LCD_VRES,
+        .xoff = 0,
+        .yoff = 0,
+    };
+    /* Option Parsing */
+    const char *short_options = "o:h";
+    const struct option long_options[] = {
+        {"offset",  required_argument,  0, 'o'},
+        {"help",    no_argument,        0, 'h'},
+        {0, 0, 0, 0}
+    };
+    char *e;
+    int c;
+    optind = 0;
+    while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {
+        switch (c) {
+            case 'o':
+                parse_resolution(optarg, "OFFS", &config.xoff, &config.yoff);
+                break;
+
+            case 'h':
+                usage(stdout, argc, argv);
+                return EXIT_SUCCESS;
+            case '?':
+            default:
+                return EXIT_FAILURE;
+        }
+    }
+    /* If there is another argument, parse it as the display resolution. */
+    if (optind < argc) {
+        parse_resolution(argv[optind], "RES", &config.hres, &config.vres);
+    }
 
     /* Initialisation */
     gst_init(&argc, &argv);
@@ -167,7 +249,7 @@ main(int argc, char * argv[])
     signal(SIGUSR2, handle_sighup);
     do {
         /* Launch the pipeline to run live video. */
-        GstElement *pipeline = cam_pipeline(fpga, scaler_mode);
+        GstElement *pipeline = cam_pipeline(fpga, &config, scaler_mode);
         GstEvent *event;
         if (!pipeline) {
             fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
