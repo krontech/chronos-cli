@@ -1,6 +1,6 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a libcam-dbus.a
-bin_PROGRAMS = cam-daemon cam-loader cam-pipeline cam-json
+bin_PROGRAMS = cam-daemon cam-loader cam-regdump cam-pipeline cam-json
 AM_CFLAGS = -I ${srcdir}/lib
 
 ## Bundle the common FPGA and image sensor tools into a library.
@@ -25,17 +25,9 @@ libcam_dbus_a_CFLAGS = -I ${prefix}/usr/include/dbus-1.0
 libcam_dbus_a_CFLAGS += -I ${prefix}/usr/include/glib-2.0
 libcam_dbus_a_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
 
-## CLI Program for manipulating the camera and image sensor.
-#bin_PROGRAMS += cam-cli 
-#cam_cli_LDADD = libcamera.a
-#cam_cli_SOURCES = cli/main.c
-#cam_cli_SOURCES += cli/cli-table.c
-#cam_cli_SOURCES += cli/cli-help.c
-#cam_cli_SOURCES += cli/cli-fpgaload.c
-#cam_cli_SOURCES += cli/cli-info.c
-#cam_cli_SOURCES += cli/cli-init.c
-#cam_cli_SOURCES += cli/cli-led.c
-#cam_cli_SOURCES += cli/cli-lux1310.c
+## FPGA and Image Sensor register dump tool
+cam_regdump_LDADD = libcamera.a
+cam_regdump_SOURCES = cam-regdump.c
 
 ## Camera Daemon
 cam_daemon_LDADD = libcamera.a

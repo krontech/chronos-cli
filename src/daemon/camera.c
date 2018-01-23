@@ -37,7 +37,7 @@ static inline int
 cc_within(int x, int min, int max)
 {
     if (x < min) return min;
-    if (x < max) return max;
+    if (x > max) return max;
     return x;
 }
 
@@ -140,6 +140,8 @@ cam_init(struct image_sensor *sensor)
 {
     unsigned long long exposure;
     unsigned long long period;
+    unsigned long frame_words;
+    unsigned int maxfps = sensor->pixel_rate / (sensor->h_max_res * sensor->v_max_res);
 
     /* Configure the FIFO threshold and image sequencer */
     sensor->fpga->seq->live_addr[0] = MAX_FRAME_LENGTH;
@@ -149,25 +151,27 @@ cam_init(struct image_sensor *sensor)
 
     /* Configure default default timing to the maximum resolution, framerate and exposure. */
     /* TODO: Configure Gain */
-    period = image_sensor_round_period(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / 60);
-    exposure = image_sensor_round_exposure(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / 60);
+    period = image_sensor_round_period(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / maxfps);
+    exposure = image_sensor_round_exposure(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / (maxfps * 2));
     image_sensor_set_resolution(sensor, sensor->h_max_res, sensor->v_max_res, 0, 0);
     image_sensor_set_period(sensor, sensor->h_max_res, sensor->v_max_res, period);
     image_sensor_set_exposure(sensor, sensor->h_max_res, sensor->v_max_res, exposure);
+    frame_words = ((sensor->h_max_res * sensor->v_max_res * 12) / 8 + (32 - 1)) / 32;
+    sensor->fpga->seq->frame_size = (frame_words + 0x3f) & ~0x3f;
 
     cam_set_live_timing(sensor, sensor->h_max_res, sensor->v_max_res, sensor->h_max_res, sensor->v_max_res, 60);
 
     /* Load the default color correction and white balance matricies */
     /* TODO: Why are there two white balance matricies in the original code? */
     if (image_sensor_is_color(sensor)) {
-        sensor->fpga->display->control |= DISPLAY_CTL_COLOR_MODE_MASK;
-        cam_set_color_matrix(sensor->fpga, ccm_default_color, wb_default_color, 0);
+        sensor->fpga->display->control |= DISPLAY_CTL_COLOR_MODE;
+        cam_set_color_matrix(sensor->fpga, ccm_default_color, wb_default_color, 1.0);
     }
     else {
-        sensor->fpga->display->control &= ~DISPLAY_CTL_COLOR_MODE_MASK;
-        cam_set_color_matrix(sensor->fpga, ccm_default_mono, wb_default_mono, 0);
+        sensor->fpga->display->control &= ~DISPLAY_CTL_COLOR_MODE;
+        cam_set_color_matrix(sensor->fpga, ccm_default_mono, wb_default_mono, 1.0);
     }
-    sensor->fpga->display->control &= ~DISPLAY_CTL_READOUT_INH_MASK;
+    sensor->fpga->display->control &= ~DISPLAY_CTL_READOUT_INHIBIT;
 
     /* TODO: Can we safely ignore the trigger settings during init? */
 

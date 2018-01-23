@@ -35,12 +35,36 @@
 #include "utils.h"
 #include "ioport.h"
 
-#define LUX1310_SENSOR_CLOCK_RATE   90000000
-#define LUX1310_TIMING_CLOCK_RATE   100000000
+#define LUX1310_SENSOR_CLOCK_RATE   90000000ULL
+#define LUX1310_TIMING_CLOCK_RATE   100000000ULL
 #define LUX1310_MIN_EXPOSURE        1000
 #define LUX1310_MIN_WAVETABLE_SIZE  20
 #define LUX1310_MAGIC_ABN_DELAY     26
 #define LUX1310_HRES_INCREMENT      16
+
+#define LUX1310_DAC_FULL_SCALE      4095
+#define LUX1310_DAC_VREF            3300 /* 3300mV */
+#define LUX1310_DAC_AUTOUPDATE      9
+
+/* Which DAC output controls what sensor voltages */
+#define LUX1310_DAC_VDR3        0
+#define LUX1310_DAC_VABL        1
+#define LUX1310_DAC_VDR1        2
+#define LUX1310_DAC_VDR2        3
+#define LUX1310_DAC_VRSTB       4
+#define LUX1310_DAC_VRSTH       5
+#define LUX1310_DAC_VRSTL       6
+#define LUX1310_DAC_VRST        7
+
+/* Gain networks on some DAC outputs. */
+#define LUX1310_VABL_MUL        (100 + 232)
+#define LUX1310_VABL_DIV        (100)
+#define LUX1310_VRSTH_MUL       (499)
+#define LUX1310_VRSTH_DIV       (499 + 100)
+#define LUX1310_VRSTL_MUL       (100 + 232)
+#define LUX1310_VRSTL_DIV       (100)
+#define LUX1310_VRST_MUL        (499)
+#define LUX1310_VRST_DIV        (499 + 100)
 
 struct lux1310_private_data {
     struct image_sensor sensor;
@@ -174,43 +198,20 @@ lux1310_sci_writebuf(struct lux1310_private_data *data, uint8_t addr, const void
     while((data->reg->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) != 0) { /*nop */ }
 } /* lux1310_sci_writebuf */
 
-/* DAC Constants for programming the image sensor analog voltage rails. */
-#define LUX1310_DAC_VDR3_VOLTAGE    0
-#define LUX1310_DAC_VABL_VOLTAGE    1
-#define LUX1310_DAC_VDR1_VOLTAGE    2
-#define LUX1310_DAC_VDR2_VOLTAGE    3
-#define LUX1310_DAC_VRSTB_VOLTAGE   4
-#define LUX1310_DAC_VRSTH_VOLTAGE   5
-#define LUX1310_DAC_VRSTL_VOLTAGE   6
-#define LUX1310_DAC_VRST_VOLTAGE    7
-
-#define LUX1310_DAC_MODE_AUTOUPDATE 9
-
-#define LUX1310_DAC_FS		        4095.0
-#define LUX1310_DAC_VREF	        3.3
-#define LUX1310_VDR3_SCALE          (LUX1310_DAC_FS / LUX1310_DAC_VREF)
-#define LUX1310_VABL_SCALE          (LUX1310_DAC_FS / LUX1310_DAC_VREF * (10.0 + 23.2) / 10.0)
-#define LUX1310_VDR1_SCALE          (LUX1310_DAC_FS / LUX1310_DAC_VREF)
-#define LUX1310_VDR2_SCALE          (LUX1310_DAC_FS / LUX1310_DAC_VREF)
-#define LUX1310_VRSTB_SCALE         (LUX1310_DAC_FS / LUX1310_DAC_VREF)
-#define LUX1310_VRSTH_SCALE         (LUX1310_DAC_FS / LUX1310_DAC_VREF * 49.9 / (49.9 + 10.0))
-#define LUX1310_VRSTL_SCALE         (LUX1310_DAC_FS / LUX1310_DAC_VREF * (10.0 + 23.2) / 10.0)
-#define LUX1310_VRST_SCALE          (LUX1310_DAC_FS / LUX1310_DAC_VREF * 49.9 / (49.9 + 10.0))
-
 /* Write a voltage level to the DAC */
 static int
-lux1310_set_voltage(struct lux1310_private_data *data, int channel, float value)
+lux1310_set_voltage(struct lux1310_private_data *data, unsigned int channel, unsigned int mv, unsigned int mul, unsigned int div)
 {
-    /* TODO: This needs some fixup (ie: actually set the values) */
-#if 0
-    uint16_t reg = htobe16((((channel & 0x7) << 12) | 0x0fff));
+    unsigned int vdac = ((unsigned long long)LUX1310_DAC_FULL_SCALE * mv * mul) / (LUX1310_DAC_VREF * div);
+    uint16_t reg = htole16((((channel & 0x7) << 12) | vdac));
     int err; 
+
+    fprintf(stderr, "DEBUG: set voltage%d to %d mV (0x%04x)\n", channel, mv, reg);
 
     gpio_write(data->daccs, 0);
     err = write(data->spifd, &reg, sizeof(reg));
     gpio_write(data->daccs, 1);
     return err;
-#endif
 } /* lux1310_set_voltage */
 
 static unsigned int
@@ -255,6 +256,7 @@ lux1310_write_wavetab(struct lux1310_private_data *data, const struct lux1310_wa
     lux1310_write(data, LUX1310_SCI_RDOUT_DLY, wave->read_delay);
     lux1310_write(data, LUX1310_SCI_WAVETAB_SIZE, wave->read_delay);
     lux1310_sci_writebuf(data, 0x7F, wave->table, wave->len);
+    lux1310_write(data, LUX1310_SCI_TIMING_EN, 1);
 } /* lux1310_write_wavetab */
 
 static int
@@ -316,7 +318,7 @@ lux1310_set_resolution(struct image_sensor *s, unsigned long hres, unsigned long
     lux1310_write(data, LUX1310_SCI_X_START, 0x20 + h_start * LUX1310_HRES_INCREMENT);
 	lux1310_write(data, LUX1310_SCI_X_END, 0x20 + (h_start + h_width) * LUX1310_HRES_INCREMENT - 1);
 	lux1310_write(data, LUX1310_SCI_Y_START, voff);
-	lux1310_write(data, LUX1310_SCI_Y_END, voff + vres);
+	lux1310_write(data, LUX1310_SCI_Y_END, voff + vres - 1);
     return 0;
 } /* lux1310_set_resolution */
 
@@ -344,8 +346,9 @@ static int
 lux1310_set_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
 {
     struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
-    unsigned long t_frame = ((nsec * 1000000000) + LUX1310_SENSOR_CLOCK_RATE - 1) / LUX1310_SENSOR_CLOCK_RATE;
+    unsigned long t_frame = ((nsec * LUX1310_TIMING_CLOCK_RATE) + 999999999) / 1000000000;
     data->reg->frame_period = t_frame;
+    fprintf(stderr, "nsec = %lld, t_frame = %lu\n", nsec, t_frame);
 
     /* Program the longest wavetable for this frame period. */
     /* TODO: Replace this with a loop over a database of known tables. */
@@ -369,7 +372,7 @@ lux1310_set_period(struct image_sensor *sensor, unsigned long hres, unsigned lon
     /* Setup the timing generator to handle the the line period and start delay. */
     /* TODO: Would it be cleaner to move these registers into the block of sensor stuff? */
     sensor->fpga->reg[SENSOR_MAGIC_START_DELAY] = data->wavetab->start_delay;
-    sensor->fpga->reg[SENSOR_LINE_PERIOD] = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->len + 3)) - 1;
+    sensor->fpga->reg[SENSOR_LINE_PERIOD] = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3)) - 1;
     return 0;
 } /* lux1310_set_period */
 
@@ -378,7 +381,7 @@ lux1310_set_exposure(struct image_sensor *sensor, unsigned long hres, unsigned l
 {
     struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
     /* Compute timing first in units of sensor clock periods. */
-    unsigned long t_line = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->len + 3));
+    unsigned long t_line = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3));
     unsigned long t_exposure = (nsec * LUX1310_SENSOR_CLOCK_RATE + 500000000) / 1000000000;
     unsigned long t_start = LUX1310_MAGIC_ABN_DELAY;
 
@@ -399,9 +402,9 @@ lux1310_set_gain(struct image_sensor *sensor, int gain)
     for (i = 0; i < ARRAY_SIZE(lux1310_gain_data); i++) {
         if (lux1310_gain_data[i].analog_gain != gain) continue;
         /* Program the voltage references. */
-        lux1310_set_voltage(data, LUX1310_DAC_VRSTB_VOLTAGE, lux1310_gain_data[i].vrstb);
-        lux1310_set_voltage(data, LUX1310_DAC_VRST_VOLTAGE, lux1310_gain_data[i].vrst);
-        lux1310_set_voltage(data, LUX1310_DAC_VRSTH_VOLTAGE, lux1310_gain_data[i].vrsth);
+        lux1310_set_voltage(data, LUX1310_DAC_VRSTB, lux1310_gain_data[i].vrstb, 1, 1);
+        lux1310_set_voltage(data, LUX1310_DAC_VRST, lux1310_gain_data[i].vrst, LUX1310_VRST_MUL, LUX1310_VRST_DIV);
+        lux1310_set_voltage(data, LUX1310_DAC_VRSTH, lux1310_gain_data[i].vrsth, LUX1310_VRSTH_MUL, LUX1310_VRST_DIV);
         /* Program the gain calibration. */
         lux1310_write(data, LUX1310_SCI_GAIN_SEL_SAMP, lux1310_gain_data[i].sampling);
         lux1310_write(data, LUX1310_SCI_GAIN_SEL_FB, lux1310_gain_data[i].feedback);
@@ -430,7 +433,7 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     uint32_t hz = 1000000;
     uint8_t mode = 1;
     uint8_t wordsz = 16;
-    uint16_t dacmode = htobe16(LUX1310_DAC_MODE_AUTOUPDATE << 12);
+    uint16_t dacmode = htole16(LUX1310_DAC_AUTOUPDATE << 12);
     uint16_t rev;
     int color;
     int err;
@@ -475,7 +478,8 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     data->sensor.ops = &lux1310_ops;
     data->sensor.name = "LUX1310";
     data->sensor.mfr = "Luxima";
-    data->sensor.h_max_res = 1296;
+    //data->sensor.h_max_res = 1296;
+    data->sensor.h_max_res = 1280;
     data->sensor.v_max_res = 1024;
     data->sensor.h_min_res = 336;
     data->sensor.v_min_res = 96;
@@ -512,14 +516,14 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
         goto err;
     }
     /* Write the default voltage settings and reset the LUX1310 */
-    lux1310_set_voltage(data, LUX1310_DAC_VABL_VOLTAGE, 0.3);
-    lux1310_set_voltage(data, LUX1310_DAC_VRSTB_VOLTAGE, 2.7);
-    lux1310_set_voltage(data, LUX1310_DAC_VRST_VOLTAGE, 3.3);
-    lux1310_set_voltage(data, LUX1310_DAC_VRSTL_VOLTAGE, 0.7);
-    lux1310_set_voltage(data, LUX1310_DAC_VRSTH_VOLTAGE, 3.6);
-    lux1310_set_voltage(data, LUX1310_DAC_VDR1_VOLTAGE, 2.5);
-    lux1310_set_voltage(data, LUX1310_DAC_VDR2_VOLTAGE, 2.0);
-    lux1310_set_voltage(data, LUX1310_DAC_VDR3_VOLTAGE, 1.5);
+    lux1310_set_voltage(data, LUX1310_DAC_VABL, 300, LUX1310_VABL_MUL, LUX1310_VABL_DIV);
+    lux1310_set_voltage(data, LUX1310_DAC_VRSTB, 2700, 1, 1);
+    lux1310_set_voltage(data, LUX1310_DAC_VRST, 3300, LUX1310_VRST_MUL, LUX1310_VRST_DIV);
+    lux1310_set_voltage(data, LUX1310_DAC_VRSTL, 700, LUX1310_VRSTL_MUL, LUX1310_VRSTL_DIV);
+    lux1310_set_voltage(data, LUX1310_DAC_VRSTH, 3600, LUX1310_VRSTH_MUL, LUX1310_VRSTH_DIV);;
+    lux1310_set_voltage(data, LUX1310_DAC_VDR1, 2500, 1, 1);
+    lux1310_set_voltage(data, LUX1310_DAC_VDR2, 2000, 1, 1);
+    lux1310_set_voltage(data, LUX1310_DAC_VDR3, 1500, 1, 1);
 
     /* Wait for the voltage levels to settle and strobe the reset low. */
     usleep(10000);

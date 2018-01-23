@@ -33,9 +33,9 @@ struct image_sensor_ops {
     int (*set_resolution)(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long hoff, unsigned long voff);
     int (*set_gain)(struct image_sensor *sensor, int gain);
     /* Calibration API - needs thinking??? not sure how to handle column AGC */
-    char (*cal_filename)(struct image_sensor *sensor, char *buf, size_t maxlen);
-    int (*cal_filewrite)(struct image_sensor *sensor, FILE *fp);
-    int (*cal_apply)(struct image_sensor *sensor, const void *data, size_t len);
+    char *(*cal_filename)(struct image_sensor *sensor, char *buf, size_t maxlen);
+    int (*cal_write)(struct image_sensor *sensor, FILE *fp);
+    int (*cal_read)(struct image_sensor *sensor, FILE *fp);
 };
 
 #define FOURCC_CODE(_a_, _b_, _c_, _d_) \
