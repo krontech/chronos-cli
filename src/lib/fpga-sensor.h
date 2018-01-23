@@ -66,6 +66,7 @@ struct image_sensor {
 struct image_sensor *lux1310_init(struct fpga *fpga, const struct ioport *iop);
 
 /* API Wrapper Calls */
+int image_sensor_bpp(struct image_sensor *sensor);
 int image_sensor_is_color(struct image_sensor *sensor);
 int image_sensor_set_resolution(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long hoff, unsigned long voff);
 int image_sensor_set_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);

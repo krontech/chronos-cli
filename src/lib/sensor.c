@@ -21,6 +21,56 @@
 #include "fpga-sensor.h"
 
 int
+image_sensor_bpp(struct image_sensor *sensor)
+{
+    switch (sensor->format) {
+        case FOURCC_CODE('Y', '0', '4', ' '):
+            return 4;
+        case FOURCC_CODE('Y', '0', '6', ' '):
+            return 6;
+        
+        /* 10-bit bayer formats. */
+        case FOURCC_CODE('B', 'G', '1', '0'):
+        case FOURCC_CODE('G', 'B', '1', '0'):
+        case FOURCC_CODE('B', 'A', '1', '0'):
+        case FOURCC_CODE('R', 'G', '1', '0'):
+        /* 10-bit greyscale formats. */
+        case FOURCC_CODE('Y', '1', '0', ' '):
+        case FOURCC_CODE('Y', '1', '0', 'B'):
+            return 10;
+
+        /* 12-bit bayer formats. */
+        case FOURCC_CODE('B', 'G', '1', '2'):
+        case FOURCC_CODE('G', 'B', '1', '2'):
+        case FOURCC_CODE('B', 'A', '1', '2'):
+        case FOURCC_CODE('R', 'G', '1', '2'):
+        /* 12-bit greyscale formats. */
+        case FOURCC_CODE('Y', '1', '2', ' '):
+            return 12;
+
+        /* 16-bit bayer formats. */
+        case FOURCC_CODE('B', 'Y', 'R', '2'):
+        case FOURCC_CODE('G', 'B', '1', '6'):
+        case FOURCC_CODE('G', 'R', '1', '6'):
+        case FOURCC_CODE('R', 'G', '1', '6'):
+        /* 16-bit greyscale formats. */
+        case FOURCC_CODE('Y', '1', '6', ' '):
+            return 16;
+
+        /* 8-bit bayer formats */
+        case FOURCC_CODE('B', 'A', '8', '1'):
+        case FOURCC_CODE('B', 'Y', 'R', '1'):
+        case FOURCC_CODE('G', 'B', 'R', 'G'):
+        case FOURCC_CODE('G', 'R', 'B', 'G'):
+        case FOURCC_CODE('R', 'G', 'G', 'B'):
+        /* 8-bit greyscale formats. */
+        case FOURCC_CODE('G', 'R', 'E', 'Y'):
+        default:
+            return 8;
+    }
+}
+
+int
 image_sensor_is_color(struct image_sensor *sensor)
 {
     switch (sensor->format) {
@@ -28,6 +78,7 @@ image_sensor_is_color(struct image_sensor *sensor)
         case FOURCC_CODE('Y', '0', '4', ' '):
         case FOURCC_CODE('Y', '0', '6', ' '):
         case FOURCC_CODE('Y', '1', '0', ' '):
+        case FOURCC_CODE('Y', '1', '0', 'B'):
         case FOURCC_CODE('Y', '1', '2', ' '):
         case FOURCC_CODE('Y', '1', '6', ' '):
             return 0;

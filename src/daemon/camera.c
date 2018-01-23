@@ -156,7 +156,7 @@ cam_init(struct image_sensor *sensor)
     image_sensor_set_resolution(sensor, sensor->h_max_res, sensor->v_max_res, 0, 0);
     image_sensor_set_period(sensor, sensor->h_max_res, sensor->v_max_res, period);
     image_sensor_set_exposure(sensor, sensor->h_max_res, sensor->v_max_res, exposure);
-    frame_words = ((sensor->h_max_res * sensor->v_max_res * 12) / 8 + (32 - 1)) / 32;
+    frame_words = ((sensor->h_max_res * sensor->v_max_res * image_sensor_bpp(sensor)) / 8 + (32 - 1)) / 32;
     sensor->fpga->seq->frame_size = (frame_words + 0x3f) & ~0x3f;
 
     cam_set_live_timing(sensor, sensor->h_max_res, sensor->v_max_res, sensor->h_max_res, sensor->v_max_res, 60);
