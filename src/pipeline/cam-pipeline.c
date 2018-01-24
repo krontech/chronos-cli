@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <setjmp.h>
 #include <sys/types.h>
 #include <gst/gst.h>
 #include <jpeglib.h>
@@ -46,7 +47,6 @@ struct display_config {
 
 /* Signal handlering */
 static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
-static sig_atomic_t grab_frame = 0;
 static sig_atomic_t catch_sighup = 0;
 static sig_atomic_t catch_sigint = 0;
 static void handle_sigint(int sig) { catch_sigint = 1; }
@@ -54,10 +54,22 @@ static void handle_sigint(int sig) { catch_sigint = 1; }
 static void
 handle_sighup(int sig)
 {
-    grab_frame = (sig == SIGUSR1);
-    catch_sighup = (sig == SIGHUP);
+    scaler_mode = (sig == SIGHUP) ? CAM_SCALE_ASPECT : CAM_SCALE_CROP;
 }
 
+struct jpeg_err_jmpbuf {
+    struct jpeg_error_mgr pub;
+    jmp_buf jmp_abort;
+};
+
+static void
+jpeg_error_abort(j_common_ptr cinfo)
+{
+    struct jpeg_err_jmpbuf *err = (struct jpeg_err_jmpbuf *)cinfo->err;
+    longjmp(err->jmp_abort, 1);
+}
+
+/* Convert NV12 semiplanar chroma data into YUV planar data. */
 static inline void
 jpeg_copy_chroma_nv12(JSAMPLE *u, JSAMPLE *v, JSAMPLE *chroma, unsigned int num)
 {
@@ -72,43 +84,50 @@ static gboolean
 buffer_framegrab(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
 	struct fpga *fpga = (struct fpga *)cbdata;
-    while (grab_frame != 0) {
-        FILE *fp;
-        struct jpeg_compress_struct cinfo;
-        struct jpeg_error_mgr jerr;
-        /* Planar data to the JPEG encoder. */
-        JSAMPROW yrow[DCTSIZE];
-        JSAMPROW urow[DCTSIZE];
-        JSAMPROW vrow[DCTSIZE];
-        JSAMPARRAY data[3] = { yrow, urow, vrow };
-        JSAMPLE *planar;
-        /* Input semiplanar data from gstreamer. */
-        JSAMPLE *luma = buffer->data;
-        JSAMPLE *chroma = luma + (fpga->display->h_res * fpga->display->v_res);
-        unsigned int i, row;
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_err_jmpbuf jerr;
+    /* Planar data to the JPEG encoder. */
+    JSAMPROW yrow[DCTSIZE];
+    JSAMPROW urow[DCTSIZE];
+    JSAMPROW vrow[DCTSIZE];
+    JSAMPARRAY data[3] = { yrow, urow, vrow };
+    JSAMPLE *planar;
+    /* Input semiplanar data from gstreamer. */
+    JSAMPLE *luma = buffer->data;
+    JSAMPLE *chroma = luma + (fpga->display->h_res * fpga->display->v_res);
+    unsigned int i, row;
+    FILE *fp;
 
-        fp = fopen(FRAME_GRAB_PATH, "wb+");
-        if (!fp) {
-            fprintf(stderr, "Failed to open grame grab output file: %s\n", strerror(errno));
-            break;
-        }
+    /* Check if the FIFO has been opened. */
+    int fd = open(FRAME_GRAB_PATH, O_WRONLY | O_NONBLOCK);
+    if (fd < 0) {
+        return TRUE;
+    }
+    fp = fdopen(fd, "wb");
+    if (!fp) {
+        fprintf(stderr, "Failed to open frame grabber output pipe: %s\n", strerror(errno));
+        close(fd);
+        return TRUE;
+    }
+    planar = malloc(sizeof(JSAMPLE) * fpga->display->h_res * DCTSIZE);
+    if (!planar) {
+        fprintf(stderr, "Failed to allocate working memory for JPEG encoder: %s\n", strerror(errno));
+        fclose(fp);
+        close(fd);
+        return TRUE;
+    }
+    
+    /* Point even and odd row pairs to the same memory to upscale the vertical chroma. */
+    for (i = 0; i < DCTSIZE; i++) {
+        urow[i] = planar + (fpga->display->h_res) * (i & ~1);
+        vrow[i] = planar + (fpga->display->h_res) * (i | 1);
+    }
 
-        planar = malloc(sizeof(JSAMPLE) * fpga->display->h_res * DCTSIZE);
-        if (!planar) {
-            fprintf(stderr, "Failed to allocate working memory for JPEG encoder: %s\n", strerror(errno));
-            fclose(fp);
-            break;
-        }
-        /* Point even and odd row pairs to the same memory to upscale the vertical chroma. */
-        for (i = 0; i < DCTSIZE; i++) {
-            urow[i] = planar + (fpga->display->h_res) * (i & ~1);
-            vrow[i] = planar + (fpga->display->h_res) * (i | 1);
-        }
-
-        cinfo.err = jpeg_std_error(&jerr);
-        jpeg_create_compress(&cinfo);
-        jpeg_stdio_dest(&cinfo, fp);
-
+    cinfo.err = jpeg_std_error(&jerr.pub);
+    jerr.pub.error_exit = jpeg_error_abort;
+    jpeg_create_compress(&cinfo);
+    jpeg_stdio_dest(&cinfo, fp);
+    if (setjmp(jerr.jmp_abort) == 0) {
         cinfo.image_width = fpga->display->h_res;
         cinfo.image_height = fpga->display->v_res;
         cinfo.input_components = 3;
@@ -138,13 +157,12 @@ buffer_framegrab(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
             }
             jpeg_write_raw_data(&cinfo, data, DCTSIZE);
         }
-        free(planar);
         jpeg_finish_compress(&cinfo);
-        jpeg_destroy_compress(&cinfo);
-        fclose(fp);
-        break;
     }
-    grab_frame = 0;
+    jpeg_destroy_compress(&cinfo);
+    free(planar);
+    fclose(fp);
+    close(fd);
     return TRUE;
 }
 
@@ -345,6 +363,11 @@ main(int argc, char * argv[])
         return -1;
     }
     
+    /* Attempt to create the frame-grabber FIFO */
+    if (mkfifo(FRAME_GRAB_PATH, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) != 0) {
+        fprintf(stderr, "Unable to create FIFO: %s\n", strerror(errno));
+    }
+
     /*
      * Run the pipeline in a loop, reconfiguring on signal reception.
      * OMX Segfaults on restart, so the only way to make this work
@@ -355,6 +378,7 @@ main(int argc, char * argv[])
     signal(SIGHUP, handle_sighup);
     signal(SIGUSR1, handle_sighup);
     signal(SIGUSR2, handle_sighup);
+    signal(SIGPIPE, SIG_IGN);
     do {
         /* Launch the pipeline to run live video. */
         GstElement *pipeline = cam_pipeline(fpga, &config, scaler_mode);
@@ -368,7 +392,7 @@ main(int argc, char * argv[])
         gst_element_set_state (pipeline, GST_STATE_PLAYING);
 
         /* Run the pipeline until we get a signal. */
-        do { pause(); } while (!catch_sighup && !catch_sigint);
+        pause();
 
         /* Stop the pipeline gracefully */
         g_print("Setting pipeline to PAUSED...\n");
@@ -384,6 +408,7 @@ main(int argc, char * argv[])
         g_print("\n");
     } while(catch_sigint == 0);
 
+    unlink(FRAME_GRAB_PATH);
     fpga_close(fpga);
     return 0;
 } /* main */
