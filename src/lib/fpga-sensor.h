@@ -38,6 +38,12 @@ struct image_sensor_ops {
     int (*cal_read)(struct image_sensor *sensor, FILE *fp);
 };
 
+/*
+ * See https://linuxtv.org/downloads/v4l-dvb-apis/uapi/v4l/videodev.html
+ * for the pixel format definitions. In particular, look at the V4L2_PIX_FMT
+ * macros for the definitive list of pixel formats and their corresponding
+ * FOURCC codes.
+ */
 #define FOURCC_CODE(_a_, _b_, _c_, _d_) \
     (((uint32_t)(_a_) << 0) | ((uint32_t)(_b_) << 8) | ((uint32_t)(_c_) << 16) | ((uint32_t)(_d_) << 24))
 

@@ -7,6 +7,7 @@
 /src/cam-cli
 /src/cam-loader
 /src/cam-pipeline
+/src/cam-regdump
 /src/libcamera.a
 
 # http://www.gnu.org/software/automake

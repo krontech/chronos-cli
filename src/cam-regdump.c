@@ -32,29 +32,68 @@ struct regtab {
     uint32_t        mask;
     unsigned int    offset;
     unsigned int    size;
+    unsigned long   (*reg_read)(const struct regtab *reg, struct fpga *fpga);
+    int             (*reg_write)(const struct regtab *reg, struct fpga *fpga, unsigned long val);
 };
+
+static unsigned long
+fpga_reg_read(const struct regtab *r, struct fpga *fpga)
+{
+    return *((volatile uint32_t *)(fpga->reg) + (r->offset / sizeof(uint32_t)));
+} /* fpga_reg_read */
+
+static unsigned long
+sci_reg_read(const struct regtab *r, struct fpga *fpga)
+{
+    uint16_t first;
+    int i;
+
+    /* Set RW, address and length. */
+    fpga->sensor->sci_control |= SENSOR_SCI_CONTROL_RW_MASK;
+    fpga->sensor->sci_address = r->offset;
+    fpga->sensor->sci_datalen = 2;
+
+    /* Start the transfer and then wait for completion. */
+    fpga->sensor->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
+    first = fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK;
+    while (fpga->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) {
+        i++;
+    }
+
+    if (!first && (i != 0)) {
+        fprintf(stderr, "lux1310_sci_read: Read first busy was missed, address: 0x%02x\n", r->offset);
+    }
+    else if (i == 0) {
+        fprintf(stderr, "lux1310_sci_read: Read busy not detected, something probably wrong, address: 0x%02x\n", r->offset);
+    }
+
+    usleep(1000);
+    return fpga->sensor->sci_fifo_data;
+}
 
 #define REG_STRUCT(_type_, _base_, _member_) { \
     .name = #_member_, .mask = 0, \
     .offset = _base_ + OFFSET_OF(_type_, _member_), \
     .size = sizeof(((_type_ *)0)->_member_), \
+    .reg_read = fpga_reg_read, \
 }
 #define REG_STRUCT_BIT(_type_, _base_, _member_, _bitname_, _mask_) { \
     .name = #_member_ "." _bitname_, .mask = _mask_, \
     .offset = _base_ + OFFSET_OF(_type_, _member_), \
     .size = sizeof(((_type_ *)0)->_member_), \
+    .reg_read = fpga_reg_read, \
 }
 
 static const struct regtab misc_registers[] = {
-    {.name = "magic_delay", .offset = SENSOR_MAGIC_START_DELAY*2, .size = 2},
-    {.name = "line_period", .offset = SENSOR_LINE_PERIOD*2, .size = 2},
-    {.name = "trig_enable", .offset = TRIG_ENABLE*2, .size = 2},
-    {.name = "trig_invert", .offset = TRIG_INVERT*2, .size = 2},
-    {.name = "trig_debounce", .offset = TRIG_DEBOUNCE*2, .size = 2},
-    {.name = "mmu.csinv",   .offset = MMU_CONFIG*2, .size = 2, .mask = MMU_INVERT_CS},
-    {.name = "mmu.stuffed", .offset = MMU_CONFIG*2, .size = 2, .mask = MMU_SWITCH_STUFFED},
-    {.name = "version",     .offset = FPGA_VERSION*2, .size = 2},
-    {.name = "subversion",  .offset = FPGA_SUBVERSION*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "magic_delay", .offset = SENSOR_MAGIC_START_DELAY*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "line_period", .offset = SENSOR_LINE_PERIOD*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "trig_enable", .offset = TRIG_ENABLE*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "trig_invert", .offset = TRIG_INVERT*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "trig_debounce", .offset = TRIG_DEBOUNCE*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "mmu.csinv",   .offset = MMU_CONFIG*2, .size = 2, .mask = MMU_INVERT_CS},
+    {.reg_read = fpga_reg_read, .name = "mmu.stuffed", .offset = MMU_CONFIG*2, .size = 2, .mask = MMU_SWITCH_STUFFED},
+    {.reg_read = fpga_reg_read, .name = "version",     .offset = FPGA_VERSION*2, .size = 2},
+    {.reg_read = fpga_reg_read, .name = "subversion",  .offset = FPGA_SUBVERSION*2, .size = 2},
     {NULL, 0, 0, 0}
 };
 
@@ -145,7 +184,9 @@ static const struct regtab display_registers[] = {
  */
 #define REG_LUX1310(_reg_, _name_) { \
     .name = _name_, .offset = (_reg_) >> LUX1310_SCI_REG_ADDR, \
-    .mask = (_reg_) & LUX1310_SCI_REG_MASK, .size = 2 }
+    .mask = (_reg_) & LUX1310_SCI_REG_MASK, .size = 2, \
+    .reg_read = sci_reg_read \
+}
 
 static const struct regtab lux1310_registers[] = {
     REG_LUX1310(LUX1310_SCI_REV_CHIP,      "rev_chip"),
@@ -237,7 +278,7 @@ static const struct regtab lux1310_registers[] = {
 };
 
 static void
-print_fpga_group(FILE *fp, const struct regtab *regs, volatile void *mem, const char *groupname)
+print_reg_group(FILE *fp, const struct regtab *regs, struct fpga *fpga, const char *groupname)
 {
     const char *header = "\t%-6s  %-10s  %24s  %s\n";
     const char *format = "\t0x%04x  0x%08x  %24s  0x%x\n";
@@ -247,57 +288,11 @@ print_fpga_group(FILE *fp, const struct regtab *regs, volatile void *mem, const 
     fprintf(fp, header, "ADDR", "MASK", "NAME", "VALUE");
 
     for (i = 0; regs[i].name; i++) {
-        uint32_t value = *((volatile uint32_t *)mem + (regs[i].offset / sizeof(uint32_t)));
+        unsigned long value = regs[i].reg_read(&regs[i], fpga);
         uint32_t mask = (regs[i].mask) ? (regs[i].mask) : UINT32_MAX;
         fprintf(fp, format, regs[i].offset, mask, regs[i].name, getbits(value, mask));
     } /* for */
-} /* print_fpga_group */
-
-static uint16_t
-sci_read(volatile struct fpga_sensor *sensor, uint8_t addr)
-{
-    uint16_t first;
-    int i;
-
-    /* Set RW, address and length. */
-    sensor->sci_control |= SENSOR_SCI_CONTROL_RW_MASK;
-    sensor->sci_address = addr;
-    sensor->sci_datalen = 2;
-
-    /* Start the transfer and then wait for completion. */
-    sensor->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
-    first = sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK;
-    while (sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK) {
-        i++;
-    }
-
-    if (!first && (i != 0)) {
-        fprintf(stderr, "lux1310_sci_read: Read first busy was missed, address: 0x%02x\n", addr);
-    }
-    else if (i == 0) {
-        fprintf(stderr, "lux1310_sci_read: Read busy not detected, something probably wrong, address: 0x%02x\n", addr);
-    }
-
-    usleep(1000);
-    return sensor->sci_fifo_data;
-} /* sci_read */
-
-static void
-print_sci_group(FILE *fp, const struct regtab *regs, volatile struct fpga_sensor *sensor, const char *groupname)
-{
-    const char *header = "\t%-6s  %-6s  %24s  %s\n";
-    const char *format = "\t0x%04x  0x%04x  %24s  0x%x\n";
-    int i;
-
-    if (groupname) fprintf(fp, "\n%s Registers:\n", groupname);
-    fprintf(fp, header, "ADDR", "MASK", "NAME", "VALUE");
-
-    for (i = 0; regs[i].name; i++) {
-        uint32_t value = sci_read(sensor, regs[i].offset);
-        uint32_t mask = (regs[i].mask) ? (regs[i].mask) : UINT16_MAX;
-        fprintf(fp, format, regs[i].offset, mask, regs[i].name, getbits(value, mask));
-    } /* for */
-} /* print_sci_group */
+} /* print_reg_group */
 
 int
 main(int argc, char *const argv[])
@@ -309,11 +304,11 @@ main(int argc, char *const argv[])
     }
 
     /* Pretty Print the registers. */
-    print_fpga_group(stdout, misc_registers, fpga->reg, NULL);
-    print_fpga_group(stdout, sensor_registers, fpga->reg, "Sensor");
-    print_fpga_group(stdout, seq_registers, fpga->reg, "Sequencer");
-    print_fpga_group(stdout, display_registers, fpga->reg, "Display");
-    print_sci_group(stdout, lux1310_registers, fpga->sensor, "LUX1310");
+    print_reg_group(stdout, misc_registers, fpga, NULL);
+    print_reg_group(stdout, sensor_registers, fpga, "Sensor");
+    print_reg_group(stdout, seq_registers, fpga, "Sequencer");
+    print_reg_group(stdout, display_registers, fpga, "Display");
+    print_reg_group(stdout, lux1310_registers, fpga, "LUX1310");
 
     fpga_close(fpga);
     return 0;

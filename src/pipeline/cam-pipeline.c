@@ -20,8 +20,10 @@
 #include <getopt.h>
 #include <signal.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <gst/gst.h>
+#include <jpeglib.h>
 
 #include "fpga.h"
 
@@ -40,11 +42,111 @@ struct display_config {
     unsigned long yoff;
 };
 
+#define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
+
 /* Signal handlering */
 static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
+static sig_atomic_t grab_frame = 0;
+static sig_atomic_t catch_sighup = 0;
 static sig_atomic_t catch_sigint = 0;
 static void handle_sigint(int sig) { catch_sigint = 1; }
-static void handle_sighup(int sig) { scaler_mode = (sig == SIGUSR1) ? CAM_SCALE_CROP : CAM_SCALE_ASPECT; }
+
+static void
+handle_sighup(int sig)
+{
+    grab_frame = (sig == SIGUSR1);
+    catch_sighup = (sig == SIGHUP);
+}
+
+static inline void
+jpeg_copy_chroma_nv12(JSAMPLE *u, JSAMPLE *v, JSAMPLE *chroma, unsigned int num)
+{
+    unsigned int i;
+    for (i = 0; i < num; i++) {
+        u[i] = chroma[i & ~1];
+        v[i] = chroma[i | 1];
+    }
+}
+
+static gboolean
+buffer_framegrab(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
+{
+	struct fpga *fpga = (struct fpga *)cbdata;
+    while (grab_frame != 0) {
+        FILE *fp;
+        struct jpeg_compress_struct cinfo;
+        struct jpeg_error_mgr jerr;
+        /* Planar data to the JPEG encoder. */
+        JSAMPROW yrow[DCTSIZE];
+        JSAMPROW urow[DCTSIZE];
+        JSAMPROW vrow[DCTSIZE];
+        JSAMPARRAY data[3] = { yrow, urow, vrow };
+        JSAMPLE *planar;
+        /* Input semiplanar data from gstreamer. */
+        JSAMPLE *luma = buffer->data;
+        JSAMPLE *chroma = luma + (fpga->display->h_res * fpga->display->v_res);
+        unsigned int i, row;
+
+        fp = fopen(FRAME_GRAB_PATH, "wb+");
+        if (!fp) {
+            fprintf(stderr, "Failed to open grame grab output file: %s\n", strerror(errno));
+            break;
+        }
+
+        planar = malloc(sizeof(JSAMPLE) * fpga->display->h_res * DCTSIZE);
+        if (!planar) {
+            fprintf(stderr, "Failed to allocate working memory for JPEG encoder: %s\n", strerror(errno));
+            fclose(fp);
+            break;
+        }
+        /* Point even and odd row pairs to the same memory to upscale the vertical chroma. */
+        for (i = 0; i < DCTSIZE; i++) {
+            urow[i] = planar + (fpga->display->h_res) * (i & ~1);
+            vrow[i] = planar + (fpga->display->h_res) * (i | 1);
+        }
+
+        cinfo.err = jpeg_std_error(&jerr);
+        jpeg_create_compress(&cinfo);
+        jpeg_stdio_dest(&cinfo, fp);
+
+        cinfo.image_width = fpga->display->h_res;
+        cinfo.image_height = fpga->display->v_res;
+        cinfo.input_components = 3;
+        cinfo.in_color_space = JCS_YCbCr;
+
+        /* Prepare for raw encoding of NV12 data. */
+        jpeg_set_defaults(&cinfo);
+        cinfo.dct_method = JDCT_IFAST;
+        cinfo.raw_data_in = TRUE;
+        cinfo.comp_info[0].h_samp_factor = 1;
+        cinfo.comp_info[0].v_samp_factor = 1;
+        cinfo.comp_info[1].h_samp_factor = 1;
+        cinfo.comp_info[1].v_samp_factor = 1;
+        cinfo.comp_info[2].h_samp_factor = 1;
+        cinfo.comp_info[2].v_samp_factor = 1;
+
+        jpeg_set_quality(&cinfo, 70, TRUE);
+        jpeg_start_compress(&cinfo, TRUE);
+        for (row = 0; row < cinfo.image_height; row += DCTSIZE) {
+            for (i = 0; i < DCTSIZE; i++) {
+                if (!(i & 1)) {
+                    jpeg_copy_chroma_nv12(urow[i], vrow[i], chroma, cinfo.image_width);
+                    if ((row + i) < cinfo.image_height) chroma += cinfo.image_width;
+                }
+                yrow[i] = luma;
+                if ((row + i) < cinfo.image_height) luma += cinfo.image_width;
+            }
+            jpeg_write_raw_data(&cinfo, data, DCTSIZE);
+        }
+        free(planar);
+        jpeg_finish_compress(&cinfo);
+        jpeg_destroy_compress(&cinfo);
+        fclose(fp);
+        break;
+    }
+    grab_frame = 0;
+    return TRUE;
+}
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
 static GstElement *
@@ -54,6 +156,7 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
 	GstElement *pipeline;
     GstElement *source, *queue, *scaler, *ctrl, *sink;
     GstCaps *caps;
+	GstPad *pad;
     unsigned int scale_mul = 1, scale_div = 1;
     unsigned int hout, vout;
     unsigned int hoff, voff;
@@ -84,6 +187,11 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
 
 	gst_bin_add_many(GST_BIN(pipeline), source, queue, scaler, ctrl, sink, NULL);
     
+    /* Grab frames from the queue */
+	pad = gst_element_get_static_pad(queue, "src");
+	gst_pad_add_buffer_probe(pad, G_CALLBACK(buffer_framegrab), fpga);
+	gst_object_unref(pad);
+
     /* Link OMX Source input capabilities. */
 	caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC,
@@ -260,7 +368,7 @@ main(int argc, char * argv[])
         gst_element_set_state (pipeline, GST_STATE_PLAYING);
 
         /* Run the pipeline until we get a signal. */
-        pause();
+        do { pause(); } while (!catch_sighup && !catch_sigint);
 
         /* Stop the pipeline gracefully */
         g_print("Setting pipeline to PAUSED...\n");

@@ -1,7 +1,7 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a libcam-dbus.a
 bin_PROGRAMS = cam-daemon cam-loader cam-regdump cam-pipeline cam-json
-AM_CFLAGS = -I ${srcdir}/lib
+AM_CFLAGS = -I ${srcdir}/lib -I ${prefix}/usr/include
 
 ## Bundle the common FPGA and image sensor tools into a library.
 libcamera_a_SOURCES = lib/board-chronos14.c
@@ -67,7 +67,10 @@ cam_pipeline_CFLAGS += -I ${prefix}/usr/include/gstreamer-0.10
 cam_pipeline_CFLAGS += -I ${prefix}/usr/include/glib-2.0
 cam_pipeline_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
 cam_pipeline_LDFLAGS = -L ${prefix}/usr/lib -L ${prefix}/usr/lib/gstreamer-0.10
-cam_pipeline_LDADD +=  -ldl -lgmodule-2.0 -lgobject-2.0 -lgstbase-0.10 -lgstreamer-0.10 -lm -lpthread -l:libxml2.so.2 -l:libz.so.1 -lgthread-2.0 -lrt -lglib-2.0
+cam_pipeline_LDADD += -lgmodule-2.0 -lgobject-2.0 -lgthread-2.0 -lrt -lglib-2.0
+cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
+cam_pipeline_LDADD += -ldl -lm -lpthread -l:libxml2.so.2 -l:libz.so.1
+cam_pipeline_LDADD += -l:libjpeg.so.8
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
 
 ##
