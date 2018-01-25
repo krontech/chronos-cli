@@ -25,17 +25,23 @@
 
 struct image_sensor;
 
+struct image_geometry {
+    unsigned long hres;
+    unsigned long vres;
+    long hoffset;
+    long voffset;
+};
+
 struct image_sensor_ops {
-    unsigned long long (*round_exposure)(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-    unsigned long long (*round_period)(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-    int (*set_exposure)(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-    int (*set_period)(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-    int (*set_resolution)(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long hoff, unsigned long voff);
-    int (*set_gain)(struct image_sensor *sensor, int gain);
-    /* Calibration API - needs thinking??? not sure how to handle column AGC */
-    char *(*cal_filename)(struct image_sensor *sensor, char *buf, size_t maxlen);
-    int (*cal_write)(struct image_sensor *sensor, FILE *fp);
-    int (*cal_read)(struct image_sensor *sensor, FILE *fp);
+    unsigned long long (*round_exposure)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+    unsigned long long (*round_period)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+    int (*set_exposure)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+    int (*set_period)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+    int (*set_resolution)(struct image_sensor *sensor, const struct image_geometry *g);
+    /* ADC Gain Configuration and Calibration */
+    int (*set_gain)(struct image_sensor *sensor, int gain, FILE *cal);
+    int (*cal_gain)(struct image_sensor *sensor, const struct image_geometry *g, const void *frame, FILE *cal);
+    char *(*cal_suffix)(struct image_sensor *sensor, char *filename, size_t maxlen);
 };
 
 /*
@@ -66,6 +72,13 @@ struct image_sensor {
     unsigned long long  exp_min_nsec;
     unsigned long long  exp_max_nsec;
     unsigned long long  pixel_rate;
+    unsigned long   adc_count;
+
+    /* Black Pixel Regions. */
+    unsigned long   blk_top;
+    unsigned long   blk_bottom;
+    unsigned long   blk_left;
+    unsigned long   blk_right;
 };
 
 /* Init functions */
@@ -74,10 +87,13 @@ struct image_sensor *lux1310_init(struct fpga *fpga, const struct ioport *iop);
 /* API Wrapper Calls */
 int image_sensor_bpp(struct image_sensor *sensor);
 int image_sensor_is_color(struct image_sensor *sensor);
-int image_sensor_set_resolution(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long hoff, unsigned long voff);
-int image_sensor_set_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-int image_sensor_set_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-unsigned long long image_sensor_round_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
-unsigned long long image_sensor_round_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec);
+int image_sensor_set_resolution(struct image_sensor *sensor, const struct image_geometry *g);
+int image_sensor_set_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+int image_sensor_set_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+int image_sensor_set_gain(struct image_sensor *sensor, int gain, FILE *fp);
+int image_sensor_cal_gain(struct image_sensor *sensor, const struct image_geometry *g, const void *frame, FILE *fp);
+char *image_sensor_cal_suffix(struct image_sensor *sensor, char *buf, size_t maxlen);
+unsigned long long image_sensor_round_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+unsigned long long image_sensor_round_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
 
 #endif /* _FPGA_SENSOR_H */

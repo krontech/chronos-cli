@@ -40,7 +40,13 @@
 #define LUX1310_MIN_EXPOSURE        1000
 #define LUX1310_MIN_WAVETABLE_SIZE  20
 #define LUX1310_MAGIC_ABN_DELAY     26
-#define LUX1310_HRES_INCREMENT      16
+#define LUX1310_HRES_INCREMENT      LUX1310_ADC_COUNT
+
+#define LUX1310_BLACK_COLS          32
+#define LUX1310_BLACK_ROWS          8
+
+#define LUX1310_ADC_COUNT           16
+#define LUX1310_ADC_OFFSET_BITS     10
 
 #define LUX1310_DAC_FULL_SCALE      4095
 #define LUX1310_DAC_VREF            3300 /* 3300mV */
@@ -69,6 +75,7 @@
 struct lux1310_private_data {
     struct image_sensor sensor;
     volatile struct fpga_sensor *reg;
+    const struct lux1310_gaintab *gaintab;
     const struct lux1310_wavetab *wavetab;
     int spifd;
     int daccs;
@@ -206,8 +213,6 @@ lux1310_set_voltage(struct lux1310_private_data *data, unsigned int channel, uns
     uint16_t reg = htole16((((channel & 0x7) << 12) | vdac));
     int err; 
 
-    fprintf(stderr, "DEBUG: set voltage%d to %d mV (0x%04x)\n", channel, mv, reg);
-
     gpio_write(data->daccs, 0);
     err = write(data->spifd, &reg, sizeof(reg));
     gpio_write(data->daccs, 1);
@@ -293,7 +298,7 @@ lux1310_auto_phase_cal(struct lux1310_private_data *data)
 
 /* Return the minimum period (in clocks) for a given resolution and wave table length. */
 static unsigned long long
-lux1310_min_period(unsigned long hres, unsigned long vres, unsigned long int wavelen)
+lux1310_min_period(const struct image_geometry *g, unsigned long int wavelen)
 {
     const unsigned long t_hblank = 2;
     const unsigned long t_tx = 25;
@@ -301,31 +306,31 @@ lux1310_min_period(unsigned long hres, unsigned long vres, unsigned long int wav
     const unsigned long t_fovb = 50; /* Duration between PRSTN falling and TXN falling (I think) */
     
     /* Sum up the minimum number of clocks to read a frame at this resolution */
-    unsigned long t_read = (hres / LUX1310_HRES_INCREMENT);
+    unsigned long t_read = (g->hres / LUX1310_HRES_INCREMENT);
     unsigned long t_row = max(t_read + t_hblank, wavelen + 3);
-    return (t_row * vres) + t_tx + t_fovf + t_fovb;
+    return (t_row * g->vres) + t_tx + t_fovf + t_fovb;
 } /* lux1310_min_period */
-
 
 /* Configure the sensor to a given resolution, or return -1 on error. */
 static int
-lux1310_set_resolution(struct image_sensor *s, unsigned long hres, unsigned long vres, unsigned long hoff, unsigned long voff)
+lux1310_set_resolution(struct image_sensor *s, const struct image_geometry *g)
 {
     struct lux1310_private_data *data = CONTAINER_OF(s, struct lux1310_private_data, sensor);
 
-	uint32_t h_start = hoff / LUX1310_HRES_INCREMENT;
-	uint32_t h_width = hres / LUX1310_HRES_INCREMENT;
-    lux1310_write(data, LUX1310_SCI_X_START, 0x20 + h_start * LUX1310_HRES_INCREMENT);
-	lux1310_write(data, LUX1310_SCI_X_END, 0x20 + (h_start + h_width) * LUX1310_HRES_INCREMENT - 1);
-	lux1310_write(data, LUX1310_SCI_Y_START, voff);
-	lux1310_write(data, LUX1310_SCI_Y_END, voff + vres - 1);
+	uint32_t h_start = g->hoffset / LUX1310_HRES_INCREMENT;
+	uint32_t h_width = g->hres / LUX1310_HRES_INCREMENT;
+    lux1310_write(data, LUX1310_SCI_X_START, LUX1310_BLACK_COLS + h_start * LUX1310_HRES_INCREMENT);
+	lux1310_write(data, LUX1310_SCI_X_END, LUX1310_BLACK_COLS + (h_start + h_width) * LUX1310_HRES_INCREMENT - 1);
+	lux1310_write(data, LUX1310_SCI_Y_START, g->voffset);
+	lux1310_write(data, LUX1310_SCI_Y_END, g->voffset + g->vres - 1);
     return 0;
 } /* lux1310_set_resolution */
 
 /* Round the exposure timing to the nearest value the sensor can accept. */
 static unsigned long long
-lux1310_round_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+lux1310_round_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
+    /* TODO: Must ensure that the exposure time < (period - overhead). */
     if (nsec < LUX1310_MIN_EXPOSURE) {
         return LUX1310_MIN_EXPOSURE;
     }
@@ -335,34 +340,33 @@ lux1310_round_exposure(struct image_sensor *sensor, unsigned long hres, unsigned
 } /* lux1310_round_exposure */
 
 static unsigned long long
-lux1310_round_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+lux1310_round_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     unsigned long t_period = (nsec * 1000000000) / LUX1310_SENSOR_CLOCK_RATE;
-    unsigned long t_frame = lux1310_min_period(hres, vres, LUX1310_MIN_WAVETABLE_SIZE);
+    unsigned long t_frame = lux1310_min_period(g, LUX1310_MIN_WAVETABLE_SIZE);
     return (max(t_frame, t_period) * LUX1310_SENSOR_CLOCK_RATE) / 1000000000;
 } /* lux1310_round_period */
 
 static int
-lux1310_set_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+lux1310_set_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
     unsigned long t_frame = ((nsec * LUX1310_TIMING_CLOCK_RATE) + 999999999) / 1000000000;
     data->reg->frame_period = t_frame;
-    fprintf(stderr, "nsec = %lld, t_frame = %lu\n", nsec, t_frame);
 
     /* Program the longest wavetable for this frame period. */
     /* TODO: Replace this with a loop over a database of known tables. */
     /* TODO: Automagic wavetable generation would go here. */
-    if (t_frame >= lux1310_min_period(hres, vres, 80)) {
+    if (t_frame >= lux1310_min_period(g, 80)) {
         lux1310_write_wavetab(data, &lux1310_wt_sram80);
     }
-    else if (t_frame >= lux1310_min_period(hres, vres, 39)) {
+    else if (t_frame >= lux1310_min_period(g, 39)) {
         lux1310_write_wavetab(data, &lux1310_wt_sram39);
     }
-    else if (t_frame >= lux1310_min_period(hres, vres, 30)) {
+    else if (t_frame >= lux1310_min_period(g, 30)) {
         lux1310_write_wavetab(data, &lux1310_wt_sram30);
     }
-    else if (t_frame >= lux1310_min_period(hres, vres, 25)) {
+    else if (t_frame >= lux1310_min_period(g, 25)) {
         lux1310_write_wavetab(data, &lux1310_wt_sram25);
     }
     else {
@@ -372,16 +376,16 @@ lux1310_set_period(struct image_sensor *sensor, unsigned long hres, unsigned lon
     /* Setup the timing generator to handle the the line period and start delay. */
     /* TODO: Would it be cleaner to move these registers into the block of sensor stuff? */
     sensor->fpga->reg[SENSOR_MAGIC_START_DELAY] = data->wavetab->start_delay;
-    sensor->fpga->reg[SENSOR_LINE_PERIOD] = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3)) - 1;
+    sensor->fpga->reg[SENSOR_LINE_PERIOD] = max((g->hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3)) - 1;
     return 0;
 } /* lux1310_set_period */
 
 static int
-lux1310_set_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+lux1310_set_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
     /* Compute timing first in units of sensor clock periods. */
-    unsigned long t_line = max((hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3));
+    unsigned long t_line = max((g->hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3));
     unsigned long t_exposure = (nsec * LUX1310_SENSOR_CLOCK_RATE + 500000000) / 1000000000;
     unsigned long t_start = LUX1310_MAGIC_ABN_DELAY;
 
@@ -395,26 +399,92 @@ lux1310_set_exposure(struct image_sensor *sensor, unsigned long hres, unsigned l
 } /* lux1310_set_exposure */
 
 static int
-lux1310_set_gain(struct image_sensor *sensor, int gain)
+lux1310_set_gain(struct image_sensor *sensor, int gain, FILE *calfile)
 {
     struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
-    int i;
+    int16_t caldata[LUX1310_ADC_COUNT];
+    int i, j;
     for (i = 0; i < ARRAY_SIZE(lux1310_gain_data); i++) {
         if (lux1310_gain_data[i].analog_gain != gain) continue;
         /* Program the voltage references. */
         lux1310_set_voltage(data, LUX1310_DAC_VRSTB, lux1310_gain_data[i].vrstb, 1, 1);
         lux1310_set_voltage(data, LUX1310_DAC_VRST, lux1310_gain_data[i].vrst, LUX1310_VRST_MUL, LUX1310_VRST_DIV);
         lux1310_set_voltage(data, LUX1310_DAC_VRSTH, lux1310_gain_data[i].vrsth, LUX1310_VRSTH_MUL, LUX1310_VRST_DIV);
+        
         /* Program the gain calibration. */
         lux1310_write(data, LUX1310_SCI_GAIN_SEL_SAMP, lux1310_gain_data[i].sampling);
         lux1310_write(data, LUX1310_SCI_GAIN_SEL_FB, lux1310_gain_data[i].feedback);
         lux1310_write(data, LUX1310_SCI_GAIN_BIT, lux1310_gain_data[i].gain_bit);
+
+        /* Adjust the ADC offsets if calibration data is provided. */
+        if (calfile) {
+            fread(caldata, sizeof(caldata[0]), LUX1310_ADC_COUNT, calfile);
+        } else {
+            memset(caldata, 0, sizeof(caldata));
+        }
+        for (j = 0; j < sensor->adc_count; j++) {
+            uint16_t x = abs(caldata[j]) & ((1 << LUX1310_ADC_OFFSET_BITS) - 1);
+            if (caldata[j]) x |= (1 << LUX1310_ADC_OFFSET_BITS);
+            lux1310_write(data, LUX1310_SCI_ADC_OS(j), x);
+        }
+        data->gaintab = &lux1310_gain_data[i];
         return 0;
     }
 
     /* Not a valid gain for the LUX1310. */
     return -1;
 } /* lux1310_set_gain */
+
+/* Read a 12-bit pixel out of a packed frame buffer. */
+static uint16_t
+lux1310_get_pixel(const struct image_geometry *g, const void *frame, unsigned long x, unsigned long y)
+{
+    unsigned long offset = ((y * g->hres) + x) * 12 / 8;
+    const uint8_t *pxdata = frame;
+    uint16_t pixel = (pxdata[offset] << 8) | (pxdata[offset+1] << 0);
+    if (x & 1) {
+        return (pixel >> 4) & 0xfff;
+    } else {
+        return (pixel >> 0) & 0xfff;
+    }
+} /* lux1310_get_pixel */
+
+/* Compute gain calibration data when given a raw frame. */
+static int
+lux1310_cal_gain(struct image_sensor *sensor, const struct image_geometry *g, const void *frame, FILE *fp)
+{
+    struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
+    int16_t caldata[LUX1310_ADC_COUNT];
+    uint32_t minvals[LUX1310_ADC_COUNT];
+    int i;
+
+    for (i = 0; i < LUX1310_ADC_COUNT; i++) {
+        minvals[i] = UINT32_MAX;
+    }
+    /* TODO: Examine multiple rows? */
+    for (i = 0; i < g->hres; i++) {
+        uint32_t pixel = lux1310_get_pixel(g, frame, i, 0);
+        minvals[i % LUX1310_ADC_COUNT] = min(pixel, minvals[i % LUX1310_ADC_COUNT]);
+    }
+
+    for (i = 0; i < LUX1310_ADC_COUNT; i++) {
+        caldata[i] = -(minvals[i] - 30)/2;
+        if (caldata[i] > 1023) caldata[i] = 1023;
+        if (caldata[i] < -1023) caldata[i] = -1023;
+        lux1310_write(data, LUX1310_SCI_ADC_OS(i), caldata[i]);
+    }
+    return (fwrite(caldata, sizeof(caldata[0]), LUX1310_ADC_COUNT, fp) == LUX1310_ADC_COUNT) ? 0 : -1;
+} /* lux1310_cal_gain */
+
+/* Return a file suffix for the lux1310 calibration data - which depends on gain and wavetable. */
+static char *
+lux1310_cal_suffix(struct image_sensor *sensor, char *buf, size_t maxlen)
+{
+    struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
+    unsigned int gain_mul = 1 << (data->gaintab->analog_gain / 6);
+    snprintf(buf, maxlen, "_G%u_WT%d", gain_mul, data->wavetab->read_delay);
+    return buf;
+} /* lux1310_cal_suffix */
 
 static const struct image_sensor_ops lux1310_ops = {
     .round_exposure = lux1310_round_exposure,
@@ -423,6 +493,8 @@ static const struct image_sensor_ops lux1310_ops = {
     .set_period = lux1310_set_period,
     .set_resolution = lux1310_set_resolution,
     .set_gain = lux1310_set_gain,
+    .cal_gain = lux1310_cal_gain,
+    .cal_suffix = lux1310_cal_suffix,
     /* TODO: Calibration Data and API */
 };
 
@@ -476,7 +548,7 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     /* Setup the sensor limits */
     data->sensor.fpga = fpga;
     data->sensor.ops = &lux1310_ops;
-    data->sensor.name = "LUX1310";
+    data->sensor.name = "lux1310";
     data->sensor.mfr = "Luxima";
     //data->sensor.h_max_res = 1296;
     data->sensor.h_max_res = 1280;
@@ -488,6 +560,7 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     data->sensor.exp_min_nsec = LUX1310_MIN_EXPOSURE;
     data->sensor.exp_max_nsec = UINT32_MAX;
     data->sensor.pixel_rate = data->sensor.h_max_res * data->sensor.v_max_res * 1057;
+    data->sensor.adc_count = LUX1310_ADC_COUNT;
 
     /* Determine the sensor type and set the appropriate pixel format. */
     color = ioport_open(iops, "lux1310-color", O_RDONLY);
@@ -582,6 +655,7 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     lux1310_write(data, LUX1310_SCI_GAIN_SEL_FB, 0x7f);
     lux1310_write(data, LUX1310_SCI_GAIN_BIT, 3);
     lux1310_write_wavetab(data, &lux1310_wt_sram80);
+    lux1310_set_gain(&data->sensor, 0, NULL);
     
     /* Enable the sensor timing engine. */
     lux1310_write(data, LUX1310_SCI_TIMING_EN, 1);

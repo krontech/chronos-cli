@@ -75,7 +75,7 @@ main(void)
     }
 
     //trig_init(cam->sensor, board_chronos14_ioports);
-    cam_init(cam->sensor);
+    cam_init(cam);
 
     /* Attach the DBus interface and run the mainloop. */
     dbus_init(cam);

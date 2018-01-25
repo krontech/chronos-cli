@@ -88,56 +88,92 @@ image_sensor_is_color(struct image_sensor *sensor)
 }
 
 unsigned long long
-image_sensor_round_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+image_sensor_round_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     if (sensor->ops->round_exposure) {
-        return sensor->ops->round_exposure(sensor, hres, vres, nsec);
+        return sensor->ops->round_exposure(sensor, g, nsec);
     } else {
         return nsec;
     }
 }
 
 unsigned long long
-image_sensor_round_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+image_sensor_round_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     if (sensor->ops->round_exposure) {
-        return sensor->ops->round_exposure(sensor, hres, vres, nsec);
+        return sensor->ops->round_exposure(sensor, g, nsec);
     } else {
         return nsec;
     }
 }
 
 int
-image_sensor_set_exposure(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+image_sensor_set_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     if (sensor->ops->set_exposure) {
-        return sensor->ops->set_exposure(sensor, hres, vres, nsec);
+        return sensor->ops->set_exposure(sensor, g, nsec);
     } else {
         return 0;
     }
 }
 
 int
-image_sensor_set_period(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long long nsec)
+image_sensor_set_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
 {
     if (sensor->ops->set_period) {
-        return sensor->ops->set_period(sensor, hres, vres, nsec);
+        return sensor->ops->set_period(sensor, g, nsec);
     } else {
         return 0;
     }
 }
 
 int
-image_sensor_set_resolution(struct image_sensor *sensor, unsigned long hres, unsigned long vres, unsigned long hoff, unsigned long voff)
+image_sensor_set_resolution(struct image_sensor *sensor, const struct image_geometry *g)
 {
     if (sensor->ops->set_resolution) {
-        return sensor->ops->set_resolution(sensor, hres, vres, hoff, voff);
+        return sensor->ops->set_resolution(sensor, g);
     }
-    if ((hres > sensor->h_max_res) || (hres < sensor->h_min_res) || (hres % sensor->h_increment)) {
+    if ((g->hres > sensor->h_max_res) || (g->hres < sensor->h_min_res)) {
         return -ERANGE;
     }
-    if ((vres > sensor->v_max_res) || (vres < sensor->v_min_res) || (vres % sensor->v_increment)) {
+    if ((g->hres % sensor->h_increment) || (g->hoffset % sensor->h_increment)) {
+        return -ERANGE;
+    }
+    if ((g->vres > sensor->v_max_res) || (g->vres < sensor->v_min_res)) {
+        return -ERANGE;
+    }
+    if ((g->vres % sensor->v_increment) || (g->voffset % sensor->v_increment)) {
         return -ERANGE;
     }
     return 0;
+}
+
+int
+image_sensor_set_gain(struct image_sensor *sensor, int gain, FILE *fp)
+{
+    if (sensor->ops->set_gain) {
+        return sensor->ops->set_gain(sensor, gain, fp);
+    } else {
+        return 0;
+    }
+}
+
+int
+image_sensor_cal_gain(struct image_sensor *sensor, const struct image_geometry *g, const void *frame, FILE *fp)
+{
+    if (sensor->ops->cal_gain) {
+        return sensor->ops->cal_gain(sensor, g, frame, fp);
+    } else {
+        return 0;
+    }
+}
+
+char *
+image_sensor_cal_suffix(struct image_sensor *sensor, char *buf, size_t maxlen)
+{
+    if (sensor->ops->cal_suffix) {
+        return sensor->ops->cal_suffix(sensor, buf, maxlen);
+    } else {
+        return strcpy(buf, "");
+    }
 }

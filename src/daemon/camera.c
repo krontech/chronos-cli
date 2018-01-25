@@ -33,58 +33,10 @@
 #define MAX_FRAME_LENGTH    0xf000
 #define REC_START_ADDR      (MAX_FRAME_LENGTH * 4)
 
-static inline int
-cc_within(int x, int min, int max)
-{
-    if (x < min) return min;
-    if (x > max) return max;
-    return x;
-}
-
-static void
-cam_set_color_matrix(struct fpga *fpga, const double *cc, const double *wb, double gain)
-{
-    double wb_gain[3] = {
-        (4096.0 * wb[0] * gain),
-        (4096.0 * wb[1] * gain),
-        (4096.0 * wb[2] * gain),
-    };
-
-	fpga->reg[CCM_11] = cc_within(cc[0] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_12] = cc_within(cc[1] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_13] = cc_within(cc[2] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-
-	fpga->reg[CCM_21] = cc_within(cc[3] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_22] = cc_within(cc[4] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_23] = cc_within(cc[5] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-
-	fpga->reg[CCM_31] = cc_within(cc[6] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_32] = cc_within(cc[7] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_33] = cc_within(cc[8] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-}
-
-static const double ccm_default_color[] = {
-    1.4508,     0.6010,     -0.8470,
-    -0.5063,    1.3998,     0.0549,
-    -0.0701,    -0.6060,	1.5849
-};
-static const double ccm_default_mono[] = {
-    1.0, 0.0, 0.0,
-    0.0, 1.0, 0.0,
-    0.0, 0.0, 1.0
-};
-static const double wb_default_color[] = {
-    0.8747, 1.0, 1.6607
-};
-static const double wb_default_mono[] = {
-    1.0, 1.0, 1.0
-};
-
-
 /* TODO: Get the pixel clock and porch/sync period config from somewhere? */
 void
 cam_set_live_timing(struct image_sensor *sensor,
-    unsigned int hRes, unsigned int vRes,
+    struct image_geometry *geometry,
     unsigned int hOutRes, unsigned int vOutRes,
     unsigned int maxFps)
 {
@@ -120,9 +72,9 @@ cam_set_live_timing(struct image_sensor *sensor,
 		   (hPeriod - hSync - hPorch - hSync), (vPeriod - vSync - vPorch - vSync), fps,
 		   hOutRes, vOutRes, maxFps);
 
-    fpga->display->h_res = hRes;
+    fpga->display->h_res = geometry->hres;
     fpga->display->h_out_res = hOutRes;
-    fpga->display->v_res = vRes;
+    fpga->display->v_res = geometry->vres;
     fpga->display->v_out_res = vOutRes;
 
     fpga->display->h_period = hPeriod - 1;
@@ -136,45 +88,59 @@ cam_set_live_timing(struct image_sensor *sensor,
 
 /* Camera Initialization */
 int
-cam_init(struct image_sensor *sensor)
+cam_init(CamObject *cam)
 {
     unsigned long long exposure;
     unsigned long long period;
     unsigned long frame_words;
-    unsigned int maxfps = sensor->pixel_rate / (sensor->h_max_res * sensor->v_max_res);
+    unsigned int maxfps = cam->sensor->pixel_rate / (cam->sensor->h_max_res * cam->sensor->v_max_res);
+    struct image_geometry geometry = {
+        .hres = cam->sensor->h_max_res,
+        .vres = cam->sensor->v_max_res,
+        .hoffset = 0,
+        .voffset = 0,
+    };
 
     /* Configure the FIFO threshold and image sequencer */
-    sensor->fpga->seq->live_addr[0] = MAX_FRAME_LENGTH;
-    sensor->fpga->seq->live_addr[1] = MAX_FRAME_LENGTH*2;
-    sensor->fpga->seq->live_addr[2] = MAX_FRAME_LENGTH*3;
-    sensor->fpga->seq->region_start = REC_START_ADDR;
+    cam->fpga->seq->live_addr[0] = MAX_FRAME_LENGTH;
+    cam->fpga->seq->live_addr[1] = MAX_FRAME_LENGTH*2;
+    cam->fpga->seq->live_addr[2] = MAX_FRAME_LENGTH*3;
+    cam->fpga->seq->region_start = REC_START_ADDR;
 
     /* Configure default default timing to the maximum resolution, framerate and exposure. */
     /* TODO: Configure Gain */
-    period = image_sensor_round_period(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / maxfps);
-    exposure = image_sensor_round_exposure(sensor, sensor->h_max_res, sensor->v_max_res, 1000000000 / (maxfps * 2));
-    image_sensor_set_resolution(sensor, sensor->h_max_res, sensor->v_max_res, 0, 0);
-    image_sensor_set_period(sensor, sensor->h_max_res, sensor->v_max_res, period);
-    image_sensor_set_exposure(sensor, sensor->h_max_res, sensor->v_max_res, exposure);
-    frame_words = ((sensor->h_max_res * sensor->v_max_res * image_sensor_bpp(sensor)) / 8 + (32 - 1)) / 32;
-    sensor->fpga->seq->frame_size = (frame_words + 0x3f) & ~0x3f;
+    period = image_sensor_round_period(cam->sensor, &geometry, 1000000000 / maxfps);
+    exposure = image_sensor_round_exposure(cam->sensor, &geometry, 1000000000 / (maxfps * 2));
+    image_sensor_set_resolution(cam->sensor, &geometry);
+    image_sensor_set_period(cam->sensor, &geometry, period);
+    image_sensor_set_exposure(cam->sensor, &geometry, exposure);
+    frame_words = ((cam->sensor->h_max_res * cam->sensor->v_max_res * image_sensor_bpp(cam->sensor)) / 8 + (32 - 1)) / 32;
+    cam->fpga->seq->frame_size = (frame_words + 0x3f) & ~0x3f;
 
-    cam_set_live_timing(sensor, sensor->h_max_res, sensor->v_max_res, sensor->h_max_res, sensor->v_max_res, 60);
+    /* Load calibration data for the default resolution. */
+    cal_load_fpn(cam, &geometry);
+    cal_load_dcg(cam, 0);
+    cal_load_gain(cam, 0);
 
     /* Load the default color correction and white balance matricies */
     /* TODO: Why are there two white balance matricies in the original code? */
-    if (image_sensor_is_color(sensor)) {
-        sensor->fpga->display->control |= DISPLAY_CTL_COLOR_MODE;
-        cam_set_color_matrix(sensor->fpga, ccm_default_color, wb_default_color, 1.0);
+    if (image_sensor_is_color(cam->sensor)) {
+        cam->fpga->display->control |= DISPLAY_CTL_COLOR_MODE;
+        memcpy(cam->cc_matrix, ccm_default_color, sizeof(cam->cc_matrix));
+        memcpy(cam->wb_matrix, wb_default_color, sizeof(cam->wb_matrix));
+        cal_update_color_matrix(cam, 1.0);
     }
     else {
-        sensor->fpga->display->control &= ~DISPLAY_CTL_COLOR_MODE;
-        cam_set_color_matrix(sensor->fpga, ccm_default_mono, wb_default_mono, 1.0);
+        cam->fpga->display->control &= ~DISPLAY_CTL_COLOR_MODE;
+        memcpy(cam->cc_matrix, ccm_default_mono, sizeof(cam->cc_matrix));
+        memcpy(cam->wb_matrix, wb_default_mono, sizeof(cam->wb_matrix));
+        cal_update_color_matrix(cam, 1.0);
     }
-    sensor->fpga->display->control &= ~DISPLAY_CTL_READOUT_INHIBIT;
+    cam->fpga->display->control &= ~DISPLAY_CTL_READOUT_INHIBIT;
+
+    cam_set_live_timing(cam->sensor, &geometry, cam->sensor->h_max_res, cam->sensor->v_max_res, 60);
 
     /* TODO: Can we safely ignore the trigger settings during init? */
-
     /* All is good, I think? */
     return 0;
 } /* cam_init */
