@@ -74,7 +74,7 @@ cal_update_color_matrix(CamObject *cam, double softgain)
 	cam->fpga->reg[CCM_31] = cc_within(cam->cc_matrix[6] * wb_gain[2]);
 	cam->fpga->reg[CCM_32] = cc_within(cam->cc_matrix[7] * wb_gain[2]);
 	cam->fpga->reg[CCM_33] = cc_within(cam->cc_matrix[8] * wb_gain[2]);
-}
+} /* cal_update_color_matrix */
 
 /* Helper function to pack pixels into memory despite inconvenient bit alignments. */
 static inline void
@@ -248,4 +248,4 @@ cal_load_gain(CamObject *cam, int gain)
         fclose(fp);
     }
     return ret;
-}
+} /* cal_load_gain */

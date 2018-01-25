@@ -1,6 +1,7 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a libcam-dbus.a
-bin_PROGRAMS = cam-daemon cam-loader cam-regdump cam-pipeline cam-json
+bin_PROGRAMS = cam-daemon cam-loader cam-pipeline cam-json
+bin_PROGRAMS += cam-regdump cam-mock
 AM_CFLAGS = -I ${srcdir}/lib -I ${prefix}/usr/include
 
 ## Bundle the common FPGA and image sensor tools into a library.
@@ -44,6 +45,16 @@ cam_daemon_SOURCES += daemon/memory.c
 cam_daemon_SOURCES += daemon/dbus-glue.c
 cam_daemon_SOURCES += daemon/camera.h
 cam_daemon_SOURCES += api/cam-dbus-server.h
+
+## Mock Camera Daemon
+cam_mock_CFLAGS = ${AM_CFLAGS}
+cam_mock_CFLAGS += -I ${prefix}/usr/include/dbus-1.0
+cam_mock_CFLAGS += -I ${prefix}/usr/include/glib-2.0
+cam_mock_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
+cam_mock_LDFLAGS = -L ${prefix}/usr/lib
+cam_mock_LDADD = -ldl -l:libdbus-glib-1.so.2 -l:libdbus-1.so.3 -lgmodule-2.0 -lgobject-2.0 -lm -lpthread -lgthread-2.0 -lrt -lglib-2.0
+cam_mock_SOURCES = mock/main.c
+cam_mock_SOURCES += mock/dbus-mock.c
 
 ## Camera DBus JSON translator
 cam_json_CFLAGS = -I ${prefix}/usr/include/dbus-1.0

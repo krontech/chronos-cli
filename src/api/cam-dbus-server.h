@@ -55,6 +55,57 @@ G_BEGIN_DECLS
 #endif /* !G_ENABLE_DEBUG */
 
 
+/* BOOLEAN:INT,INT,POINTER,POINTER */
+extern void dbus_glib_marshal_cam_dbus_BOOLEAN__INT_INT_POINTER_POINTER (GClosure     *closure,
+                                                                         GValue       *return_value,
+                                                                         guint         n_param_values,
+                                                                         const GValue *param_values,
+                                                                         gpointer      invocation_hint,
+                                                                         gpointer      marshal_data);
+void
+dbus_glib_marshal_cam_dbus_BOOLEAN__INT_INT_POINTER_POINTER (GClosure     *closure,
+                                                             GValue       *return_value G_GNUC_UNUSED,
+                                                             guint         n_param_values,
+                                                             const GValue *param_values,
+                                                             gpointer      invocation_hint G_GNUC_UNUSED,
+                                                             gpointer      marshal_data)
+{
+  typedef gboolean (*GMarshalFunc_BOOLEAN__INT_INT_POINTER_POINTER) (gpointer     data1,
+                                                                     gint         arg_1,
+                                                                     gint         arg_2,
+                                                                     gpointer     arg_3,
+                                                                     gpointer     arg_4,
+                                                                     gpointer     data2);
+  GMarshalFunc_BOOLEAN__INT_INT_POINTER_POINTER callback;
+  GCClosure *cc = (GCClosure*) closure;
+  gpointer data1, data2;
+  gboolean v_return;
+
+  g_return_if_fail (return_value != NULL);
+  g_return_if_fail (n_param_values == 5);
+
+  if (G_CCLOSURE_SWAP_DATA (closure))
+    {
+      data1 = closure->data;
+      data2 = g_value_peek_pointer (param_values + 0);
+    }
+  else
+    {
+      data1 = g_value_peek_pointer (param_values + 0);
+      data2 = closure->data;
+    }
+  callback = (GMarshalFunc_BOOLEAN__INT_INT_POINTER_POINTER) (marshal_data ? marshal_data : cc->callback);
+
+  v_return = callback (data1,
+                       g_marshal_value_peek_int (param_values + 1),
+                       g_marshal_value_peek_int (param_values + 2),
+                       g_marshal_value_peek_pointer (param_values + 3),
+                       g_marshal_value_peek_pointer (param_values + 4),
+                       data2);
+
+  g_value_set_boolean (return_value, v_return);
+}
+
 /* BOOLEAN:POINTER,POINTER */
 extern void dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER (GClosure     *closure,
                                                                  GValue       *return_value,
@@ -159,12 +210,13 @@ static const DBusGMethodInfo dbus_glib_cam_dbus_methods[] = {
   { (GCallback) cam_dbus_set_video_settings, dbus_glib_marshal_cam_dbus_BOOLEAN__BOXED_POINTER, 68 },
   { (GCallback) cam_dbus_get_camera_data, dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER, 132 },
   { (GCallback) cam_dbus_get_sensor_data, dbus_glib_marshal_cam_dbus_BOOLEAN__POINTER_POINTER, 197 },
+  { (GCallback) cam_dbus_get_timing_limits, dbus_glib_marshal_cam_dbus_BOOLEAN__INT_INT_POINTER_POINTER, 262 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_dbus_object_info = {  1,
   dbus_glib_cam_dbus_methods,
-  4,
-"com.krontech.chronos.control\0get_video_settings\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0set_video_settings\0S\0data\0I\0a{sv}\0\0com.krontech.chronos.control\0get_camera_data\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0get_sensor_data\0S\0data\0O\0F\0N\0a{sv}\0\0\0",
+  5,
+"com.krontech.chronos.control\0get_video_settings\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0set_video_settings\0S\0data\0I\0a{sv}\0\0com.krontech.chronos.control\0get_camera_data\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0get_sensor_data\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0get_timing_limits\0S\0hres\0I\0i\0vres\0I\0i\0data\0O\0F\0N\0a{sv}\0\0\0",
 "\0",
 "\0"
 };

@@ -6,6 +6,7 @@
 /src/cam-json
 /src/cam-cli
 /src/cam-loader
+/src/cam-mock
 /src/cam-pipeline
 /src/cam-regdump
 /src/libcamera.a

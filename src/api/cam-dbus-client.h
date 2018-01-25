@@ -136,6 +136,36 @@ com_krontech_chronos_control_get_sensor_data_async (DBusGProxy *proxy, com_kront
   stuff->userdata = userdata;
   return dbus_g_proxy_begin_call (proxy, "get_sensor_data", com_krontech_chronos_control_get_sensor_data_async_callback, stuff, _dbus_glib_async_data_free, G_TYPE_INVALID);
 }
+static inline gboolean
+com_krontech_chronos_control_get_timing_limits (DBusGProxy *proxy, const gint IN_hres, const gint IN_vres, GHashTable** OUT_data, GError **error)
+
+{
+  return dbus_g_proxy_call (proxy, "get_timing_limits", error, G_TYPE_INT, IN_hres, G_TYPE_INT, IN_vres, G_TYPE_INVALID, dbus_g_type_get_map ("GHashTable", G_TYPE_STRING, G_TYPE_VALUE), OUT_data, G_TYPE_INVALID);
+}
+
+typedef void (*com_krontech_chronos_control_get_timing_limits_reply) (DBusGProxy *proxy, GHashTable *OUT_data, GError *error, gpointer userdata);
+
+static void
+com_krontech_chronos_control_get_timing_limits_async_callback (DBusGProxy *proxy, DBusGProxyCall *call, void *user_data)
+{
+  DBusGAsyncData *data = (DBusGAsyncData*) user_data;
+  GError *error = NULL;
+  GHashTable* OUT_data;
+  dbus_g_proxy_end_call (proxy, call, &error, dbus_g_type_get_map ("GHashTable", G_TYPE_STRING, G_TYPE_VALUE), &OUT_data, G_TYPE_INVALID);
+  (*(com_krontech_chronos_control_get_timing_limits_reply)data->cb) (proxy, OUT_data, error, data->userdata);
+  return;
+}
+
+static inline DBusGProxyCall*
+com_krontech_chronos_control_get_timing_limits_async (DBusGProxy *proxy, const gint IN_hres, const gint IN_vres, com_krontech_chronos_control_get_timing_limits_reply callback, gpointer userdata)
+
+{
+  DBusGAsyncData *stuff;
+  stuff = g_slice_new (DBusGAsyncData);
+  stuff->cb = G_CALLBACK (callback);
+  stuff->userdata = userdata;
+  return dbus_g_proxy_begin_call (proxy, "get_timing_limits", com_krontech_chronos_control_get_timing_limits_async_callback, stuff, _dbus_glib_async_data_free, G_TYPE_INT, IN_hres, G_TYPE_INT, IN_vres, G_TYPE_INVALID);
+}
 #endif /* defined DBUS_GLIB_CLIENT_WRAPPERS_com_krontech_chronos_control */
 
 G_END_DECLS

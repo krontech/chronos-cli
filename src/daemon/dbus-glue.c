@@ -32,6 +32,7 @@ static gboolean cam_dbus_get_video_settings(CamObject *cam, GHashTable **data, G
 static gboolean cam_dbus_set_video_settings(CamObject *cam, GHashTable *data, GError **error);
 static gboolean cam_dbus_get_camera_data(CamObject *cam, GHashTable **data, GError **error);
 static gboolean cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GError **error);
+static gboolean cam_dbus_get_timing_limits(CamObject *cam, gint hres, gint vres, GHashTable **data, GError *error);
 
 #include "api/cam-dbus-server.h"
 
@@ -143,6 +144,17 @@ cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GError **error)
         cam_dbus_dict_add_uint(dict, "vIncrement", sensor->v_increment);
         cam_dbus_dict_add_uint(dict, "minExposureNsec", sensor->exp_min_nsec);
         cam_dbus_dict_add_uint(dict, "maxExposureNsec", sensor->exp_max_nsec);
+    }
+    *data = dict;
+    return (dict != NULL);
+}
+
+static gboolean
+cam_dbus_get_timing_limits(CamObject *cam, gint hres, gint vres, GHashTable **data, GError *error)
+{
+    GHashTable *dict = cam_dbus_dict_new();
+    if (dict) {
+
     }
     *data = dict;
     return (dict != NULL);
