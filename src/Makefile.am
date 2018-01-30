@@ -1,8 +1,10 @@
 ## The stuff we want to build.
-noinst_LIBRARIES = libcamera.a libcam-dbus.a
+noinst_LIBRARIES = libcamera.a
 bin_PROGRAMS = cam-daemon cam-loader cam-pipeline cam-json
 bin_PROGRAMS += cam-regdump cam-mock
-AM_CFLAGS = -I ${srcdir}/lib -I ${prefix}/usr/include
+AM_CFLAGS = -I ${srcdir}/lib -I ${prefix}/usr/include ${GLIB_CFLAGS}
+GLIB_LIBS=-lgmodule-2.0 -lgobject-2.0 -lgthread-2.0 -lglib-2.0
+DBUS_LIBS=-l:libdbus-glib-1.so.2 -l:libdbus-1.so.3
 
 ## Bundle the common FPGA and image sensor tools into a library.
 libcamera_a_SOURCES = lib/board-chronos14.c
@@ -19,25 +21,17 @@ libcamera_a_SOURCES += lib/fpga-gpmc.h
 libcamera_a_SOURCES += lib/sensor-lux1310.h
 libcamera_a_SOURCES += lib/i2c.h
 libcamera_a_SOURCES += lib/i2c-spd.h
-
-## Bundle the RPC client API into a library.
-libcam_dbus_a_SOURCES = lib/cam-dbus.c
-libcam_dbus_a_CFLAGS = -I ${prefix}/usr/include/dbus-1.0
-libcam_dbus_a_CFLAGS += -I ${prefix}/usr/include/glib-2.0
-libcam_dbus_a_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
+libcamera_a_CFLAGS = ${AM_CFLAGS}
 
 ## FPGA and Image Sensor register dump tool
 cam_regdump_LDADD = libcamera.a
+cam_regdump_CFLAGS = ${AM_CFLAGS}
 cam_regdump_SOURCES = cam-regdump.c
 
 ## Camera Daemon
 cam_daemon_LDADD = libcamera.a
-cam_daemon_CFLAGS = ${AM_CFLAGS}
-cam_daemon_CFLAGS += -I ${prefix}/usr/include/dbus-1.0
-cam_daemon_CFLAGS += -I ${prefix}/usr/include/glib-2.0
-cam_daemon_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
-cam_daemon_LDFLAGS = -L ${prefix}/usr/lib
-cam_daemon_LDADD += -ldl -l:libdbus-glib-1.so.2 -l:libdbus-1.so.3 -lgmodule-2.0 -lgobject-2.0 -lm -lpthread -lgthread-2.0 -lrt -lglib-2.0
+cam_daemon_CFLAGS = ${AM_CFLAGS} ${GLIB_CFLAGS} ${DBUS_CFLAGS}
+cam_daemon_LDADD += ${DBUS_LIBS} ${GLIB_LIBS}
 cam_daemon_SOURCES = daemon/main.c
 cam_daemon_SOURCES += daemon/calibration.c
 cam_daemon_SOURCES += daemon/camera.c
@@ -47,21 +41,15 @@ cam_daemon_SOURCES += daemon/camera.h
 cam_daemon_SOURCES += api/cam-dbus-server.h
 
 ## Mock Camera Daemon
-cam_mock_CFLAGS = ${AM_CFLAGS}
-cam_mock_CFLAGS += -I ${prefix}/usr/include/dbus-1.0
-cam_mock_CFLAGS += -I ${prefix}/usr/include/glib-2.0
-cam_mock_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
+cam_mock_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_mock_LDFLAGS = -L ${prefix}/usr/lib
-cam_mock_LDADD = -ldl -l:libdbus-glib-1.so.2 -l:libdbus-1.so.3 -lgmodule-2.0 -lgobject-2.0 -lm -lpthread -lgthread-2.0 -lrt -lglib-2.0
+cam_mock_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
 cam_mock_SOURCES = mock/main.c
 cam_mock_SOURCES += mock/dbus-mock.c
 
 ## Camera DBus JSON translator
-cam_json_CFLAGS = -I ${prefix}/usr/include/dbus-1.0
-cam_json_CFLAGS += -I ${prefix}/usr/include/glib-2.0
-cam_json_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
-cam_json_LDFLAGS = -L ${prefix}/usr/lib
-cam_json_LDADD = -l:libdbus-glib-1.so.2 -l:libdbus-1.so.3 -lgobject-2.0 -lgthread-2.0 -lglib-2.0
+cam_json_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_json_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
 cam_json_SOURCES = client/cam-json.c
 cam_json_SOURCES += client/jsmn.c
 cam_json_SOURCES += client/jsmn.h
@@ -74,14 +62,11 @@ cam_loader_SOURCES = cam-loader.c
 
 ## GStreamer Daemon for running the video system.
 cam_pipeline_LDADD = libcamera.a
-cam_pipeline_CFLAGS = ${AM_CFLAGS}
+cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
 cam_pipeline_CFLAGS += -I ${prefix}/usr/include/gstreamer-0.10
-cam_pipeline_CFLAGS += -I ${prefix}/usr/include/glib-2.0
-cam_pipeline_CFLAGS += -I ${prefix}/usr/lib/glib-2.0/include
 cam_pipeline_LDFLAGS = -L ${prefix}/usr/lib -L ${prefix}/usr/lib/gstreamer-0.10
-cam_pipeline_LDADD += -lgmodule-2.0 -lgobject-2.0 -lgthread-2.0 -lrt -lglib-2.0
+cam_pipeline_LDADD += ${DBUS_LIBS} ${GLIB_LIBS}
 cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
-cam_pipeline_LDADD += -ldl -lm -lpthread -l:libxml2.so.2 -l:libz.so.1
 cam_pipeline_LDADD += -l:libjpeg.so.8
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
 

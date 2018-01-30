@@ -5,6 +5,7 @@
 #include <glib.h>
 #include <dbus/dbus-glib.h>
 
+#include "jsmn.h"
 #include "api/cam-rpc.h"
 
 /* Output a UTF-8 string, with the necessary escaping for JSON. */
@@ -101,7 +102,6 @@ json_printf_dict(FILE *fp, GHashTable *h, unsigned int depth)
 static void
 handle_error(int code, const char *message, unsigned long flags)
 {
-
     if (flags & OPT_FLAG_RPC) {
         fputs("{\n", stdout);
         fprintf(stdout, "%*.s\"jsonrpc\": \"2.0\",\n", JSON_TAB_SIZE, "");
@@ -139,6 +139,115 @@ handle_error(int code, const char *message, unsigned long flags)
         fprintf(stderr, "RPC Call Failed: %s\n", message);
     }
     exit(EXIT_FAILURE);
+}
+
+/* Put some upper bounds on the amount of JSON we're willing to parse. */
+#define JSON_MAX_BUF    4096
+#define JSON_MAX_TOK    128
+
+/* Parse JSON args, or return NULL if no args were provided. */
+static GHashTable *
+parse_json(FILE *fp, unsigned long flags)
+{
+    jsmn_parser parser;
+    jsmntok_t tokens[JSON_MAX_TOK]; /* Should be enough for any crazy API thing. */
+    char    *js = malloc(JSON_MAX_BUF);
+    size_t  jslen;
+    int     num;
+
+    /* Read the file for JSON data. */
+    jslen = fread(js, 1, JSON_MAX_BUF, fp);
+    if (!jslen) {
+        /* If we just get an EOF, then assume no args. */
+        if (feof(fp)) return NULL;
+        /* Otherwise, report a parsing error. */
+        handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
+    }
+
+    /* If there is more input, then our buffer is too small. */
+    if (!feof(fp)) {
+        /* We really want a 'request too large' error for CGI mode. */
+        handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
+    }
+
+    jsmn_init(&parser);
+    num = jsmn_parse(&parser, js, jslen, tokens, JSON_MAX_TOK);
+    if (num < 0) {
+        /* We really want a 'request too large' error for CGI mode. */
+        handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
+    }
+
+    /* The only encoding we support for now is the JSON object */
+    if (tokens[0].type == JSMN_OBJECT) {
+        int i = 1;
+        GHashTable *h = cam_dbus_dict_new();
+        if (!h) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+        }
+
+        /* Parse the tokens making up this JSON object. */
+        while (i < tokens[0].size) {
+            jsmntok_t   *tok;
+            char        *name;
+            char        *value;
+
+            /* To be a valid JSON object, the first token must be a string. */
+            if (tokens[i].type != JSMN_STRING) {
+                handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
+            }
+            name = &js[tokens[i].start];
+            name[tokens[i].end - tokens[i].start] = '\0';
+            i++;
+
+            /* The following token can be any simple type. */
+            tok = &tokens[i++];
+            value = &js[tok->start];
+            name[tok->end - tok->start] = '\0';
+            i += tok->size;
+
+            if (tok->type == JSMN_STRING) {
+                /* TODO: {string, string} arguments. */
+            }
+            else if (tok->type != JSMN_PRIMITIVE) {
+                /* We don't support nested types. */
+                continue;
+            }
+            /* Break it down by primitive types. */
+            if (*value == 't') {
+                cam_dbus_dict_add_boolean(h, name, 1);
+            } else if (*value == 'f') {
+                cam_dbus_dict_add_boolean(h, name, 0);
+            } else if (*value == 'n') {
+                /* TODO: Explicit NULL types and other magic voodoo? */
+            }
+            /* Below here, we have some kind of numeric type. */
+            else if (strcspn(value, ".eE") != (tok->end - tok->start)) {
+                char *e;
+                double x = strtod(value, &e);
+                if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
+                /* TODO: DBUS encoding for doubles? */
+            } else if (*value == '-') {
+                /* Use the type 'long long' for negative values. */
+                char *e;
+                long long x = strtoll(value, &e, 0);
+                if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
+                /* TODO: DBUS encoding for signed integers? */
+            } else {
+                char *e;
+                unsigned long long x = strtoull(value, &e, 0);
+                if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
+                cam_dbus_dict_add_uint(h, name, x);
+            }
+        }
+
+        /* Success */
+        free(js);
+        return h;
+    }
+
+    /* Not any kind of input that we can make sense of. */
+    free(js);
+    return NULL;
 }
 
 static void

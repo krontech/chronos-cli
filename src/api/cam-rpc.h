@@ -26,6 +26,10 @@
 #define CAM_DBUS_PATH       "/com/krontech/chronos/control"
 #define CAM_DBUS_INTERFACE  "com.krontech.chronos.control"
 
+#define CAM_VIDEO_SERVICE   "com.krontech.chronos.video"
+#define CAM_VIDEO_PATH      "/com/krontech/chronos/video"
+#define CAM_VIDEO_INTERFACE "com.krontech.chronos.video"
+
 /*-------------------------------------
  * DBus Hash Table Functions
  *-------------------------------------

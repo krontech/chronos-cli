@@ -226,13 +226,34 @@ cam_dbus_get_timing_limits(MockObject *mock, gint hres, gint vres, GHashTable **
      *      tExposureOverhead = tAbn
      * 
      * What then defines the minimum tFrame, and ultimately the max framerate?
+     * 
+     * So then, as an API model, we'll do the following.
+     *      caller provides X/Y frame size, and the daemon returns:
+     *          - tMinFramePeriod = minimum frame period for this resolution.
+     *          - tMaxFramePeriod = maximum frame period for this resolution.
+     *          - tMaxShutterAngle = maximum shutter angle in degress.
+     *          - tMinExposure = minimum exposure time.
+     *          - tExposureOverhead = timing overhead required for exposure (see equation below).
+     *          - fQuantization = clock rate used for timing quantization.
+     * 
+     * Thus, frame period must be constrainted by:
+     *      tMinFramePeriod <= tFramePeriod <= tMaxFramePeriod
+     * 
+     * And, exposure time must be constrainted by:
+     *      tMinExposure <= tExposure <= (tFramePeriod * tMaxShutterAngle) / 360 - tExposureOverhead
+     * 
+     * The quantization frequency is optional, and provides a hint to the quantization behavior of
+     * the underlying exposure and frame timing. Exposure and frame timing will be rounded to an
+     * integer multiple of (1/fQuantization) seconds.
      */
     GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
-        cam_dbus_dict_add_uint(dict, "minPeriodNsec", (hres * vres * 1000000000ULL) / MOCK_MAX_PIXELRATE);
-        cam_dbus_dict_add_uint(dict, "maxPeriodNsec", UINT32_MAX);
-        cam_dbus_dict_add_uint(dict, "minExposureNsec", MOCK_MIN_EXPOSURE);
-        cam_dbus_dict_add_uint(dict, "maxExposureNsec", MOCK_MAX_EXPOSURE);
+        cam_dbus_dict_add_uint(dict, "tMinPeriod", (hres * vres * 1000000000ULL) / MOCK_MAX_PIXELRATE);
+        cam_dbus_dict_add_uint(dict, "tMaxPeriod", UINT32_MAX);
+        cam_dbus_dict_add_uint(dict, "tMinExposure", MOCK_MIN_EXPOSURE);
+        cam_dbus_dict_add_uint(dict, "tExposureOverhead", MOCK_MIN_EXPOSURE);
+        cam_dbus_dict_add_uint(dict, "tMaxShutterAngle", MOCK_MAX_SHUTTER_ANGLE);
+        cam_dbus_dict_add_uint(dict, "fQuantization", 1000000000 / MOCK_QUANTIZE_TIMING);
     }
     *data = dict;
     return (dict != NULL);
