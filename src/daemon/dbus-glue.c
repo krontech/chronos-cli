@@ -28,11 +28,11 @@
  * DBUS/GObject Registration Mapping
  *-------------------------------------
  */
-static gboolean cam_dbus_get_video_settings(CamObject *cam, GHashTable **data, GError **error);
-static gboolean cam_dbus_set_video_settings(CamObject *cam, GHashTable *data, GError **error);
-static gboolean cam_dbus_get_camera_data(CamObject *cam, GHashTable **data, GError **error);
-static gboolean cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GError **error);
-static gboolean cam_dbus_get_timing_limits(CamObject *cam, gint hres, gint vres, GHashTable **data, GError *error);
+static gboolean cam_control_get_video_settings(CamObject *cam, GHashTable **data, GError **error);
+static gboolean cam_control_set_video_settings(CamObject *cam, GHashTable *data, GError **error);
+static gboolean cam_control_get_camera_data(CamObject *cam, GHashTable **data, GError **error);
+static gboolean cam_control_get_sensor_data(CamObject *cam, GHashTable **data, GError **error);
+static gboolean cam_control_get_timing_limits(CamObject *cam, gint hres, gint vres, GHashTable **data, GError *error);
 
 #include "api/cam-dbus-server.h"
 
@@ -51,7 +51,7 @@ static void
 cam_object_class_init(CamObjectClass *kclass)
 {
     g_assert(kclass != NULL);
-    dbus_g_object_type_install_info(CAM_OBJECT_TYPE, &dbus_glib_cam_dbus_object_info);
+    dbus_g_object_type_install_info(CAM_OBJECT_TYPE, &dbus_glib_cam_control_object_info);
 }
 
 #define CAM_OBJECT(_obj_) \
@@ -72,7 +72,7 @@ G_DEFINE_TYPE(CamObject, cam_object, G_TYPE_OBJECT)
  *-------------------------------------
  */
 static gboolean
-cam_dbus_get_camera_data(CamObject *cam, GHashTable **data, GError **error)
+cam_control_get_camera_data(CamObject *cam, GHashTable **data, GError **error)
 {
     GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
@@ -91,7 +91,7 @@ cam_dbus_get_camera_data(CamObject *cam, GHashTable **data, GError **error)
 }
 
 static gboolean
-cam_dbus_get_video_settings(CamObject *cam, GHashTable **data, GError **error)
+cam_control_get_video_settings(CamObject *cam, GHashTable **data, GError **error)
 {
     GHashTable *dict = cam_dbus_dict_new();
     /* TODO: Implement Real Stuff */
@@ -112,7 +112,7 @@ cam_dbus_get_video_settings(CamObject *cam, GHashTable **data, GError **error)
 }
 
 static gboolean
-cam_dbus_set_video_settings(CamObject *cam, GHashTable *data, GError **error)
+cam_control_set_video_settings(CamObject *cam, GHashTable *data, GError **error)
 {
     /* TODO: Implement Real Stuff */
     g_hash_table_destroy(data);
@@ -120,7 +120,7 @@ cam_dbus_set_video_settings(CamObject *cam, GHashTable *data, GError **error)
 }
 
 static gboolean
-cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GError **error)
+cam_control_get_sensor_data(CamObject *cam, GHashTable **data, GError **error)
 {
     GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
@@ -150,7 +150,7 @@ cam_dbus_get_sensor_data(CamObject *cam, GHashTable **data, GError **error)
 }
 
 static gboolean
-cam_dbus_get_timing_limits(CamObject *cam, gint hres, gint vres, GHashTable **data, GError *error)
+cam_control_get_timing_limits(CamObject *cam, gint hres, gint vres, GHashTable **data, GError *error)
 {
     GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
@@ -199,7 +199,7 @@ dbus_init(CamObject *cam)
     if (!dbus_g_proxy_call(proxy,
                             "RequestName",
                             &error,
-                            G_TYPE_STRING, CAM_DBUS_SERVICE,
+                            G_TYPE_STRING, CAM_DBUS_CONTROL_SERVICE,
                             G_TYPE_UINT, 0,
                             G_TYPE_INVALID,
                             G_TYPE_UINT, &result,
@@ -213,7 +213,7 @@ dbus_init(CamObject *cam)
     }
 
     /* Create the camera object and register with the D-Bus system. */
-    dbus_g_connection_register_g_object(bus, CAM_DBUS_PATH, G_OBJECT(cam));
+    dbus_g_connection_register_g_object(bus, CAM_DBUS_CONTROL_PATH, G_OBJECT(cam));
 
     /* Run the loop until something interesting happens. */
     g_main_loop_run(mainloop);

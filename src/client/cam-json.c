@@ -2,6 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <getopt.h>
+#include <errno.h>
 #include <glib.h>
 #include <dbus/dbus-glib.h>
 
@@ -145,9 +146,36 @@ handle_error(int code, const char *message, unsigned long flags)
 #define JSON_MAX_BUF    4096
 #define JSON_MAX_TOK    128
 
+/* Recursive helper to get the real size, in tokens, of a non-trivial token. */
+static inline int
+json_token_size(jsmntok_t *start)
+{
+    /* Recursively count objects. */
+    if (start->type == JSMN_OBJECT) {
+        int i;
+        jsmntok_t *tok = start+1;
+        for (i = 0; i < start->size; i++) {
+            tok++;
+            tok += json_token_size(tok);
+        }
+        return tok - start;
+    }
+    /* Recursively count arrays. */
+    if (start->type == JSMN_ARRAY) {
+        int i;
+        jsmntok_t *tok = start+1;
+        for (i = 0; i < start->size; i++) {
+            tok += json_token_size(tok);
+        }
+        return tok - start;
+    }
+    /* Everything else has size 1. */
+    return 1;
+}
+
 /* Parse JSON args, or return NULL if no args were provided. */
 static GHashTable *
-parse_json(FILE *fp, unsigned long flags)
+json_parse(FILE *fp, unsigned long flags)
 {
     jsmn_parser parser;
     jsmntok_t tokens[JSON_MAX_TOK]; /* Should be enough for any crazy API thing. */
@@ -158,7 +186,7 @@ parse_json(FILE *fp, unsigned long flags)
     /* Read the file for JSON data. */
     jslen = fread(js, 1, JSON_MAX_BUF, fp);
     if (!jslen) {
-        /* If we just get an EOF, then assume no args. */
+        /* If we just get an EOF then assume no args. */
         if (feof(fp)) return NULL;
         /* Otherwise, report a parsing error. */
         handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
@@ -179,14 +207,14 @@ parse_json(FILE *fp, unsigned long flags)
 
     /* The only encoding we support for now is the JSON object */
     if (tokens[0].type == JSMN_OBJECT) {
-        int i = 1;
+        int children, i = 1;
         GHashTable *h = cam_dbus_dict_new();
         if (!h) {
             handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
         }
 
         /* Parse the tokens making up this JSON object. */
-        while (i < tokens[0].size) {
+        for (children = 0; children < tokens[0].size; children++) {
             jsmntok_t   *tok;
             char        *name;
             char        *value;
@@ -200,16 +228,17 @@ parse_json(FILE *fp, unsigned long flags)
             i++;
 
             /* The following token can be any simple type. */
-            tok = &tokens[i++];
+            tok = &tokens[i];
             value = &js[tok->start];
-            name[tok->end - tok->start] = '\0';
-            i += tok->size;
+            value[tok->end - tok->start] = '\0';
+            i += json_token_size(tok);
 
             if (tok->type == JSMN_STRING) {
-                /* TODO: {string, string} arguments. */
+                /* TODO: Deal with escaped UTF-8. This is probably a security hole. */
+                cam_dbus_dict_add_printf(h, name, "%s", value);
             }
             else if (tok->type != JSMN_PRIMITIVE) {
-                /* We don't support nested types. */
+                /* Ignore nested types. */
                 continue;
             }
             /* Break it down by primitive types. */
@@ -253,10 +282,11 @@ parse_json(FILE *fp, unsigned long flags)
 static void
 usage(FILE *fp, int argc, char * const argv[])
 {
-    fprintf(fp, "usage : %s [options] METHOD\n\n", argv[0]);
+    fprintf(fp, "usage : %s [options] METHOD [PARAMS]\n\n", argv[0]);
 
     fprintf(fp, "Make a DBus call to the Chronos camera daemon, and translate\n");
-    fprintf(fp, "the result into JSON.\n\n");
+    fprintf(fp, "the result into JSON. Parameters passed to the RPC call will\n");
+    fprintf(fp, "be parsed from the PARAMS file, if provided.\n\n");
 
     fprintf(fp, "options:\n");
     fprintf(fp, "\t-r, --rpc    encode the results in JSON-RPC format\n");
@@ -269,7 +299,9 @@ main(int argc, char * const argv[])
     DBusGConnection* bus;
     DBusGProxy* proxy;
     GHashTable *h;
+    GHashTable *params = NULL;
     GError* error = NULL;
+    gboolean okay;
     const char *method;
     unsigned long flags = 0;
     
@@ -319,11 +351,23 @@ main(int argc, char * const argv[])
         return EXIT_FAILURE;
     }
     else {
-        method = argv[optind];
+        method = argv[optind++];
     }
 
-    /* TODO: Parse JSON from stdin to get the request parameters, if any. */
-
+    /* If yet another parameter is present, it may provide a source file for
+     * the RPC request parameters, or it may be '-' to read paramers from stdin.
+     */
+    if (optind < argc) {
+        const char *filename = argv[optind++];
+        FILE *fp = strcmp(filename, "-") ? fopen(filename, "r") : stdin;
+        if (!fp) {
+            fprintf(stderr, "Failed to open '%s' for reading: %s\n", filename, strerror(errno));
+            return EXIT_FAILURE;
+        }
+        params = json_parse(fp, flags);
+        fclose(fp);
+    }
+    
 
     /* Initialize the GType/GObject system. */
     g_type_init();
@@ -331,12 +375,19 @@ main(int argc, char * const argv[])
     if (error != NULL) {
         handle_error(-32603, "Internal error", flags);
     }
-    proxy = dbus_g_proxy_new_for_name(bus, CAM_DBUS_SERVICE, CAM_DBUS_PATH, CAM_DBUS_INTERFACE);
+    proxy = dbus_g_proxy_new_for_name(bus, CAM_DBUS_CONTROL_SERVICE, CAM_DBUS_CONTROL_PATH, CAM_DBUS_CONTROL_INTERFACE);
     if (proxy == NULL) {
         handle_error(-32603, "Internal error", flags);
     }
-    if (!dbus_g_proxy_call(proxy, method, &error, G_TYPE_INVALID,
-            CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID)) {
+    if (params) {
+        okay = dbus_g_proxy_call(proxy, method, &error,
+                CAM_DBUS_HASH_MAP, params, G_TYPE_INVALID,
+                CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
+    } else {
+        okay = dbus_g_proxy_call(proxy, method, &error, G_TYPE_INVALID,
+                CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
+    }
+    if (!okay) {
         handle_error(error->code, error->message, flags);
     }
 

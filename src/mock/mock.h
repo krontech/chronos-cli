@@ -17,9 +17,7 @@
 #ifndef _MOCK_H
 #define _MOCK_H
 
-typedef struct {
-    GObject parent;
-
+struct mock_state {
     /* Video Settings */
     unsigned long hres;
     unsigned long vres;
@@ -28,16 +26,18 @@ typedef struct {
     unsigned long long exposure_nsec;
     unsigned long long period_nsec;
     int gain_db;
+};
 
-} MockObject;
+/* DBus/Glib glue object. */
+typedef struct {
+    GObject parent;
+    struct  mock_state *state;
+} MockControl;
 
 typedef struct {
-    GObjectClass parent;
-} MockObjectClass;
-
-GType mock_object_get_type(void);
-
-#define MOCK_OBJECT_TYPE    (mock_object_get_type())
+    GObject parent;
+    struct  mock_state *state;
+} MockVideo;
 
 /* Magical constants pretending to be hardware. */
 #define MOCK_MAX_HRES           1920
@@ -54,5 +54,19 @@ GType mock_object_get_type(void);
 
 #define MOCK_VRES_INCREMENT     2
 #define MOCK_HRES_INCREMENT     32
+
+/* Control API calls to be mocked. */
+gboolean cam_control_get_video_settings(MockControl *cam, GHashTable **data, GError **error);
+gboolean cam_control_set_video_settings(MockControl *cam, GHashTable *data, GError **error);
+gboolean cam_control_get_camera_data(MockControl *cam, GHashTable **data, GError **error);
+gboolean cam_control_get_sensor_data(MockControl *cam, GHashTable **data, GError **error);
+gboolean cam_control_get_timing_limits(MockControl *cam, GHashTable *args, GHashTable **data, GError **error);
+
+/* Video API calls to be mocked. */
+gboolean cam_video_record_file(MockVideo *cam, GHashTable *args, GError **error);
+gboolean cam_video_livestream(MockVideo *cam, GHashTable *args, GError **error);
+gboolean cam_video_playrate(MockVideo *cam, GHashTable *args, GError **error);
+gboolean cam_video_getstate(MockVideo *cam, GHashTable **resp, GError **error);
+gboolean cam_video_setframe(MockVideo *cam, GHashTable *args, GError **error);
 
 #endif /* _MOCK_H */

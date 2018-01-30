@@ -17,8 +17,7 @@
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
     <method name="get_timing_limits">
-      <arg name="hres" direction="in" type="i"/>
-      <arg name="vres" direction="in" type="i"/>
+      <arg name="args" direction="in" type="a{sv}"/>
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
   </interface>

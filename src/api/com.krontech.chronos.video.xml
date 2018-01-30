@@ -11,5 +11,11 @@
     <method name="livestream">
       <arg name="settings" direction="in" type="a{sv}"/>
     </method>
+    <method name="playrate">
+      <arg name="args" direction="in" type="a{sv}"/>
+    </method>
+    <method name="setframe">
+      <arg name="args" direction="in" type="a{sv}"/>
+    </method>
   </interface>
 </node>

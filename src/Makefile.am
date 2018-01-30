@@ -2,9 +2,16 @@
 noinst_LIBRARIES = libcamera.a
 bin_PROGRAMS = cam-daemon cam-loader cam-pipeline cam-json
 bin_PROGRAMS += cam-regdump cam-mock
-AM_CFLAGS = -I ${srcdir}/lib -I ${prefix}/usr/include ${GLIB_CFLAGS}
+AM_CFLAGS = -I ${srcdir}/lib ${GLIB_CFLAGS}
+AM_CFLAGS += -Wno-deprecated-declarations
 GLIB_LIBS=-lgmodule-2.0 -lgobject-2.0 -lgthread-2.0 -lglib-2.0
 DBUS_LIBS=-l:libdbus-glib-1.so.2 -l:libdbus-1.so.3
+
+## Handle cross compiler sysrooting
+if SYSROOT
+AM_CFLAGS += --sysroot=${SYSROOT}
+AM_LDFLAGS = --sysroot=${SYSROOT}
+endif
 
 ## Bundle the common FPGA and image sensor tools into a library.
 libcamera_a_SOURCES = lib/board-chronos14.c
@@ -26,12 +33,13 @@ libcamera_a_CFLAGS = ${AM_CFLAGS}
 ## FPGA and Image Sensor register dump tool
 cam_regdump_LDADD = libcamera.a
 cam_regdump_CFLAGS = ${AM_CFLAGS}
+cam_regdump_LDFLAGS = ${AM_LDFLAGS}
 cam_regdump_SOURCES = cam-regdump.c
 
 ## Camera Daemon
-cam_daemon_LDADD = libcamera.a
+cam_daemon_LDADD = libcamera.a ${DBUS_LIBS} ${GLIB_LIBS}
 cam_daemon_CFLAGS = ${AM_CFLAGS} ${GLIB_CFLAGS} ${DBUS_CFLAGS}
-cam_daemon_LDADD += ${DBUS_LIBS} ${GLIB_LIBS}
+cam_daemon_LDFLAGS = ${AM_LDFLAGS}
 cam_daemon_SOURCES = daemon/main.c
 cam_daemon_SOURCES += daemon/calibration.c
 cam_daemon_SOURCES += daemon/camera.c
@@ -40,16 +48,18 @@ cam_daemon_SOURCES += daemon/dbus-glue.c
 cam_daemon_SOURCES += daemon/camera.h
 cam_daemon_SOURCES += api/cam-dbus-server.h
 
-## Mock Camera Daemon
-cam_mock_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
-cam_mock_LDFLAGS = -L ${prefix}/usr/lib
+## Mock Control Daemon
 cam_mock_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
+cam_mock_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_mock_LDFLAGS = ${AM_LDFLAGS}
 cam_mock_SOURCES = mock/main.c
-cam_mock_SOURCES += mock/dbus-mock.c
+cam_mock_SOURCES += mock/mock-control.c
+cam_mock_SOURCES += mock/mock-video.c
 
 ## Camera DBus JSON translator
-cam_json_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_json_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
+cam_json_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_json_LDFLAGS = ${AM_LDFLAGS}
 cam_json_SOURCES = client/cam-json.c
 cam_json_SOURCES += client/jsmn.c
 cam_json_SOURCES += client/jsmn.h
@@ -58,14 +68,14 @@ cam_json_SOURCES += api/cam-dbus-client.h
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.
 cam_loader_LDADD = libcamera.a
+cam_loader_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_loader_LDFLAGS = ${AM_LDFLAGS}
 cam_loader_SOURCES = cam-loader.c
 
 ## GStreamer Daemon for running the video system.
-cam_pipeline_LDADD = libcamera.a
+cam_pipeline_LDADD = libcamera.a ${DBUS_LIBS} ${GLIB_LIBS}
 cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
-cam_pipeline_CFLAGS += -I ${prefix}/usr/include/gstreamer-0.10
-cam_pipeline_LDFLAGS = -L ${prefix}/usr/lib -L ${prefix}/usr/lib/gstreamer-0.10
-cam_pipeline_LDADD += ${DBUS_LIBS} ${GLIB_LIBS}
+cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -L ${prefix}/usr/lib/gstreamer-0.10
 cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
 cam_pipeline_LDADD += -l:libjpeg.so.8
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
@@ -80,7 +90,7 @@ api/cam-dbus-client.h: api/com.krontech.chronos.control.xml
 	dbus-binding-tool --prefix=cam_dbus --mode=glib-client $< > $@
 
 api/cam-dbus-server.h: api/com.krontech.chronos.control.xml
-	dbus-binding-tool --prefix=cam_dbus --mode=glib-server $< > $@
+	dbus-binding-tool --prefix=cam_control --mode=glib-server $< > $@
 
 api/cam-dbus-video.h: api/com.krontech.chronos.video.xml
-	dbus-binding-tool --prefix=cam_dbus --mode=glib-server $< > $@
+	dbus-binding-tool --prefix=cam_video --mode=glib-server $< > $@
