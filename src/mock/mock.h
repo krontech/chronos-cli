@@ -17,6 +17,11 @@
 #ifndef _MOCK_H
 #define _MOCK_H
 
+#include "fpga-sensor.h"
+
+/* Don't yet have a good abstraction for this. */
+#define MOCK_MAX_GAIN           24
+
 struct mock_state {
     /* Video Settings */
     unsigned long hres;
@@ -26,6 +31,8 @@ struct mock_state {
     unsigned long long exposure_nsec;
     unsigned long long period_nsec;
     int gain_db;
+
+    struct image_sensor sensor;
 };
 
 /* DBus/Glib glue object. */
@@ -38,22 +45,6 @@ typedef struct {
     GObject parent;
     struct  mock_state *state;
 } MockVideo;
-
-/* Magical constants pretending to be hardware. */
-#define MOCK_MAX_HRES           1920
-#define MOCK_MAX_VRES           1080
-#define MOCK_MIN_HRES           240
-#define MOCK_MIN_VRES           64
-#define MOCK_MAX_FRAMERATE      1000
-#define MOCK_MAX_PIXELRATE      (MOCK_MAX_HRES * MOCK_MAX_VRES * MOCK_MAX_FRAMERATE)
-#define MOCK_QUANTIZE_TIMING    250
-#define MOCK_MAX_EXPOSURE       1000000000
-#define MOCK_MIN_EXPOSURE       1000
-#define MOCK_MAX_SHUTTER_ANGLE  330
-#define MOCK_MAX_GAIN           24
-
-#define MOCK_VRES_INCREMENT     2
-#define MOCK_HRES_INCREMENT     32
 
 /* Control API calls to be mocked. */
 gboolean cam_control_get_video_settings(MockControl *cam, GHashTable **data, GError **error);
@@ -68,5 +59,7 @@ gboolean cam_video_livestream(MockVideo *cam, GHashTable *args, GError **error);
 gboolean cam_video_playrate(MockVideo *cam, GHashTable *args, GError **error);
 gboolean cam_video_getstate(MockVideo *cam, GHashTable **resp, GError **error);
 gboolean cam_video_setframe(MockVideo *cam, GHashTable *args, GError **error);
+
+void mock_sensor_init(struct image_sensor *sensor);
 
 #endif /* _MOCK_H */

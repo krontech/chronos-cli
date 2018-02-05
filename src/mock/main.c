@@ -114,15 +114,13 @@ main(void)
     GError* error = NULL;
 
     /* The fake camera state */
-    struct mock_state state = {
-        .hres = MOCK_MAX_HRES,
-        .vres = MOCK_MAX_VRES,
-        .hoff = 0,
-        .voff = 0,
-        .period_nsec = 1000000000 / MOCK_MAX_FRAMERATE,
-        .period_nsec = state.period_nsec * MOCK_MAX_SHUTTER_ANGLE / 360,
-        .gain_db = 0,
-    };
+    struct mock_state state = {0};
+    mock_sensor_init(&state.sensor);
+    state.hres = state.sensor.h_max_res;
+    state.vres = state.sensor.v_max_res;
+    state.period_nsec = 1000000;
+    state.exposure_nsec = state.period_nsec * 330 / 360;
+    state.gain_db = 0;
 
     /* Init glib */
     g_type_init();

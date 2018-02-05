@@ -125,15 +125,9 @@ cam_control_get_sensor_data(CamObject *cam, GHashTable **data, GError **error)
     GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
         struct image_sensor *sensor = cam->sensor;
-        char fourcc[5] = {
-            (sensor->format >> 0) & 0xff,
-            (sensor->format >> 8) & 0xff,
-            (sensor->format >> 16) & 0xff,
-            (sensor->format >> 24) & 0xff,
-            '\0', 
-        };
+        char fourcc[5] = FOURCC_STRING(sensor->format);
         cam_dbus_dict_add_string(dict, "name", sensor->name);
-        if (strlen(fourcc)) cam_dbus_dict_add_string(dict, "pixelFormat", fourcc);
+        cam_dbus_dict_add_string(dict, "pixelFormat", fourcc);
 
         cam_dbus_dict_add_uint(dict, "pixelRate", sensor->pixel_rate);
         cam_dbus_dict_add_uint(dict, "hMax", sensor->h_max_res);
@@ -142,8 +136,6 @@ cam_control_get_sensor_data(CamObject *cam, GHashTable **data, GError **error)
         cam_dbus_dict_add_uint(dict, "vMin", sensor->v_min_res);
         cam_dbus_dict_add_uint(dict, "hIncrement", sensor->h_increment);
         cam_dbus_dict_add_uint(dict, "vIncrement", sensor->v_increment);
-        cam_dbus_dict_add_uint(dict, "minExposureNsec", sensor->exp_min_nsec);
-        cam_dbus_dict_add_uint(dict, "maxExposureNsec", sensor->exp_max_nsec);
     }
     *data = dict;
     return (dict != NULL);

@@ -62,35 +62,33 @@ cam_control_set_video_settings(MockControl *mock, GHashTable *data, GError **err
 {
     struct mock_state *state = mock->state;
     do {
-        unsigned int hres = cam_dbus_dict_get_uint(data, "hRes", 0);
-        unsigned int vres = cam_dbus_dict_get_uint(data, "vRes", 0);
-        unsigned int hoff = cam_dbus_dict_get_uint(data, "hOffset", 0);
-        unsigned int voff = cam_dbus_dict_get_uint(data, "vOffset", 0);
+        struct image_constraints constraints;
+        struct image_geometry geometry = {
+            .hres = cam_dbus_dict_get_uint(data, "hRes", 0),
+            .vres = cam_dbus_dict_get_uint(data, "vRes", 0),
+            .hoffset = cam_dbus_dict_get_uint(data, "hOffset", 0),
+            .voffset = cam_dbus_dict_get_uint(data, "vOffset", 0),
+        };
         unsigned int exp_nsec = cam_dbus_dict_get_uint(data, "exposureNsec", 0);
         unsigned int period_nsec = cam_dbus_dict_get_uint(data, "periodNsec", 0);
         int gain = cam_dbus_dict_get_int(data, "gain", 0);
+        int err;
 
         /* Sanity check the hres and vres */
-        if ( ((hres < MOCK_MIN_HRES) || (hres > MOCK_MAX_HRES)) ||
-             ((vres < MOCK_MIN_VRES) || (vres > MOCK_MAX_VRES)) ||
-             ((hres % MOCK_HRES_INCREMENT) || (vres % MOCK_VRES_INCREMENT))) {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid Frame Resolution");
-            break;
-        }
-        if ((hoff % MOCK_HRES_INCREMENT) || (voff % MOCK_VRES_INCREMENT)) {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid Frame Offsets");
+        err = image_sensor_set_resolution(&state->sensor, &geometry);
+        if (err < 0) {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid frame resolution and offset");
             break;
         }
         
         /* Sanity check the frame timing. */
+        image_sensor_get_constraints(&state->sensor, &geometry, &constraints);
         if (period_nsec == 0) {
             *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Unspecified Frame Period");
             break;
         }
-        period_nsec += MOCK_QUANTIZE_TIMING-1;
-        period_nsec -= (period_nsec % MOCK_QUANTIZE_TIMING);
-        if ((hres * vres * 1000000000 / period_nsec) > MOCK_MAX_PIXELRATE) {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Frame Period Too Short for Frame Size");
+        if ((period_nsec < constraints.t_min_period) || (period_nsec > constraints.t_max_period)) {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid Frame Period");
             break;
         }
 
@@ -99,13 +97,11 @@ cam_control_set_video_settings(MockControl *mock, GHashTable *data, GError **err
             *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Unspecified Exposure Time");
             break;
         }
-        if (exp_nsec > MOCK_MAX_EXPOSURE) exp_nsec = MOCK_MAX_EXPOSURE;
-        if (exp_nsec < MOCK_MIN_EXPOSURE) exp_nsec = MOCK_MIN_EXPOSURE;
-        exp_nsec += MOCK_QUANTIZE_TIMING-1;
-        exp_nsec -= (exp_nsec % MOCK_QUANTIZE_TIMING);
-        if (exp_nsec > (period_nsec * MOCK_MAX_SHUTTER_ANGLE) / 360) {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Exposure Time Exceeds Maximum Shutter Angle");
-            break;
+        if (exp_nsec < constraints.t_min_exposure) exp_nsec = constraints.t_min_exposure;
+        if (exp_nsec > image_sensor_max_exposure(&constraints, period_nsec)) {
+            exp_nsec = image_sensor_max_exposure(&constraints, period_nsec);
+        } else if (exp_nsec < constraints.t_min_exposure) {
+            exp_nsec = constraints.t_min_exposure;
         }
 
         /* The gain defaults to zero if omitted, but otherwise must be a multiple of 6dB and less than MAX_GAIN */
@@ -114,12 +110,12 @@ cam_control_set_video_settings(MockControl *mock, GHashTable *data, GError **err
             break;
         }
         /* Store it */
-        state->hres = hres;
-        state->vres = vres;
-        state->hoff = hoff;
-        state->voff = voff;
-        state->exposure_nsec;
-        state->period_nsec;
+        state->hres = geometry.hres;
+        state->vres = geometry.vres;
+        state->hoff = geometry.hoffset;
+        state->voff = geometry.voffset;
+        state->exposure_nsec = exp_nsec;
+        state->period_nsec = period_nsec;
         state->gain_db = gain;
 
         g_hash_table_destroy(data);
@@ -133,19 +129,19 @@ cam_control_set_video_settings(MockControl *mock, GHashTable *data, GError **err
 gboolean
 cam_control_get_sensor_data(MockControl *mock, GHashTable **data, GError **error)
 {
+    struct mock_state *state = mock->state;
     GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
-        cam_dbus_dict_add_string(dict, "name", "lux9001");
-        cam_dbus_dict_add_uint(dict, "hMax", MOCK_MAX_HRES);
-        cam_dbus_dict_add_uint(dict, "vMax", MOCK_MAX_VRES);
-        cam_dbus_dict_add_uint(dict, "hMin", MOCK_MIN_HRES);
-        cam_dbus_dict_add_uint(dict, "vMin", MOCK_MIN_VRES);
-        cam_dbus_dict_add_uint(dict, "hIncrement", MOCK_HRES_INCREMENT);
-        cam_dbus_dict_add_uint(dict, "vIncrement", MOCK_VRES_INCREMENT);
-        cam_dbus_dict_add_uint(dict, "minExposureNsec", 1000);
-        cam_dbus_dict_add_uint(dict, "maxExposureNsec", UINT32_MAX);
-        cam_dbus_dict_add_uint(dict, "pixelRate", MOCK_MAX_PIXELRATE);
-        cam_dbus_dict_add_string(dict, "pixelFormat", "BYR2");
+        char fourcc[] = FOURCC_STRING(state->sensor.format);
+        cam_dbus_dict_add_string(dict, "name", state->sensor.name);
+        cam_dbus_dict_add_uint(dict, "hMax", state->sensor.h_max_res);
+        cam_dbus_dict_add_uint(dict, "vMax", state->sensor.v_max_res);
+        cam_dbus_dict_add_uint(dict, "hMin", state->sensor.h_min_res);
+        cam_dbus_dict_add_uint(dict, "vMin", state->sensor.v_min_res);
+        cam_dbus_dict_add_uint(dict, "hIncrement", state->sensor.h_increment);
+        cam_dbus_dict_add_uint(dict, "vIncrement", state->sensor.v_increment);
+        cam_dbus_dict_add_uint(dict, "pixelRate", state->sensor.pixel_rate);
+        cam_dbus_dict_add_string(dict, "pixelFormat", fourcc);
     }
     *data = dict;
     return (dict != NULL);
@@ -154,71 +150,30 @@ cam_control_get_sensor_data(MockControl *mock, GHashTable **data, GError **error
 gboolean
 cam_control_get_timing_limits(MockControl *mock, GHashTable *args, GHashTable **data, GError **error)
 {
-    unsigned int hres = cam_dbus_dict_get_uint(args, "hRes", 0);
-    unsigned int vres = cam_dbus_dict_get_uint(args, "vRes", 0);
+    struct mock_state *state = mock->state;
+    struct image_constraints constraints;
+    struct image_geometry geometry = {
+        .hres = cam_dbus_dict_get_uint(args, "hRes", 0),
+        .vres = cam_dbus_dict_get_uint(args, "vRes", 0),
+        .hoffset = 0,
+        .voffset = 0
+    };
     GHashTable *dict;
     g_hash_table_destroy(args);
     
-    if ( ((hres < MOCK_MIN_HRES) || (hres > MOCK_MAX_HRES)) ||
-         ((vres < MOCK_MIN_VRES) || (vres > MOCK_MAX_VRES)) ||
-         ((hres % MOCK_HRES_INCREMENT) || (vres % MOCK_VRES_INCREMENT))) {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid Frame Resolution");
+    if (image_sensor_get_constraints(&state->sensor, &geometry, &constraints) != 0) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid frame resolution and offset");
         return 0;
     }
 
-    /* TODO: This needs a bunch of thinking on how to convey the timing limits.
-     * Real image sensors have a target frame period, in which the blanking
-     * intervals and some exposure timing overhead must fit along with the
-     * time to clock the pixels out of the sensor.
-     * 
-     * Can we therefore describe the timing bound as:
-     *      tPixelData = (nRows * nCols) / pixelrate
-     *      tFrame > tPixelData + (nRow * tRowOverhead) + tGlobalOverhead
-     *      tExposure < tFrame - tExposureOverhead
-     * 
-     * In the particular case of the LUX1310, we would get:
-     *      pixelrate = Tclk * 16 = 1.44GP/s
-     *      tRowOverhead = tHblank
-     *      tGlobalOverhead = tTx + tFovf + tFovb
-     *      tExposureOverhead = tAbn
-     * 
-     * What then defines the minimum tFrame, and ultimately the max framerate?
-     * 
-     * So then, as an API model, we'll do the following.
-     *      caller provides X/Y frame size, and the daemon returns:
-     *          - tMinFramePeriod = minimum frame period for this resolution.
-     *          - tMaxFramePeriod = maximum frame period for this resolution.
-     *          - tMaxShutterAngle = maximum shutter angle in degress.
-     *          - tMinExposure = minimum exposure time.
-     *          - tExposureOverhead = timing overhead required for exposure (see equation below).
-     *          - fQuantization = clock rate used for timing quantization.
-     * 
-     * Thus, frame period must be constrainted by:
-     *      tMinFramePeriod <= tFramePeriod <= tMaxFramePeriod
-     * 
-     * And, exposure time must be constrainte
-int
-main(void)
-{
-    g_type_init();
-    mock = g_object_new(MOCK_OBJECT_TYPE, NULL);
-    mock_main(mock, CAM_DBUS_CONTROL_SERVICE, CAM_DBUS_CONTROL_PATH);
-}
-d by:
-     *      tMinExposure <= tExposure <= (tFramePeriod * tMaxShutterAngle) / 360 - tExposureOverhead
-     * 
-     * The quantization frequency is optional, and provides a hint to the quantization behavior of
-     * the underlying exposure and frame timing. Exposure and frame timing will be rounded to an
-     * integer multiple of (1/fQuantization) seconds.
-     */
     dict = cam_dbus_dict_new();
     if (dict) {
-        cam_dbus_dict_add_uint(dict, "tMinPeriod", (hres * vres * 1000000000ULL) / MOCK_MAX_PIXELRATE);
-        cam_dbus_dict_add_uint(dict, "tMaxPeriod", UINT32_MAX);
-        cam_dbus_dict_add_uint(dict, "tMinExposure", MOCK_MIN_EXPOSURE);
-        cam_dbus_dict_add_uint(dict, "tExposureOverhead", MOCK_MIN_EXPOSURE);
-        cam_dbus_dict_add_uint(dict, "tMaxShutterAngle", MOCK_MAX_SHUTTER_ANGLE);
-        cam_dbus_dict_add_uint(dict, "fQuantization", 1000000000 / MOCK_QUANTIZE_TIMING);
+        cam_dbus_dict_add_uint(dict, "tMinPeriod", constraints.t_min_period);
+        cam_dbus_dict_add_uint(dict, "tMaxPeriod", constraints.t_max_period);
+        cam_dbus_dict_add_uint(dict, "tMinExposure", constraints.t_min_exposure);
+        cam_dbus_dict_add_uint(dict, "tExposureDelay", constraints.t_exposure_delay);
+        cam_dbus_dict_add_uint(dict, "tMaxShutterAngle", constraints.t_max_shutter);
+        cam_dbus_dict_add_uint(dict, "fQuantization", constraints.f_quantization);
     }
     *data = dict;
     return (dict != NULL);

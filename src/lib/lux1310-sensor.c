@@ -35,6 +35,9 @@
 #include "utils.h"
 #include "ioport.h"
 
+#define LUX1310_CLOCKS_TO_NSEC(_clks_, _hz_) \
+    ((((_clks_) * 1000000000ULL) + (_hz_) - 1) / (_hz_))
+
 #define LUX1310_SENSOR_CLOCK_RATE   90000000ULL
 #define LUX1310_TIMING_CLOCK_RATE   100000000ULL
 #define LUX1310_MIN_EXPOSURE        1000
@@ -326,6 +329,24 @@ lux1310_set_resolution(struct image_sensor *s, const struct image_geometry *g)
     return 0;
 } /* lux1310_set_resolution */
 
+/* Return the timing constraings for a given frame geometry. */
+static int
+lux1310_constraints(struct image_sensor *sensor, const struct image_geometry *g, struct image_constraints *c)
+{
+    struct lux1310_private_data *data = CONTAINER_OF(sensor, struct lux1310_private_data, sensor);
+    unsigned long t_line = max((g->hres / LUX1310_HRES_INCREMENT)+2, (LUX1310_MIN_WAVETABLE_SIZE + 3));
+
+    c->t_max_period = UINT32_MAX;
+    c->t_min_period = LUX1310_CLOCKS_TO_NSEC(lux1310_min_period(g, LUX1310_MIN_WAVETABLE_SIZE), LUX1310_TIMING_CLOCK_RATE);
+    c->f_quantization = LUX1310_TIMING_CLOCK_RATE;
+
+    c->t_min_exposure = LUX1310_CLOCKS_TO_NSEC(t_line, LUX1310_TIMING_CLOCK_RATE);
+    c->t_max_shutter = 360;
+    c->t_exposure_delay = LUX1310_CLOCKS_TO_NSEC(LUX1310_MAGIC_ABN_DELAY, LUX1310_TIMING_CLOCK_RATE);
+
+    return 0;
+} /* lux1310_constraints */
+
 /* Round the exposure timing to the nearest value the sensor can accept. */
 static unsigned long long
 lux1310_round_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
@@ -487,11 +508,10 @@ lux1310_cal_suffix(struct image_sensor *sensor, char *buf, size_t maxlen)
 } /* lux1310_cal_suffix */
 
 static const struct image_sensor_ops lux1310_ops = {
-    .round_exposure = lux1310_round_exposure,
-    .round_period = lux1310_round_period,
     .set_exposure = lux1310_set_exposure,
     .set_period = lux1310_set_period,
     .set_resolution = lux1310_set_resolution,
+    .get_constraints = lux1310_constraints,
     .set_gain = lux1310_set_gain,
     .cal_gain = lux1310_cal_gain,
     .cal_suffix = lux1310_cal_suffix,
@@ -557,8 +577,6 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
     data->sensor.v_min_res = 96;
     data->sensor.h_increment = LUX1310_HRES_INCREMENT;
     data->sensor.v_increment = 2;
-    data->sensor.exp_min_nsec = LUX1310_MIN_EXPOSURE;
-    data->sensor.exp_max_nsec = UINT32_MAX;
     data->sensor.pixel_rate = data->sensor.h_max_res * data->sensor.v_max_res * 1057;
     data->sensor.adc_count = LUX1310_ADC_COUNT;
 

@@ -32,12 +32,32 @@ struct image_geometry {
     long voffset;
 };
 
+/*
+ * Image timing constraings are a function of the selected frame geometry, so this
+ * structure is to be returned by the ops->get_constraings function for a given
+ * X/Y resolution.
+ */
+struct image_constraints {
+    unsigned long t_min_period;
+    unsigned long t_max_period;
+
+    /*
+     * Exposure timing must satisfy the constraints:
+     * tMinExposure <= tExposure <= (tFramePeriod * tMaxShutter) / 360 - tExposureDelay
+     */
+    unsigned long t_min_exposure;
+    unsigned long t_exposure_delay;
+    unsigned long t_max_shutter;
+
+    /* All timing values will be implicitly quantized by this frequency. */
+    unsigned long f_quantization;
+};
+
 struct image_sensor_ops {
-    unsigned long long (*round_exposure)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
-    unsigned long long (*round_period)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
     int (*set_exposure)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
     int (*set_period)(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
     int (*set_resolution)(struct image_sensor *sensor, const struct image_geometry *g);
+    int (*get_constraints)(struct image_sensor *sensor, const struct image_geometry *g, struct image_constraints *c);
     /* ADC Gain Configuration and Calibration */
     int (*set_gain)(struct image_sensor *sensor, int gain, FILE *cal);
     int (*cal_gain)(struct image_sensor *sensor, const struct image_geometry *g, const void *frame, FILE *cal);
@@ -52,6 +72,9 @@ struct image_sensor_ops {
  */
 #define FOURCC_CODE(_a_, _b_, _c_, _d_) \
     (((uint32_t)(_a_) << 0) | ((uint32_t)(_b_) << 8) | ((uint32_t)(_c_) << 16) | ((uint32_t)(_d_) << 24))
+
+#define FOURCC_STRING(_code_) \
+    { ((_code_) >> 0) & 0xff, ((_code_) >> 8) & 0xff, ((_code_) >> 16) & 0xff, ((_code_) >> 24) & 0xff, '\0' }
 
 struct image_sensor {
     struct fpga *fpga;
@@ -69,8 +92,6 @@ struct image_sensor {
     unsigned long   v_min_res;
     unsigned long   h_increment;
     unsigned long   v_increment;
-    unsigned long long  exp_min_nsec;
-    unsigned long long  exp_max_nsec;
     unsigned long long  pixel_rate;
     unsigned long   adc_count;
 
@@ -88,12 +109,13 @@ struct image_sensor *lux1310_init(struct fpga *fpga, const struct ioport *iop);
 int image_sensor_bpp(struct image_sensor *sensor);
 int image_sensor_is_color(struct image_sensor *sensor);
 int image_sensor_set_resolution(struct image_sensor *sensor, const struct image_geometry *g);
+int image_sensor_get_constraints(struct image_sensor *sensor, const struct image_geometry *g, struct image_constraints *c);
 int image_sensor_set_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
 int image_sensor_set_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
 int image_sensor_set_gain(struct image_sensor *sensor, int gain, FILE *fp);
 int image_sensor_cal_gain(struct image_sensor *sensor, const struct image_geometry *g, const void *frame, FILE *fp);
 char *image_sensor_cal_suffix(struct image_sensor *sensor, char *buf, size_t maxlen);
-unsigned long long image_sensor_round_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
-unsigned long long image_sensor_round_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec);
+
+unsigned long long image_sensor_max_exposure(const struct image_constraints *g, unsigned long long nsec);
 
 #endif /* _FPGA_SENSOR_H */

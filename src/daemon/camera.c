@@ -90,8 +90,6 @@ cam_set_live_timing(struct image_sensor *sensor,
 int
 cam_init(CamObject *cam)
 {
-    unsigned long long exposure;
-    unsigned long long period;
     unsigned long frame_words;
     unsigned int maxfps = cam->sensor->pixel_rate / (cam->sensor->h_max_res * cam->sensor->v_max_res);
     struct image_geometry geometry = {
@@ -100,6 +98,7 @@ cam_init(CamObject *cam)
         .hoffset = 0,
         .voffset = 0,
     };
+    struct image_constraints constraints;
 
     /* Configure the FIFO threshold and image sequencer */
     cam->fpga->seq->live_addr[0] = MAX_FRAME_LENGTH;
@@ -108,12 +107,10 @@ cam_init(CamObject *cam)
     cam->fpga->seq->region_start = REC_START_ADDR;
 
     /* Configure default default timing to the maximum resolution, framerate and exposure. */
-    /* TODO: Configure Gain */
-    period = image_sensor_round_period(cam->sensor, &geometry, 1000000000 / maxfps);
-    exposure = image_sensor_round_exposure(cam->sensor, &geometry, 1000000000 / (maxfps * 2));
+    image_sensor_get_constraints(cam->sensor, &geometry, &constraints);
     image_sensor_set_resolution(cam->sensor, &geometry);
-    image_sensor_set_period(cam->sensor, &geometry, period);
-    image_sensor_set_exposure(cam->sensor, &geometry, exposure);
+    image_sensor_set_period(cam->sensor, &geometry, constraints.t_min_period);
+    image_sensor_set_exposure(cam->sensor, &geometry, image_sensor_max_exposure(&constraints, constraints.t_min_period));
     frame_words = ((cam->sensor->h_max_res * cam->sensor->v_max_res * image_sensor_bpp(cam->sensor)) / 8 + (32 - 1)) / 32;
     cam->fpga->seq->frame_size = (frame_words + 0x3f) & ~0x3f;
 

@@ -88,23 +88,9 @@ image_sensor_is_color(struct image_sensor *sensor)
 }
 
 unsigned long long
-image_sensor_round_exposure(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
+image_sensor_max_exposure(const struct image_constraints *c, unsigned long long t_period)
 {
-    if (sensor->ops->round_exposure) {
-        return sensor->ops->round_exposure(sensor, g, nsec);
-    } else {
-        return nsec;
-    }
-}
-
-unsigned long long
-image_sensor_round_period(struct image_sensor *sensor, const struct image_geometry *g, unsigned long long nsec)
-{
-    if (sensor->ops->round_exposure) {
-        return sensor->ops->round_exposure(sensor, g, nsec);
-    } else {
-        return nsec;
-    }
+    return ((t_period * c->t_max_shutter) / 360) - c->t_exposure_delay;
 }
 
 int
@@ -127,12 +113,9 @@ image_sensor_set_period(struct image_sensor *sensor, const struct image_geometry
     }
 }
 
-int
-image_sensor_set_resolution(struct image_sensor *sensor, const struct image_geometry *g)
+static int
+image_sensor_valid_resolution(struct image_sensor *sensor, const struct image_geometry *g)
 {
-    if (sensor->ops->set_resolution) {
-        return sensor->ops->set_resolution(sensor, g);
-    }
     if ((g->hres > sensor->h_max_res) || (g->hres < sensor->h_min_res)) {
         return -ERANGE;
     }
@@ -146,6 +129,32 @@ image_sensor_set_resolution(struct image_sensor *sensor, const struct image_geom
         return -ERANGE;
     }
     return 0;
+}
+
+int
+image_sensor_set_resolution(struct image_sensor *sensor, const struct image_geometry *g)
+{
+    int err = image_sensor_valid_resolution(sensor, g);
+    if (err != 0) {
+        return err;
+    }
+    if (sensor->ops->set_resolution) {
+        return sensor->ops->set_resolution(sensor, g);
+    }
+    return 0;
+}
+
+int
+image_sensor_get_constraints(struct image_sensor *sensor, const struct image_geometry *g, struct image_constraints *c)
+{
+    int err = image_sensor_valid_resolution(sensor, g);
+    if (err != 0) {
+        return err;
+    }
+    if (sensor->ops->get_constraints) {
+        return sensor->ops->get_constraints(sensor, g, c);
+    }
+    return -EINVAL;
 }
 
 int
