@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <setjmp.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
@@ -32,6 +33,35 @@
 
 #include "edid.h"
 
+static void *
+hdmi_hotplug_thread(void *arg)
+{
+    int prev_status = -1;
+    int fd = open("/dev/TI81XX_HDMI", O_RDWR);
+    while (fd >= 0) {
+        struct ti81xxhdmi_hpd_status status;
+        int err = ioctl(fd, TI81XXHDMI_WAIT_FOR_HPD_CHANGE, &status);
+        if (err < 0) {
+            fprintf(stderr, "DEBUG: ioctl(TI81XXHDMI_WAIT_FOR_HPD_CHANGE) error: %s\n", strerror(errno));
+            continue;
+        }
+        if (status.hpd_status != prev_status) {
+            fprintf(stderr, "HDMI Hotplug event detected\n");
+            pthread_kill((uintptr_t)arg, SIGHUP);
+        }
+        prev_status = status.hpd_status;
+    }
+    return NULL;
+}
+
+void
+hdmi_hotplug_launch(void)
+{
+    pthread_t main_thread = pthread_self();
+    pthread_t hdmi_thread;
+    pthread_create(&hdmi_thread, NULL, hdmi_hotplug_thread, (void *)(uintptr_t)pthread_self());
+}
+
 static int
 set_hdmi_mode(const char *modestr)
 {
@@ -40,9 +70,6 @@ set_hdmi_mode(const char *modestr)
     char readmode[64];
     
     /* If the mode already matches, then do nothing. */
-    fprintf(stderr, "DEBUG: A\n");
-    fread(readmode, 1, sizeof(readmode), mode);
-    fprintf(stderr, "DEBUG: B=%s\n", readmode);
     if (strcmp(readmode, modestr) == 0) {
         fclose(mode);
         return 0;
@@ -51,7 +78,6 @@ set_hdmi_mode(const char *modestr)
     /* Disable HDMI, change the mode and enable it again. */
     ena = fopen("/sys/devices/platform/vpss/display0/enabled", "w");
     if (ena) {
-        fprintf(stderr, "DEBUG: c\n");
         fputs("0", ena);
         fclose(ena);
     }
@@ -59,11 +85,9 @@ set_hdmi_mode(const char *modestr)
     fclose(mode);
     ena = fopen("/sys/devices/platform/vpss/display0/enabled", "w");
     if (ena) {
-        fprintf(stderr, "DEBUG: d\n");
         fputs("1", ena);
         fclose(ena);
     }
-    fprintf(stderr, "DEBUG: E\n");
 }
 
 /*

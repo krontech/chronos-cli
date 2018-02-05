@@ -33,4 +33,7 @@ GstPad *cam_lcd_sink(GstElement *pipeline, unsigned long hres, unsigned long vre
 GstPad *cam_hdmi_sink(GstElement *pipeline, unsigned long hres, unsigned long vres);
 GstPad *cam_screencap(GstElement *pipeline);
 
+/* Some background elements. */
+void hdmi_hotplug_launch(void);
+
 #endif /* __PIPELINE */

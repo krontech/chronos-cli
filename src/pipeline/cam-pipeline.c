@@ -207,6 +207,9 @@ main(int argc, char * argv[])
         fprintf(stderr, "Unable to create FIFO: %s\n", strerror(errno));
     }
 
+    /* Launch the HDMI hotplug detection thread - generates a SIGHUP on hotplug events. */
+    hdmi_hotplug_launch();
+
     /*
      * Run the pipeline in a loop, reconfiguring on signal reception.
      * OMX Segfaults on restart, so the only way to make this work
