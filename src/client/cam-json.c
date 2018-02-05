@@ -260,7 +260,7 @@ json_parse(FILE *fp, unsigned long flags)
                 char *e;
                 long long x = strtoll(value, &e, 0);
                 if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
-                /* TODO: DBUS encoding for signed integers? */
+                cam_dbus_dict_add_int(h, name, x);
             } else {
                 char *e;
                 unsigned long long x = strtoull(value, &e, 0);
@@ -289,8 +289,11 @@ usage(FILE *fp, int argc, char * const argv[])
     fprintf(fp, "be parsed from the PARAMS file, if provided.\n\n");
 
     fprintf(fp, "options:\n");
-    fprintf(fp, "\t-r, --rpc    encode the results in JSON-RPC format\n");
-    fprintf(fp, "\t-h, --help   display this help and exit\n");
+    fprintf(fp, "\t-r, --rpc     encode the results in JSON-RPC format\n");
+    fprintf(fp, "\t-c, --cgi     encode the results in CGI/1.0 format\n");
+    fprintf(fp, "\t-n, --control connect to the control DBus interface\n");
+    fprintf(fp, "\t-v, --video   connect to the video DBus interface\n");
+    fprintf(fp, "\t-h, --help    display this help and exit\n");
 }
 
 int
@@ -302,14 +305,18 @@ main(int argc, char * const argv[])
     GHashTable *params = NULL;
     GError* error = NULL;
     gboolean okay;
+    const char *service = CAM_DBUS_CONTROL_SERVICE;
+    const char *path = CAM_DBUS_CONTROL_PATH;
+    const char *iface = CAM_DBUS_CONTROL_INTERFACE;
     const char *method;
     unsigned long flags = 0;
     
     /* Option Parsing */
-    const char *short_options = "rch";
+    const char *short_options = "rvnch";
     const struct option long_options[] = {
         {"rpc",     no_argument,    0, 'r'},
         {"cgi",     no_argument,    0, 'c'},
+        {"video",   no_argument,    0, 'v'},
         {"help",    no_argument,    0, 'h'},
         {0, 0, 0, 0}
     };
@@ -323,6 +330,18 @@ main(int argc, char * const argv[])
             
             case 'c':
                 flags |= OPT_FLAG_CGI;
+                break;
+            
+            case 'v':
+                service = CAM_DBUS_VIDEO_SERVICE;
+                path = CAM_DBUS_VIDEO_PATH;
+                iface = CAM_DBUS_VIDEO_INTERFACE;
+                break;
+
+            case 'n':
+                service = CAM_DBUS_CONTROL_SERVICE;
+                path = CAM_DBUS_CONTROL_PATH;
+                iface = CAM_DBUS_CONTROL_INTERFACE;
                 break;
 
             case 'h':
@@ -368,14 +387,13 @@ main(int argc, char * const argv[])
         fclose(fp);
     }
     
-
     /* Initialize the GType/GObject system. */
     g_type_init();
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
     if (error != NULL) {
         handle_error(-32603, "Internal error", flags);
     }
-    proxy = dbus_g_proxy_new_for_name(bus, CAM_DBUS_CONTROL_SERVICE, CAM_DBUS_CONTROL_PATH, CAM_DBUS_CONTROL_INTERFACE);
+    proxy = dbus_g_proxy_new_for_name(bus, service, path, iface);
     if (proxy == NULL) {
         handle_error(-32603, "Internal error", flags);
     }

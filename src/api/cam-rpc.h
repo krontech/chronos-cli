@@ -108,6 +108,12 @@ cam_dbus_dict_add_printf(GHashTable *h, const char *name, const char *fmt, ...)
 }
 
 static inline gboolean
+cam_dbus_dict_exists(GHashTable *h, const char *name)
+{
+    return (g_hash_table_lookup(h, name) != NULL);
+}
+
+static inline gboolean
 cam_dbus_dict_get_boolean(GHashTable *h, const char *name)
 {
     gpointer x = g_hash_table_lookup(h, name);
@@ -120,6 +126,8 @@ cam_dbus_dict_get_int(GHashTable *h, const char *name, long defval)
     gpointer x = g_hash_table_lookup(h, name);
     if (x && G_VALUE_HOLDS_INT(x)) return g_value_get_int(x);
     if (x && G_VALUE_HOLDS_LONG(x)) return g_value_get_long(x);
+    if (x && G_VALUE_HOLDS_UINT(x)) return g_value_get_uint(x);
+    if (x && G_VALUE_HOLDS_ULONG(x)) return g_value_get_ulong(x);
     return defval;
 }
 
@@ -129,6 +137,8 @@ cam_dbus_dict_get_uint(GHashTable *h, const char *name, unsigned long defval)
     gpointer x = g_hash_table_lookup(h, name);
     if (x && G_VALUE_HOLDS_UINT(x)) return g_value_get_uint(x);
     if (x && G_VALUE_HOLDS_ULONG(x)) return g_value_get_ulong(x);
+    if (x && G_VALUE_HOLDS_INT(x) && (g_value_get_int(x) >= 0)) return g_value_get_int(x);
+    if (x && G_VALUE_HOLDS_LONG(x) && (g_value_get_long(x) >= 0)) return g_value_get_long(x);
     return defval;
 }
 

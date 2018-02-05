@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <glib.h>
 #include <dbus/dbus-glib.h>
 
@@ -65,43 +66,56 @@ cam_video_livestream(MockVideo *mock, GHashTable *args, GError **error)
 #endif
 }
 
-gboolean
-cam_video_setframe(MockVideo *mock, GHashTable *args, GError **error)
+#define MOCK_RECORDED_FRAMES    1234
+
+static unsigned long
+compute_frameno(struct mock_state *state)
 {
-#if 0
-    GHashTable *dict = cam_dbus_dict_new();
-    if (dict) {
-        cam_dbus_dict_add_string(dict, "model", "Mock Camera 1.4");
-        cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-        cam_dbus_dict_add_printf(dict, "fpgaVersion", "%d.%d", 3, 14);
-        cam_dbus_dict_add_printf(dict, "memoryGB", "%u", 8);
-        cam_dbus_dict_add_string(dict, "serial", "e^(i*pi)");
-    }
-    *data = dict;
-    return (dict != NULL);
-#else
-    return 1;
-#endif
+    long long frame;
+    struct timespec now;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    frame = state->play_start_frame;
+    frame += (now.tv_sec - state->play_start_time.tv_sec) * state->play_frame_rate;
+    frame += (now.tv_nsec * state->play_frame_rate) / 1000000000;
+    frame -= (state->play_start_time.tv_nsec * state->play_frame_rate) / 1000000000;
+    frame %= MOCK_RECORDED_FRAMES;
+    if (frame < 0) frame += MOCK_RECORDED_FRAMES;
+    return frame;
 }
 
 gboolean
-cam_video_playrate(MockVideo *mock, GHashTable *args, GError **error)
+cam_video_playback(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
-#if 0
+    struct mock_state *state = mock->state;
     GHashTable *dict = cam_dbus_dict_new();
-    /* TODO: Implement Real Stuff */
+    unsigned long framenum = cam_dbus_dict_get_uint(args, "currentFrame", compute_frameno(state));
+    int framerate = cam_dbus_dict_get_int(args, "playbackRate", state->play_frame_rate);
+
+    /* Store the updated playback timing. */
+    state->play_frame_rate = framerate;
+    state->play_start_frame = framenum;
+    clock_gettime(CLOCK_MONOTONIC, &state->play_start_time);
+
+    /* Return the updated playback status */
+    return cam_video_status(mock, data, error);
+}
+
+gboolean
+cam_video_status(MockVideo *mock, GHashTable **data, GError **error)
+{
+    struct mock_state *state = mock->state;
+    GHashTable *dict = cam_dbus_dict_new();
     if (dict) {
-        cam_dbus_dict_add_uint(dict, "hRes", mock->hres);
-        cam_dbus_dict_add_uint(dict, "vRes", mock->vres);
-        cam_dbus_dict_add_uint(dict, "hOffset", mock->hoff);
-        cam_dbus_dict_add_uint(dict, "vOffset", mock->voff);
-        cam_dbus_dict_add_uint(dict, "exposureNsec", mock->exposure_nsec);
-        cam_dbus_dict_add_uint(dict, "periodNsec", mock->period_nsec);
-        cam_dbus_dict_add_uint(dict, "gain", mock->gain_db);
+        cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
+        cam_dbus_dict_add_boolean(dict, "playback", (state->play_start_time.tv_sec + state->play_start_time.tv_nsec) != 0);
+        cam_dbus_dict_add_boolean(dict, "recording", 0); /* TODO: Video record API */
+        cam_dbus_dict_add_uint(dict, "segment", 0);
+
+        cam_dbus_dict_add_uint(dict, "totalFrames", MOCK_RECORDED_FRAMES);
+        cam_dbus_dict_add_uint(dict, "currentFrame", compute_frameno(state));
+        cam_dbus_dict_add_int(dict, "playbackRate", state->play_frame_rate);
     }
     *data = dict;
     return (dict != NULL);
-#else
-    return 1;
-#endif
 }

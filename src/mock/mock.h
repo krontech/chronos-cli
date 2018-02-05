@@ -17,6 +17,8 @@
 #ifndef _MOCK_H
 #define _MOCK_H
 
+#include <time.h>
+#include <sys/time.h>
 #include "fpga-sensor.h"
 
 /* Don't yet have a good abstraction for this. */
@@ -32,6 +34,12 @@ struct mock_state {
     unsigned long long period_nsec;
     int gain_db;
 
+    /* Pretend playback timekeeping */
+    int             play_frame_rate;
+    unsigned long   play_start_frame;
+    struct timespec play_start_time;
+
+    /* Fake image sensor for testing. */
     struct image_sensor sensor;
 };
 
@@ -56,9 +64,8 @@ gboolean cam_control_get_timing_limits(MockControl *cam, GHashTable *args, GHash
 /* Video API calls to be mocked. */
 gboolean cam_video_record_file(MockVideo *cam, GHashTable *args, GError **error);
 gboolean cam_video_livestream(MockVideo *cam, GHashTable *args, GError **error);
-gboolean cam_video_playrate(MockVideo *cam, GHashTable *args, GError **error);
-gboolean cam_video_getstate(MockVideo *cam, GHashTable **resp, GError **error);
-gboolean cam_video_setframe(MockVideo *cam, GHashTable *args, GError **error);
+gboolean cam_video_playback(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
+gboolean cam_video_status(MockVideo *cam, GHashTable **data, GError **error);
 
 void mock_sensor_init(struct image_sensor *sensor);
 

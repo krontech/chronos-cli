@@ -104,6 +104,53 @@ dbus_glib_marshal_cam_video_BOOLEAN__STRING_BOXED_POINTER (GClosure     *closure
   g_value_set_boolean (return_value, v_return);
 }
 
+/* BOOLEAN:POINTER,POINTER */
+extern void dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER (GClosure     *closure,
+                                                                  GValue       *return_value,
+                                                                  guint         n_param_values,
+                                                                  const GValue *param_values,
+                                                                  gpointer      invocation_hint,
+                                                                  gpointer      marshal_data);
+void
+dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER (GClosure     *closure,
+                                                      GValue       *return_value G_GNUC_UNUSED,
+                                                      guint         n_param_values,
+                                                      const GValue *param_values,
+                                                      gpointer      invocation_hint G_GNUC_UNUSED,
+                                                      gpointer      marshal_data)
+{
+  typedef gboolean (*GMarshalFunc_BOOLEAN__POINTER_POINTER) (gpointer     data1,
+                                                             gpointer     arg_1,
+                                                             gpointer     arg_2,
+                                                             gpointer     data2);
+  GMarshalFunc_BOOLEAN__POINTER_POINTER callback;
+  GCClosure *cc = (GCClosure*) closure;
+  gpointer data1, data2;
+  gboolean v_return;
+
+  g_return_if_fail (return_value != NULL);
+  g_return_if_fail (n_param_values == 3);
+
+  if (G_CCLOSURE_SWAP_DATA (closure))
+    {
+      data1 = closure->data;
+      data2 = g_value_peek_pointer (param_values + 0);
+    }
+  else
+    {
+      data1 = g_value_peek_pointer (param_values + 0);
+      data2 = closure->data;
+    }
+  callback = (GMarshalFunc_BOOLEAN__POINTER_POINTER) (marshal_data ? marshal_data : cc->callback);
+
+  v_return = callback (data1,
+                       g_marshal_value_peek_pointer (param_values + 1),
+                       g_marshal_value_peek_pointer (param_values + 2),
+                       data2);
+
+  g_value_set_boolean (return_value, v_return);
+}
+
 /* BOOLEAN:BOXED,POINTER */
 extern void dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER (GClosure     *closure,
                                                                 GValue       *return_value,
@@ -151,6 +198,55 @@ dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER (GClosure     *closure,
   g_value_set_boolean (return_value, v_return);
 }
 
+/* BOOLEAN:BOXED,POINTER,POINTER */
+extern void dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER (GClosure     *closure,
+                                                                        GValue       *return_value,
+                                                                        guint         n_param_values,
+                                                                        const GValue *param_values,
+                                                                        gpointer      invocation_hint,
+                                                                        gpointer      marshal_data);
+void
+dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER (GClosure     *closure,
+                                                            GValue       *return_value G_GNUC_UNUSED,
+                                                            guint         n_param_values,
+                                                            const GValue *param_values,
+                                                            gpointer      invocation_hint G_GNUC_UNUSED,
+                                                            gpointer      marshal_data)
+{
+  typedef gboolean (*GMarshalFunc_BOOLEAN__BOXED_POINTER_POINTER) (gpointer     data1,
+                                                                   gpointer     arg_1,
+                                                                   gpointer     arg_2,
+                                                                   gpointer     arg_3,
+                                                                   gpointer     data2);
+  GMarshalFunc_BOOLEAN__BOXED_POINTER_POINTER callback;
+  GCClosure *cc = (GCClosure*) closure;
+  gpointer data1, data2;
+  gboolean v_return;
+
+  g_return_if_fail (return_value != NULL);
+  g_return_if_fail (n_param_values == 4);
+
+  if (G_CCLOSURE_SWAP_DATA (closure))
+    {
+      data1 = closure->data;
+      data2 = g_value_peek_pointer (param_values + 0);
+    }
+  else
+    {
+      data1 = g_value_peek_pointer (param_values + 0);
+      data2 = closure->data;
+    }
+  callback = (GMarshalFunc_BOOLEAN__BOXED_POINTER_POINTER) (marshal_data ? marshal_data : cc->callback);
+
+  v_return = callback (data1,
+                       g_marshal_value_peek_boxed (param_values + 1),
+                       g_marshal_value_peek_pointer (param_values + 2),
+                       g_marshal_value_peek_pointer (param_values + 3),
+                       data2);
+
+  g_value_set_boolean (return_value, v_return);
+}
+
 G_END_DECLS
 
 #endif /* __dbus_glib_marshal_cam_video_MARSHAL_H__ */
@@ -159,14 +255,14 @@ G_END_DECLS
 static const DBusGMethodInfo dbus_glib_cam_video_methods[] = {
   { (GCallback) cam_video_record_file, dbus_glib_marshal_cam_video_BOOLEAN__STRING_BOXED_POINTER, 0 },
   { (GCallback) cam_video_livestream, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 72 },
-  { (GCallback) cam_video_playrate, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 130 },
-  { (GCallback) cam_video_setframe, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 182 },
+  { (GCallback) cam_video_playback, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 130 },
+  { (GCallback) cam_video_status, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 199 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_video_object_info = {  1,
   dbus_glib_cam_video_methods,
   4,
-"com.krontech.chronos.video\0record_file\0S\0filename\0I\0s\0settings\0I\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0com.krontech.chronos.video\0playrate\0S\0args\0I\0a{sv}\0\0com.krontech.chronos.video\0setframe\0S\0args\0I\0a{sv}\0\0\0",
+"com.krontech.chronos.video\0record_file\0S\0filename\0I\0s\0settings\0I\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0status\0S\0args\0O\0F\0N\0a{sv}\0\0\0",
 "\0",
 "\0"
 };
