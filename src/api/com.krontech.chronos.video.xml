@@ -11,12 +11,16 @@
     <method name="livestream">
       <arg name="settings" direction="in" type="a{sv}"/>
     </method>
+    <method name="addregion">
+      <arg name="args" direction="in" type="a{sv}"/>
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
     <method name="playback">
       <arg name="args" direction="in" type="a{sv}"/>
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
     <method name="status">
-      <arg name="args" direction="out" type="a{sv}"/>
+      <arg name="data" direction="out" type="a{sv}"/>
     </method>
   </interface>
 </node>

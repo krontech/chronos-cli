@@ -27,6 +27,7 @@
 #include "fpga.h"
 #include "pipeline.h"
 
+
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
 
@@ -38,15 +39,52 @@
 #define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
 
 /* Signal handlering */
+static struct pipeline_state *pstate;
 static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
-static sig_atomic_t catch_sighup = 0;
 static sig_atomic_t catch_sigint = 0;
-static void handle_sigint(int sig) { catch_sigint = 1; }
+
+static void handle_sigint(int sig)
+{
+    catch_sigint = 1;
+    g_main_loop_quit(pstate->mainloop);
+}
 
 static void
 handle_sighup(int sig)
 {
     scaler_mode = (sig == SIGHUP) ? CAM_SCALE_ASPECT : CAM_SCALE_CROP;
+    g_main_loop_quit(pstate->mainloop);
+}
+
+/* Display a specific frame when in playback mode. */
+static void
+display_frameno(struct pipeline_state *state, unsigned long frame)
+{
+    unsigned long f_size = state->fpga->seq->frame_size;
+    unsigned long count = (state->region_size / f_size);
+    unsigned long offset = (state->region_first - state->region_base) / f_size;
+    if (count) {
+        state->fpga->display->frame_address = state->region_base + (((frame + offset) % count) * f_size);
+    } else {
+        state->fpga->display->frame_address = state->region_base;
+    }
+    state->fpga->display->manual_sync = 1;
+}
+
+static void
+handle_sigalrm(int sig)
+{
+    int divisor = (pstate->playrate + LIVE_MAX_FRAMERATE - 1) / LIVE_MAX_FRAMERATE;
+    if (pstate->totalframes && pstate->playrate) {
+        long nextframe = (pstate->lastframe + divisor) % pstate->totalframes;
+        if (nextframe < 0) pstate->totalframes += pstate->totalframes;
+        pstate->lastframe = nextframe;
+    }
+    /* Display the desired frame. */
+    if (pstate->fpga->display->control & DISPLAY_CTL_ADDRESS_SELECT) {
+        unsigned long f_size = pstate->fpga->seq->frame_size;
+        display_frameno(pstate, pstate->lastframe);
+    }
 }
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
@@ -67,7 +105,6 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
     if (!pipeline || !source || !tee) {
         return NULL;
     }
-
     /* Configure elements. */
 	g_object_set(G_OBJECT(source), "input-interface", "VIP1_PORTA", NULL);
 	g_object_set(G_OBJECT(source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
@@ -157,8 +194,10 @@ parse_resolution(const char *str, const char *name, unsigned long *x, unsigned l
 int
 main(int argc, char * argv[])
 {
-    struct fpga *fpga;
-    /* Default to use the entire LCD screen. */
+    struct itimerspec ts;
+    struct pipeline_state state = {0};
+    struct sigevent sigev;
+    struct sigaction sigact;
     struct display_config config = {
         .hres = CAM_LCD_HRES,
         .vres = CAM_LCD_VRES,
@@ -195,9 +234,11 @@ main(int argc, char * argv[])
     }
 
     /* Initialisation */
+    pstate = &state;
     gst_init(&argc, &argv);
-    fpga = fpga_open();
-    if (!fpga) {
+    state.mainloop = g_main_loop_new(NULL, FALSE);
+    state.fpga = fpga_open();
+    if (!state.fpga) {
         fprintf(stderr, "Failed to open FPGA: %s\n", strerror(errno));
         return -1;
     }
@@ -207,8 +248,21 @@ main(int argc, char * argv[])
         fprintf(stderr, "Unable to create FIFO: %s\n", strerror(errno));
     }
 
-    /* Launch the HDMI hotplug detection thread - generates a SIGHUP on hotplug events. */
-    hdmi_hotplug_launch();
+    /* Launch the HDMI and DBus threads. */
+    hdmi_hotplug_launch(&state);
+    dbus_service_launch(&state);
+    
+    /* Create the timer used for driving the playback state machine. */
+    sigev.sigev_notify = SIGEV_SIGNAL;
+    sigev.sigev_signo = SIGALRM;
+    sigev.sigev_value.sival_ptr = &state;
+    timer_create(CLOCK_MONOTONIC, &sigev, &state.playtimer);
+
+    ts.it_interval.tv_sec = 0;
+    ts.it_interval.tv_nsec = 1000000000UL / LIVE_MAX_FRAMERATE;
+    ts.it_value.tv_sec = 0;
+    ts.it_value.tv_nsec = ts.it_interval.tv_nsec;
+    timer_settime(state.playtimer, 0, &ts, NULL);
 
     /*
      * Run the pipeline in a loop, reconfiguring on signal reception.
@@ -217,14 +271,16 @@ main(int argc, char * argv[])
      */
     signal(SIGTERM, handle_sigint);
     signal(SIGINT, handle_sigint);
+    signal(SIGALRM, handle_sigalrm);
     signal(SIGHUP, handle_sighup);
     signal(SIGUSR1, handle_sighup);
     signal(SIGUSR2, handle_sighup);
     signal(SIGPIPE, SIG_IGN);
     do {
         /* Launch the pipeline to run live video. */
-        GstElement *pipeline = cam_pipeline(fpga, &config, scaler_mode);
+        GstElement *pipeline = cam_pipeline(state.fpga, &config, scaler_mode);
         GstEvent *event;
+        unsigned int i;
         if (!pipeline) {
             fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
             break;
@@ -234,14 +290,16 @@ main(int argc, char * argv[])
         gst_element_set_state (pipeline, GST_STATE_PLAYING);
 
         /* Run the pipeline until we get a signal. */
-        pause();
+        g_main_loop_run(state.mainloop);
 
         /* Stop the pipeline gracefully */
         g_print("Setting pipeline to PAUSED...\n");
         event = gst_event_new_eos();
         gst_element_send_event(pipeline, event);
         gst_element_set_state (pipeline, GST_STATE_PAUSED);
-        while (g_main_context_iteration (NULL, FALSE));
+        for (i = 0; i < 1000; i++) {
+            if (!g_main_context_iteration (NULL, FALSE)) break;
+        }
 
         /* Garbage collect the pipeline. */
         gst_element_set_state (pipeline, GST_STATE_NULL);
@@ -251,6 +309,6 @@ main(int argc, char * argv[])
     } while(catch_sigint == 0);
 
     unlink(SCREENCAP_PATH);
-    fpga_close(fpga);
+    fpga_close(state.fpga);
     return 0;
 } /* main */

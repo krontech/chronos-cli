@@ -66,6 +66,20 @@ cam_video_livestream(MockVideo *mock, GHashTable *args, GError **error)
 #endif
 }
 
+gboolean
+cam_video_addregion(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
+{
+    struct mock_state *state = mock->state;
+    GHashTable *dict = cam_dbus_dict_new();
+
+    state->region_size = cam_dbus_dict_get_uint(args, "size", 0);
+    state->region_base = cam_dbus_dict_get_uint(args, "base", 0);
+    state->region_first = cam_dbus_dict_get_uint(args, "first", 0);
+
+    *data = cam_dbus_dict_new();
+    return (*data != NULL);
+}
+
 #define MOCK_RECORDED_FRAMES    1234
 
 static unsigned long
@@ -88,7 +102,6 @@ gboolean
 cam_video_playback(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
     struct mock_state *state = mock->state;
-    GHashTable *dict = cam_dbus_dict_new();
     unsigned long framenum = cam_dbus_dict_get_uint(args, "currentFrame", compute_frameno(state));
     int framerate = cam_dbus_dict_get_int(args, "playbackRate", state->play_frame_rate);
 

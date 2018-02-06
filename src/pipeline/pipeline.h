@@ -17,9 +17,29 @@
 #ifndef __PIPELINE_H
 #define __PIPELINE_H
 
+#include <sys/types.h>
+#include <signal.h>
 #include <gst/gst.h>
 
-#define SCREENCAP_PATH  "/tmp/cam-screencap.jpg"
+#include "fpga.h"
+
+#define SCREENCAP_PATH      "/tmp/cam-screencap.jpg"
+
+#define LIVE_MAX_FRAMERATE  60
+
+struct pipeline_state {
+    GMainLoop       *mainloop;
+    struct fpga     *fpga;
+
+    /* Playback Mode */
+    timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
+    int             playrate;       /* Rate (in FPS) of the playback timer. */
+    unsigned long   totalframes;    /* Total number of frames when in playback mode. */
+    unsigned long   lastframe;      /* Last played frame number when in playback mode. */
+    unsigned long   region_size;    /* Playback region size (words) */
+    unsigned long   region_base;    /* Playback Region starting address */
+    unsigned long   region_first;   /* Playback Region first frame address. */
+};
 
 struct display_config {
     unsigned long hres;
@@ -34,6 +54,7 @@ GstPad *cam_hdmi_sink(GstElement *pipeline, unsigned long hres, unsigned long vr
 GstPad *cam_screencap(GstElement *pipeline);
 
 /* Some background elements. */
-void hdmi_hotplug_launch(void);
+void hdmi_hotplug_launch(struct pipeline_state *state);
+void dbus_service_launch(struct pipeline_state *state);
 
 #endif /* __PIPELINE */

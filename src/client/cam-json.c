@@ -352,6 +352,8 @@ main(int argc, char * const argv[])
                 return EXIT_FAILURE;
         }
     }
+    g_type_init();
+
     /* If CGI, get the requested method from the PATH_INFO variable. */
     if (flags & OPT_FLAG_CGI) {
         method = getenv("PATH_INFO");
@@ -387,8 +389,7 @@ main(int argc, char * const argv[])
         fclose(fp);
     }
     
-    /* Initialize the GType/GObject system. */
-    g_type_init();
+    /* Initialize the DBus system. */
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
     if (error != NULL) {
         handle_error(-32603, "Internal error", flags);

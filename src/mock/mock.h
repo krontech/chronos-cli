@@ -38,6 +38,10 @@ struct mock_state {
     int             play_frame_rate;
     unsigned long   play_start_frame;
     struct timespec play_start_time;
+    unsigned long   region_size;
+    unsigned long   region_base;
+    unsigned long   region_first;
+
 
     /* Fake image sensor for testing. */
     struct image_sensor sensor;
@@ -64,6 +68,7 @@ gboolean cam_control_get_timing_limits(MockControl *cam, GHashTable *args, GHash
 /* Video API calls to be mocked. */
 gboolean cam_video_record_file(MockVideo *cam, GHashTable *args, GError **error);
 gboolean cam_video_livestream(MockVideo *cam, GHashTable *args, GError **error);
+gboolean cam_video_addregion(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
 gboolean cam_video_playback(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
 gboolean cam_video_status(MockVideo *cam, GHashTable **data, GError **error);
 

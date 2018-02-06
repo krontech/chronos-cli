@@ -32,6 +32,7 @@
 #include <linux/ti81xxhdmi.h>
 
 #include "edid.h"
+#include "pipeline.h"
 
 static void *
 hdmi_hotplug_thread(void *arg)
@@ -55,7 +56,7 @@ hdmi_hotplug_thread(void *arg)
 }
 
 void
-hdmi_hotplug_launch(void)
+hdmi_hotplug_launch(struct pipeline_state *state)
 {
     pthread_t main_thread = pthread_self();
     pthread_t hdmi_thread;
