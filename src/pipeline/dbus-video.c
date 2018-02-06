@@ -55,14 +55,15 @@ static gboolean
 cam_video_addregion(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
+    unsigned long size = cam_dbus_dict_get_uint(args, "size", 0);
+    unsigned long base = cam_dbus_dict_get_uint(args, "base", 0);
+    unsigned long first = cam_dbus_dict_get_uint(args, "first", 0);
     GHashTable *dict = cam_dbus_dict_new();
 
-    state->region_size = cam_dbus_dict_get_uint(args, "size", 0);
-    state->region_base = cam_dbus_dict_get_uint(args, "base", 0);
-    state->region_first = cam_dbus_dict_get_uint(args, "first", 0);
-
-    /* Recompute the video display area */
-    state->totalframes = state->region_size / state->fpga->seq->frame_size;
+    if (playback_region_add(state, base, size, first) != 0) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "%s", strerror(errno));
+        return 0;
+    }
 
     *data = cam_dbus_dict_new();
     return (*data != NULL);
@@ -93,33 +94,7 @@ static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable 
     unsigned long framenum = cam_dbus_dict_get_uint(args, "currentFrame", state->lastframe);
     int framerate = cam_dbus_dict_get_int(args, "playbackRate", state->playrate);
 
-    state->playrate = framerate;
-    state->lastframe = framenum;
-
-    /* Reschedule the playback timer. */
-    if (framerate == 0) {
-        /* Pause the video by playing the same frame at 60Hz */
-        unsigned long nsec = 1000000000 / LIVE_MAX_FRAMERATE;
-        struct itimerspec ts = {
-            .it_interval = {0, nsec},
-            .it_value = {0, nsec},
-        };
-        timer_settime(state->playtimer, 0, &ts, NULL);
-        fprintf(stderr, "DEBUG: setting playback rate to 0 fps.\n");
-    }
-    /* Start the playback frame timer. */
-    else {
-        unsigned int divisor = (abs(framerate) + LIVE_MAX_FRAMERATE - 1) / LIVE_MAX_FRAMERATE;
-        unsigned long nsec = (1000000000 + abs(framerate) - 1) / (abs(framerate) * divisor);
-        struct itimerspec ts = {
-            .it_interval = {0, nsec},
-            .it_value = {0, nsec},
-        };
-        timer_settime(state->playtimer, 0, &ts, NULL);
-        fprintf(stderr, "DEBUG: setting playback rate to %d/%u fps.\n", framerate, divisor);
-    }
-
-    /* Return the updated playback status */
+    playback_set(state, framenum, framerate);
     return cam_video_status(vobj, data, error);
 }
 

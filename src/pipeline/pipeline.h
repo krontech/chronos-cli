@@ -27,18 +27,27 @@
 
 #define LIVE_MAX_FRAMERATE  60
 
+/* Playback regions are stored as a double-linked list. */
+struct playback_region {
+    struct playback_region *next;
+    struct playback_region *prev;
+    unsigned long   size;
+    unsigned long   base;
+    unsigned long   offset;
+    unsigned long   framesz;
+};
+
 struct pipeline_state {
     GMainLoop       *mainloop;
     struct fpga     *fpga;
 
     /* Playback Mode */
-    timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
-    int             playrate;       /* Rate (in FPS) of the playback timer. */
     unsigned long   totalframes;    /* Total number of frames when in playback mode. */
     unsigned long   lastframe;      /* Last played frame number when in playback mode. */
-    unsigned long   region_size;    /* Playback region size (words) */
-    unsigned long   region_base;    /* Playback Region starting address */
-    unsigned long   region_first;   /* Playback Region first frame address. */
+    timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
+    int             playrate;       /* Rate (in FPS) of the playback timer. */
+    struct playback_region *region_head;
+    struct playback_region *region_tail;
 };
 
 struct display_config {
@@ -48,6 +57,8 @@ struct display_config {
     unsigned long yoff;
 };
 
+struct pipeline_state *cam_pipeline_state(void);
+
 /* Allocate pipeline segments, returning the first element to be linked. */
 GstPad *cam_lcd_sink(GstElement *pipeline, unsigned long hres, unsigned long vres, const struct display_config *config);
 GstPad *cam_hdmi_sink(GstElement *pipeline, unsigned long hres, unsigned long vres);
@@ -56,5 +67,11 @@ GstPad *cam_screencap(GstElement *pipeline);
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);
 void dbus_service_launch(struct pipeline_state *state);
+
+/* Functions for controlling the playback rate. */
+void playback_init(struct pipeline_state *state);
+void playback_set(struct pipeline_state *state, unsigned long frame, int rate);
+int playback_region_add(struct pipeline_state *state, unsigned long base, unsigned long size, unsigned long offset);
+void playback_region_flush(struct pipeline_state *state);
 
 #endif /* __PIPELINE */
