@@ -1,4 +1,4 @@
-AC_INIT(hello, 0.1, okirby@krontech.ca)
+AC_INIT(chronos, 0.1, okirby@krontech.ca)
 AM_INIT_AUTOMAKE([subdir-objects -Wall -Werror foreign])
 AM_SILENT_RULES([yes])
 AM_PROG_AR

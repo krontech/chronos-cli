@@ -74,7 +74,7 @@ cam_video_addregion(MockVideo *mock, GHashTable *args, GHashTable **data, GError
 
     state->region_size = cam_dbus_dict_get_uint(args, "size", 0);
     state->region_base = cam_dbus_dict_get_uint(args, "base", 0);
-    state->region_first = cam_dbus_dict_get_uint(args, "first", 0);
+    state->region_offset = cam_dbus_dict_get_uint(args, "offset", 0);
 
     *data = cam_dbus_dict_new();
     return (*data != NULL);
@@ -102,12 +102,12 @@ gboolean
 cam_video_playback(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
     struct mock_state *state = mock->state;
-    unsigned long framenum = cam_dbus_dict_get_uint(args, "currentFrame", compute_frameno(state));
-    int framerate = cam_dbus_dict_get_int(args, "playbackRate", state->play_frame_rate);
+    unsigned long position = cam_dbus_dict_get_uint(args, "position", compute_frameno(state));
+    int framerate = cam_dbus_dict_get_int(args, "framerate", state->play_frame_rate);
 
     /* Store the updated playback timing. */
     state->play_frame_rate = framerate;
-    state->play_start_frame = framenum;
+    state->play_start_frame = position;
     clock_gettime(CLOCK_MONOTONIC, &state->play_start_time);
 
     /* Return the updated playback status */
@@ -126,8 +126,8 @@ cam_video_status(MockVideo *mock, GHashTable **data, GError **error)
         cam_dbus_dict_add_uint(dict, "segment", 0);
 
         cam_dbus_dict_add_uint(dict, "totalFrames", MOCK_RECORDED_FRAMES);
-        cam_dbus_dict_add_uint(dict, "currentFrame", compute_frameno(state));
-        cam_dbus_dict_add_int(dict, "playbackRate", state->play_frame_rate);
+        cam_dbus_dict_add_uint(dict, "positon", compute_frameno(state));
+        cam_dbus_dict_add_int(dict, "framerate", state->play_frame_rate);
     }
     *data = dict;
     return (dict != NULL);

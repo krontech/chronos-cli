@@ -42,8 +42,7 @@ struct mock_state {
     struct timespec play_start_time;
     unsigned long   region_size;
     unsigned long   region_base;
-    unsigned long   region_first;
-
+    unsigned long   region_offset;
 
     /* Fake image sensor for testing. */
     struct image_sensor sensor;

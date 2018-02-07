@@ -63,9 +63,9 @@ cam_daemon_SOURCES += daemon/camera.h
 cam_daemon_SOURCES += api/cam-dbus-server.h
 
 ## Mock Control Daemon
-cam_mock_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a -lrt
+cam_mock_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a -lrt 
 cam_mock_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} -I$(srcdir)/mock
-cam_mock_LDFLAGS = ${AM_LDFLAGS}
+cam_mock_LDFLAGS = ${AM_LDFLAGS} -pthread
 cam_mock_SOURCES = mock/main.c
 cam_mock_SOURCES += mock/mock-sensor.c
 cam_mock_SOURCES += mock/mock-control.c

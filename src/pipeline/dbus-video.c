@@ -57,10 +57,10 @@ cam_video_addregion(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     struct pipeline_state *state = vobj->state;
     unsigned long size = cam_dbus_dict_get_uint(args, "size", 0);
     unsigned long base = cam_dbus_dict_get_uint(args, "base", 0);
-    unsigned long first = cam_dbus_dict_get_uint(args, "first", 0);
+    unsigned long offset = cam_dbus_dict_get_uint(args, "offset", 0);
     GHashTable *dict = cam_dbus_dict_new();
 
-    if (playback_region_add(state, base, size, first) != 0) {
+    if (playback_region_add(state, base, size, offset) != 0) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "%s", strerror(errno));
         return 0;
     }
@@ -81,8 +81,8 @@ cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
         cam_dbus_dict_add_uint(dict, "segment", 0);
 
         cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
-        cam_dbus_dict_add_uint(dict, "currentFrame", state->lastframe);
-        cam_dbus_dict_add_int(dict, "playbackRate", state->playrate);
+        cam_dbus_dict_add_uint(dict, "position", state->lastframe);
+        cam_dbus_dict_add_int(dict, "framerate", state->playrate);
     }
     *data = dict;
     return (dict != NULL);
@@ -91,8 +91,8 @@ cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
 static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    unsigned long framenum = cam_dbus_dict_get_uint(args, "currentFrame", state->lastframe);
-    int framerate = cam_dbus_dict_get_int(args, "playbackRate", state->playrate);
+    unsigned long framenum = cam_dbus_dict_get_uint(args, "position", state->lastframe);
+    int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
     playback_set(state, framenum, framerate);
     return cam_video_status(vobj, data, error);
