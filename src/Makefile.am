@@ -39,6 +39,10 @@ libcamera_a_SOURCES += lib/edid.h
 libcamera_a_SOURCES += lib/i2c.h
 libcamera_a_SOURCES += lib/i2c-spd.h
 libcamera_a_CFLAGS = ${AM_CFLAGS}
+## ARM-Only sources
+if SYSROOT
+libcamera_a_SOURCES += lib/glibc-hacks.c
+endif
 
 ## FPGA and Image Sensor register dump tool
 cam_regdump_LDADD = libcamera.a
@@ -59,7 +63,7 @@ cam_daemon_SOURCES += daemon/camera.h
 cam_daemon_SOURCES += api/cam-dbus-server.h
 
 ## Mock Control Daemon
-cam_mock_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
+cam_mock_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a -lrt
 cam_mock_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_mock_LDFLAGS = ${AM_LDFLAGS}
 cam_mock_SOURCES = mock/main.c

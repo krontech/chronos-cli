@@ -183,8 +183,7 @@ cam_hdmi_sink(GstElement *pipeline, unsigned long input_hres, unsigned long inpu
     hoff = ((panel_hres - hout) / 2) & ~0x1;
     voff = ((panel_vres - vout) / 2) & ~0x1;
 
-//#ifdef DEBUG
-#if 1
+#ifdef DEBUG
     fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
     fprintf(stderr, "DEBUG: input = [%lu, %lu]\n", input_hres, input_vres);
     fprintf(stderr, "DEBUG: output = [%u, %u]\n", hout, vout);
