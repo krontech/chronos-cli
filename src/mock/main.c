@@ -21,6 +21,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
+#include <sys/stat.h>
 #include <dbus/dbus-glib.h>
 
 #include "mock.h"
@@ -104,14 +106,48 @@ mock_register(GObject *mock, DBusGConnection *bus, const char *service, const ch
     printf("Registered mock at %s\n", path);
 }
 
+static void
+cleanup_screencap(void)
+{
+    unlink("/tmp/cam-screencap.jpg");
+}
+
+static void *
+mock_screencap(void *arg)
+{
+    const char *path = "/tmp/cam-screencap.jpg";
+    static int i = 0;
+    FILE *fp;
+
+    /* Attempt to create the frame-grabber FIFO */
+    if (mkfifo(path, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) != 0) {
+        fprintf(stderr, "Unable to create FIFO: %s\n", strerror(errno));
+        return NULL;
+    }
+    atexit(cleanup_screencap);
+    while (fp = fopen("/tmp/cam-screencap.jpg", "wb")) {
+        fwrite(mock_video[i].data, mock_video[i].len, 1, fp);
+        fclose(fp);
+        i = (i + 1) % mock_video_frames;
+    }
+}
+
+static GMainLoop *mainloop;
+
+static void
+catch_sigint(int sig)
+{
+    g_main_loop_quit(mainloop);
+}
+
 int
 main(void)
 {
     MockControl *cmock;
     MockVideo   *vmock;
-    GMainLoop   *mainloop;
     DBusGConnection *bus = NULL;
     GError* error = NULL;
+    pthread_t screencap;
 
     /* The fake camera state */
     struct mock_state state = {0};
@@ -143,6 +179,10 @@ main(void)
     /* Connect to the system dbus to register our service. */
     mock_register(G_OBJECT(cmock), bus, CAM_DBUS_CONTROL_SERVICE, CAM_DBUS_CONTROL_PATH);
     mock_register(G_OBJECT(vmock), bus, CAM_DBUS_VIDEO_SERVICE, CAM_DBUS_VIDEO_PATH);
+
+    signal(SIGINT, catch_sigint);
+    signal(SIGTERM, catch_sigint);
+    pthread_create(&screencap, NULL, mock_screencap, NULL);
 
     /* Run the loop until something interesting happens. */
     g_main_loop_run(mainloop);

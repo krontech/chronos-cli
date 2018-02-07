@@ -18,7 +18,9 @@
 #define _MOCK_H
 
 #include <time.h>
+#include <glib-object.h>
 #include <sys/time.h>
+
 #include "fpga-sensor.h"
 
 /* Don't yet have a good abstraction for this. */
@@ -73,5 +75,13 @@ gboolean cam_video_playback(MockVideo *cam, GHashTable *args, GHashTable **data,
 gboolean cam_video_status(MockVideo *cam, GHashTable **data, GError **error);
 
 void mock_sensor_init(struct image_sensor *sensor);
+
+/* Fake video data */
+struct mock_frame {
+    size_t len;
+    const void *data;
+};
+extern const struct mock_frame mock_video[];
+extern const unsigned int mock_video_frames;
 
 #endif /* _MOCK_H */
