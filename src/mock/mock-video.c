@@ -29,7 +29,7 @@
  *-------------------------------------
  */
 gboolean
-cam_video_record_file(MockVideo *mock, GHashTable *args, GError **error)
+cam_video_recordfile(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
 #if 0
     GHashTable *dict = cam_dbus_dict_new();

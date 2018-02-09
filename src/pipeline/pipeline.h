@@ -27,6 +27,8 @@
 
 #define LIVE_MAX_FRAMERATE  60
 
+struct CamVideo;
+
 /* Playback regions are stored as a double-linked list. */
 struct playback_region {
     struct playback_region *next;
@@ -39,6 +41,7 @@ struct playback_region {
 
 struct pipeline_state {
     GMainLoop       *mainloop;
+    struct CamVideo *video;
     struct fpga     *fpga;
 
     /* Playback Mode */
@@ -48,7 +51,22 @@ struct pipeline_state {
     int             playrate;       /* Rate (in FPS) of the playback timer. */
     struct playback_region *region_head;
     struct playback_region *region_tail;
+
+    /* Recording Mode */
+    char            filename[PATH_MAX];
+    unsigned long   startframe;
+    unsigned long   recordlen;
+    unsigned int    encoding;
+    unsigned int    encrate;
+    unsigned long   max_bitrate;
+    unsigned long   quality_bpp;
 };
+
+/* Video formats that we can encode. */
+#define PIPELINE_ENCODE_H264    0
+#define PIPELINE_ENCODE_RAW     1
+#define PIPELINE_ENCODE_DNG     2
+#define PIPELINE_ENCODE_PNG     3
 
 struct display_config {
     unsigned long hres;
@@ -67,6 +85,7 @@ GstPad *cam_screencap(GstElement *pipeline);
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);
 void dbus_service_launch(struct pipeline_state *state);
+void dbus_signal_eof(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);

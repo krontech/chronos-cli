@@ -26,24 +26,36 @@
 #include "pipeline.h"
 #include "api/cam-rpc.h"
 
+static GHashTable *
+cam_dbus_video_status(struct pipeline_state *state)
+{
+    GHashTable *dict = cam_dbus_dict_new();
+    if (!dict) return NULL;
+    cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
+    cam_dbus_dict_add_boolean(dict, "playback", 0);     /* TODO: Pipeline state. */
+    cam_dbus_dict_add_boolean(dict, "recording", 0);    /* TODO: Video record API */
+    cam_dbus_dict_add_uint(dict, "segment", 0);
+
+    cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
+    cam_dbus_dict_add_uint(dict, "position", state->lastframe);
+    cam_dbus_dict_add_int(dict, "framerate", state->playrate);
+    return dict;
+}
+
 /*-------------------------------------
  * DBUS Video Control API
  *-------------------------------------
  */
-typedef struct {
+typedef struct CamVideo {
     GObjectClass parent;
     struct pipeline_state *state;
 } CamVideo;
 
-typedef struct {
+typedef struct CamVideoClass {
     GObjectClass parent;
+    guint eof_signalid;
 } CamVideoClass;
 
-static gboolean
-cam_video_record_file(CamVideo *vobj, GHashTable *args, GError **error)
-{
-    return 1;
-}
 
 static gboolean
 cam_video_livestream(CamVideo *vobj, GHashTable *args, GError **error)
@@ -73,19 +85,8 @@ static gboolean
 cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    GHashTable *dict = cam_dbus_dict_new();
-    if (dict) {
-        cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-        cam_dbus_dict_add_boolean(dict, "playback", 0);     /* TODO: Pipeline state. */
-        cam_dbus_dict_add_boolean(dict, "recording", 0);    /* TODO: Video record API */
-        cam_dbus_dict_add_uint(dict, "segment", 0);
-
-        cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
-        cam_dbus_dict_add_uint(dict, "position", state->lastframe);
-        cam_dbus_dict_add_int(dict, "framerate", state->playrate);
-    }
-    *data = dict;
-    return (dict != NULL);
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
 }
 
 static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
@@ -95,7 +96,14 @@ static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable 
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
     playback_set(state, framenum, framerate);
-    return cam_video_status(vobj, data, error);
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
+}
+
+static gboolean
+cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
+{
+    return 1;
 }
 
 #include "api/cam-dbus-video.h"
@@ -107,7 +115,8 @@ static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable 
 
 GType cam_video_get_type(void);
 
-#define CAM_VIDEO_TYPE      (cam_video_get_type())
+#define CAM_VIDEO_TYPE              (cam_video_get_type())
+#define CAM_VIDEO_GET_CLASS(_vobj_) (G_TYPE_INSTANCE_GET_CLASS((_vobj_), CAM_VIDEO_TYPE, CamVideoClass))
 
 static void
 cam_video_init(CamVideo *vobj)
@@ -120,6 +129,30 @@ static void
 cam_video_class_init(CamVideoClass *vclass)
 {
     g_assert(vclass != NULL);
+
+    /* Register signals. */
+    vclass->eof_signalid = g_signal_new("eof", G_OBJECT_CLASS_TYPE(vclass),
+                   G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
+                   0,
+                   NULL,                /* GSignalAccumulator to use. We don't need one. */
+                   NULL,                /* User-data to pass to the accumulator. */
+                   /* Function to use to marshal the signal data into
+                      the parameters of the signal call. Luckily for
+                      us, GLib (GCClosure) already defines just the
+                      function that we want for a signal handler that
+                      we don't expect any return values (void) and
+                      one that will accept one string as parameter
+                      (besides the instance pointer and pointer to
+                      user-data).
+
+                      If no such function would exist, you would need
+                      to create a new one (by using glib-genmarshal
+                      tool). */
+                   g_cclosure_marshal_VOID__STRING,
+                   G_TYPE_NONE,         /* Return GType of the return value. */
+                   1,                   /* Number of parameter GTypes to follow. */
+                   CAM_DBUS_HASH_MAP);  /* GType of the parameters. */
+
     dbus_g_object_type_install_info(CAM_VIDEO_TYPE, &dbus_glib_cam_video_object_info);
 }
 
@@ -128,16 +161,14 @@ G_DEFINE_TYPE(CamVideo, cam_video, G_TYPE_OBJECT)
 void
 dbus_service_launch(struct pipeline_state *state)
 {
-    guint result;
-    CamVideo *vobj;
     DBusGConnection *bus = NULL;
     DBusGProxy *proxy = NULL;
     GError* error = NULL;
+    guint result;
 
     /* Init glib */
     g_type_init();
-    vobj = g_object_new(CAM_VIDEO_TYPE, NULL);
-    vobj->state = state;
+    state->video = g_object_new(CAM_VIDEO_TYPE, NULL);
 
     /* Bring up DBus and register with the system. */
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -166,6 +197,13 @@ dbus_service_launch(struct pipeline_state *state)
         g_printerr("D-Bus.RequstName call failed for %s\n", CAM_DBUS_VIDEO_SERVICE);
         exit(EXIT_FAILURE);
     }
-    dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(vobj));
+    dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(state->video));
     printf("Registered video control device at %s\n", CAM_DBUS_VIDEO_PATH);
+}
+
+void
+dbus_signal_eof(struct pipeline_state *state)
+{
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
+    g_signal_emit(state->video, vclass->eof_signalid, 0, cam_dbus_video_status(state));
 }

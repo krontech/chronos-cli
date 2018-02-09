@@ -4,12 +4,8 @@
     "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd" >
 <node>
   <interface name="com.krontech.chronos.video">
-    <method name="record_file">
-      <arg name="filename" direction="in" type="s"/>
-      <arg name="settings" direction="in" type="a{sv}"/>
-    </method>
-    <method name="livestream">
-      <arg name="settings" direction="in" type="a{sv}"/>
+    <method name="status">
+      <arg name="data" direction="out" type="a{sv}"/>
     </method>
     <method name="addregion">
       <arg name="args" direction="in" type="a{sv}"/>
@@ -19,8 +15,15 @@
       <arg name="args" direction="in" type="a{sv}"/>
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
-    <method name="status">
-      <arg name="data" direction="out" type="a{sv}"/>
+    <method name="recordfile">
+      <arg name="settings" direction="in" type="a{sv}"/>
+      <arg name="status" direction="out" type="a{sv}"/>
     </method>
+    <method name="livestream">
+      <arg name="settings" direction="in" type="a{sv}"/>
+    </method>
+    <signal name="eof">
+      <arg name="settings" direction="out" type="a{sv}"/>
+    </signal>
   </interface>
 </node>
