@@ -64,7 +64,7 @@ cam_pipeline_state(void)
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
 static GstElement *
-cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
+cam_pipeline(struct pipeline_state *state, struct display_config *config, int mode)
 {
     gboolean ret;
 	GstElement *pipeline;
@@ -89,13 +89,15 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
 
 	gst_bin_add_many(GST_BIN(pipeline), source, tee, NULL);
 
-    /* Link OMX Source input capabilities. */
+    /* Configure the input video resolution */
+    state->hres = state->fpga->display->h_res;
+    state->vres = state->fpga->display->v_res;
 	caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC,
                 GST_MAKE_FOURCC('N', 'V', '1', '2'),
-                "width", G_TYPE_INT, fpga->display->h_res,
-                "height", G_TYPE_INT, fpga->display->v_res,
-                "framerate", GST_TYPE_FRACTION, 60, 1,
+                "width", G_TYPE_INT, state->hres,
+                "height", G_TYPE_INT, state->vres,
+                "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                 "buffer-count-requested", G_TYPE_INT, 4,
                 NULL);
     ret = gst_element_link_filtered(source, tee, caps);
@@ -106,7 +108,7 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
     gst_caps_unref(caps);
 
     /* Create a framegrab sink and link it into the pipeline. */
-    sinkpad = cam_screencap(pipeline);
+    sinkpad = cam_screencap(state, pipeline);
     if (!sinkpad) {
         gst_object_unref(GST_OBJECT(pipeline));
         return NULL;
@@ -116,7 +118,7 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
     gst_object_unref(sinkpad);
 
     /* Create the LCD sink and link it into the pipeline. */
-    sinkpad = cam_lcd_sink(pipeline, fpga->display->h_res, fpga->display->v_res, config);
+    sinkpad = cam_lcd_sink(state, pipeline, config);
     if (!sinkpad) {
         gst_object_unref(GST_OBJECT(pipeline));
         return NULL;
@@ -126,7 +128,7 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
     gst_object_unref(sinkpad);
 
     /* Attempt to create an HDMI sink, it may fail if there is no connected display. */
-    sinkpad = cam_hdmi_sink(pipeline, fpga->display->h_res, fpga->display->v_res);
+    sinkpad = cam_hdmi_sink(state, pipeline);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
@@ -135,6 +137,46 @@ cam_pipeline(struct fpga *fpga, struct display_config *config, int mode)
 
     return pipeline;
 } /* cam_pipeline */
+
+static gboolean
+cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
+{
+    struct pipeline_state *state = (struct pipeline_state *)data;
+
+    if (GST_MESSAGE_TYPE(msg) != GST_MESSAGE_STATE_CHANGED) {
+        fprintf(stderr, "GST message received: %s\n", GST_MESSAGE_TYPE_NAME(msg));
+    }
+    switch (GST_MESSAGE_TYPE (msg)) {
+        case GST_MESSAGE_EOS:
+            dbus_signal_eof(state);
+            g_main_loop_quit(state->mainloop);
+            break;
+
+        case GST_MESSAGE_ERROR:
+            g_main_loop_quit(state->mainloop);
+            break;
+
+#if 0
+            gchar  *debug;
+            GError *error;
+			
+            gst_message_parse_error (msg, &error, &debug);
+			
+            g_printerr ("Error: %s\n", error->message);
+            gstDia->error = true;
+            if(gstDia->errorCallback)
+                (*gstDia->errorCallback)(gstDia->errorCallbackArg, error->message);
+            g_error_free (error);
+			
+            break;
+        case GST_MESSAGE_ASYNC_DONE:
+            gstDia->recordRunning = true;
+            break;
+#endif
+        default:
+            break;
+    }
+} /* cam_bus_watch */
 
 static void
 usage(FILE *fp, int argc, char *argv[])
@@ -209,6 +251,7 @@ main(int argc, char * argv[])
     gst_init(&argc, &argv);
     state->mainloop = g_main_loop_new(NULL, FALSE);
     state->fpga = fpga_open();
+    state->iops = board_chronos14_ioports;
     if (!state->fpga) {
         fprintf(stderr, "Failed to open FPGA: %s\n", strerror(errno));
         return -1;
@@ -234,14 +277,21 @@ main(int argc, char * argv[])
     signal(SIGUSR2, handle_sighup);
     signal(SIGPIPE, SIG_IGN);
     do {
-        /* Launch the pipeline to run live video. */
-        GstElement *pipeline = cam_pipeline(state->fpga, &config, scaler_mode);
+        /* Launch the pipeline. */
+        GstElement *pipeline = cam_pipeline(state, &config, scaler_mode);
         GstEvent *event;
+        GstBus *bus;
+        guint watchid;
         unsigned int i;
         if (!pipeline) {
             fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
             break;
         }
+
+        /* Install an error handler. */
+        bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+        watchid = gst_bus_add_watch(bus, cam_bus_watch, state);
+        gst_object_unref(bus);
 
         g_print ("Setting pipeline to PLAYING...\n");
         gst_element_set_state (pipeline, GST_STATE_PLAYING);
@@ -261,6 +311,7 @@ main(int argc, char * argv[])
         /* Garbage collect the pipeline. */
         gst_element_set_state (pipeline, GST_STATE_NULL);
         gst_object_unref(GST_OBJECT(pipeline));
+	    g_source_remove(watchid);
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");
     } while(catch_sigint == 0);

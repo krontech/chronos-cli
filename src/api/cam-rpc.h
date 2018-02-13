@@ -78,6 +78,17 @@ cam_dbus_dict_add_uint(GHashTable *h, const char *name, unsigned int value)
 }
 
 static inline void
+cam_dbus_dict_add_float(GHashTable *h, const char *name, double value)
+{
+    GValue *gval;
+    if (h && (gval = g_new0(GValue, 1))) {
+        g_value_init(gval, G_TYPE_DOUBLE);
+        g_value_set_double(gval, value);
+        cam_dbus_dict_add(h, name, gval);
+    }
+}
+
+static inline void
 cam_dbus_dict_add_string(GHashTable *h, const char *name, const char *value)
 {
     GValue *gval;
@@ -139,6 +150,20 @@ cam_dbus_dict_get_uint(GHashTable *h, const char *name, unsigned long defval)
     if (x && G_VALUE_HOLDS_ULONG(x)) return g_value_get_ulong(x);
     if (x && G_VALUE_HOLDS_INT(x) && (g_value_get_int(x) >= 0)) return g_value_get_int(x);
     if (x && G_VALUE_HOLDS_LONG(x) && (g_value_get_long(x) >= 0)) return g_value_get_long(x);
+    return defval;
+}
+
+static inline double
+cam_dbus_dict_get_float(GHashTable *h, const char *name, double defval)
+{
+    gpointer x = g_hash_table_lookup(h, name);
+    if (x && G_VALUE_HOLDS_FLOAT(x)) return g_value_get_float(x);
+    if (x && G_VALUE_HOLDS_DOUBLE(x)) return g_value_get_double(x);
+    /* Also allow integer-float conversions */
+    if (x && G_VALUE_HOLDS_INT(x)) return g_value_get_int(x);
+    if (x && G_VALUE_HOLDS_LONG(x)) return g_value_get_long(x);
+    if (x && G_VALUE_HOLDS_UINT(x)) return g_value_get_uint(x);
+    if (x && G_VALUE_HOLDS_ULONG(x)) return g_value_get_ulong(x);
     return defval;
 }
 

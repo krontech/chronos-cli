@@ -142,7 +142,7 @@ buffer_framegrab(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 }
 
 GstPad *
-cam_screencap(GstElement *pipeline)
+cam_screencap(struct pipeline_state *state, GstElement *pipeline)
 {
     GstElement *queue, *sink;
     GstPad *pad;

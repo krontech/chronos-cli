@@ -23,11 +23,41 @@
 
 #include "pipeline.h"
 
+/* Returns the number of frames to add per timer tick. */
 static inline unsigned int
 playback_divisor(int rate)
 {
     return (abs(rate) + LIVE_MAX_FRAMERATE - 1) / LIVE_MAX_FRAMERATE;
 }
+
+/*
+ * Re-arm the playback timer in single-shot mode. By blocking the delivery
+ * of SIGARLM, this allows clock stretching to keep time with the FPGA when
+ * we approach the live framerate limits.
+ */
+static void
+playback_timer_rearm(struct pipeline_state *state)
+{
+    if (state->playrate == 0) {
+        /* Pause the video by playing the same frame at 60Hz */
+        struct itimerspec ts = {
+            .it_interval = {0, 0},
+            .it_value = {0, 1000000000 / LIVE_MAX_FRAMERATE},
+        };
+        timer_settime(state->playtimer, 0, &ts, NULL);
+    }
+    /* Start the playback frame timer. */
+    else {
+        unsigned int divisor = playback_divisor(state->playrate);
+        unsigned long nsec = ((1000000000ULL * divisor) + (abs(state->playrate) - 1)) / abs(state->playrate);
+        struct itimerspec ts = {
+            .it_interval = {0, 0},
+            .it_value = {0, nsec},
+        };
+        timer_settime(state->playtimer, 0, &ts, NULL);
+    }
+}
+
 
 /* Signal handler for the playback timer. */
 static void
@@ -40,6 +70,7 @@ playback_signal(int signo)
 
     /* no-op if we're in live display mode. */
     if (!(state->fpga->display->control & DISPLAY_CTL_ADDRESS_SELECT)) return;
+    playback_timer_rearm(state);
 
     /* If no regions have been set, then just display the first address in memory. */
     if (!state->totalframes) {
@@ -62,13 +93,23 @@ playback_signal(int signo)
     for (r = state->region_head; r; r = r->next) {
         unsigned long nframes = (r->size / r->framesz);
         if ((count + nframes) > state->lastframe) {
-            unsigned long x = state->lastframe - count;
-            state->fpga->display->frame_address = r->base + (((x + r->offset) % nframes) * r->framesz);
+            unsigned long frameoff = r->offset / r->framesz;
+            unsigned long relframe = (state->lastframe - count + frameoff) % nframes;
+            state->fpga->display->frame_address = r->base + (relframe * r->framesz);
             break;
         }
         count += nframes;
     }
     state->fpga->display->manual_sync = 1;
+
+    /* If the frame sync GPIO is available, block delivery of our signal until the
+     * frame has been delivered. */
+    if (state->fsync_fd >= 0) {
+        sigset_t sigset;
+        sigemptyset(&sigset);
+        sigaddset(&sigset, SIGALRM);
+        sigprocmask(SIG_BLOCK, &sigset, NULL);
+    }
 }
 
 /* Test if two regions overlap each other.  */
@@ -102,7 +143,7 @@ playback_region_total(struct pipeline_state *state)
 }
 
 void
-plaback_lock(sigset_t *prev)
+playback_lock(sigset_t *prev)
 {
     sigset_t block;
     sigemptyset(&block);
@@ -131,7 +172,7 @@ playback_region_add(struct pipeline_state *state, unsigned long base, unsigned l
     region->offset = offset;
     region->framesz = state->fpga->seq->frame_size;
 
-    plaback_lock(&sigset);
+    playback_lock(&sigset);
 
     /* Free any regions that would overlap. */
     while (state->region_head) {
@@ -162,7 +203,7 @@ void
 playback_region_flush(struct pipeline_state *state)
 {
     sigset_t sigset;
-    plaback_lock(&sigset);
+    playback_lock(&sigset);
     while (state->region_head) {
         playback_region_delete(state, state->region_head);
     }
@@ -176,37 +217,41 @@ playback_set(struct pipeline_state *state, unsigned long frame, int rate)
 {
     state->playrate = rate;
     state->lastframe = frame;
+    playback_timer_rearm(state);
+}
 
-    if (rate == 0) {
-        /* Pause the video by playing the same frame at 60Hz */
-        unsigned long nsec = 1000000000 / LIVE_MAX_FRAMERATE;
-        struct itimerspec ts = {
-            .it_interval = {0, nsec},
-            .it_value = {0, nsec},
-        };
-        timer_settime(state->playtimer, 0, &ts, NULL);
-        fprintf(stderr, "DEBUG: setting playback rate to 0 fps.\n");
-    }
-    /* Start the playback frame timer. */
-    else {
-        unsigned int divisor = playback_divisor(rate);
-        unsigned long nsec = (1000000000 + abs(rate) - 1) / (abs(rate) * divisor);
-        struct itimerspec ts = {
-            .it_interval = {0, nsec},
-            .it_value = {0, nsec},
-        };
-        timer_settime(state->playtimer, 0, &ts, NULL);
-        fprintf(stderr, "DEBUG: setting playback rate to %d/%u fps.\n", rate, divisor);
-    }
+/* frame GPIO callback events. */
+static gboolean
+playback_fsync_callback(GIOChannel *source, GIOCondition cond, gpointer data)
+{
+    struct pipeline_state *state = (struct pipeline_state *)data;
+    sigset_t sigset;
+    char buf[2];
+
+    /* Read the current state of the GPIO. */
+    lseek(state->fsync_fd, 0, SEEK_SET);
+    read(state->fsync_fd, buf, sizeof(buf));
+
+    /* Unblock the playback frame timer. */
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGALRM);
+    sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+    return FALSE;
 }
 
 void
 playback_init(struct pipeline_state *state)
 {
     struct sigevent sigev;
-    
     state->region_head = NULL;
     state->region_tail = NULL;
+
+    /* Open the frame sync GPIO. */
+    state->fsync_fd = ioport_open(state->iops, "frame-irq", O_RDONLY | O_NONBLOCK);
+    if (state->fsync_fd >= 0) {
+        GIOChannel *channel = g_io_channel_unix_new(state->fsync_fd);
+        g_io_add_watch(channel, G_IO_PRI | G_IO_ERR, (GIOFunc)playback_fsync_callback, state);       
+    }
 
     /* Seek to the next frame in playback mode on SIGALRM */
     signal(SIGALRM, playback_signal);

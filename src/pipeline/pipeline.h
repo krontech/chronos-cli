@@ -21,6 +21,7 @@
 #include <signal.h>
 #include <gst/gst.h>
 
+#include "ioport.h"
 #include "fpga.h"
 
 #define SCREENCAP_PATH      "/tmp/cam-screencap.jpg"
@@ -40,9 +41,15 @@ struct playback_region {
 };
 
 struct pipeline_state {
-    GMainLoop       *mainloop;
-    struct CamVideo *video;
-    struct fpga     *fpga;
+    GMainLoop           *mainloop;
+    struct CamVideo     *video;
+    struct fpga         *fpga;
+    const struct ioport *iops;
+    int                 fsync_fd;
+
+    /* Video format */
+    unsigned long   hres;
+    unsigned long   vres;
 
     /* Playback Mode */
     unsigned long   totalframes;    /* Total number of frames when in playback mode. */
@@ -58,15 +65,15 @@ struct pipeline_state {
     unsigned long   recordlen;
     unsigned int    encoding;
     unsigned int    encrate;
-    unsigned long   max_bitrate;
-    unsigned long   quality_bpp;
+    unsigned long   bitrate;
 };
 
 /* Video formats that we can encode. */
-#define PIPELINE_ENCODE_H264    0
-#define PIPELINE_ENCODE_RAW     1
-#define PIPELINE_ENCODE_DNG     2
-#define PIPELINE_ENCODE_PNG     3
+#define PIPELINE_ENCODE_IDLE    0   /* Not currently encoding - playback or live display mode. */
+#define PIPELINE_ENCODE_H264    1
+#define PIPELINE_ENCODE_RAW     2
+#define PIPELINE_ENCODE_DNG     3
+#define PIPELINE_ENCODE_PNG     4
 
 struct display_config {
     unsigned long hres;
@@ -78,9 +85,11 @@ struct display_config {
 struct pipeline_state *cam_pipeline_state(void);
 
 /* Allocate pipeline segments, returning the first element to be linked. */
-GstPad *cam_lcd_sink(GstElement *pipeline, unsigned long hres, unsigned long vres, const struct display_config *config);
-GstPad *cam_hdmi_sink(GstElement *pipeline, unsigned long hres, unsigned long vres);
-GstPad *cam_screencap(GstElement *pipeline);
+GstPad *cam_screencap(struct pipeline_state *state, GstElement *pipeline);
+GstPad *cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct display_config *config);
+GstPad *cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline);
+GstPad *cam_h264_sink(struct pipeline_state *state, GstElement *pipeline);
+GstPad *cam_raw_sink(struct pipeline_state *state, GstElement *pipeline);
 
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);
@@ -92,5 +101,8 @@ void playback_init(struct pipeline_state *state);
 void playback_set(struct pipeline_state *state, unsigned long frame, int rate);
 int playback_region_add(struct pipeline_state *state, unsigned long base, unsigned long size, unsigned long offset);
 void playback_region_flush(struct pipeline_state *state);
+
+/* Functions for starting the file recording. */
+
 
 #endif /* __PIPELINE */

@@ -24,7 +24,7 @@
 #include "pipeline.h"
 
 GstPad *
-cam_lcd_sink(GstElement *pipeline, unsigned long hsrc, unsigned long vsrc, const struct display_config *config)
+cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct display_config *output)
 {
     gboolean ret;
     GstElement *queue, *scaler, *ctrl, *sink;
@@ -49,22 +49,22 @@ cam_lcd_sink(GstElement *pipeline, unsigned long hsrc, unsigned long vsrc, const
 
 	gst_bin_add_many(GST_BIN(pipeline), queue, scaler, ctrl, sink, NULL);
 
-    if ((config->hres * vsrc) > (config->vres * hsrc)) {
-        scale_mul = config->vres;
-        scale_div = vsrc;
+    if ((output->hres * state->vres) > (output->vres * state->hres)) {
+        scale_mul = output->vres;
+        scale_div = state->vres;
     }
     else {
-        scale_mul = config->hres;
-        scale_div = hsrc;
+        scale_mul = output->hres;
+        scale_div = state->hres;
     }
-    hout = ((hsrc * scale_mul) / scale_div) & ~0xF;
-    vout = ((vsrc * scale_mul) / scale_div) & ~0x1;
-    hoff = (config->xoff + (config->hres - hout) / 2) & ~0x1;
-    voff = (config->yoff + (config->vres - vout) / 2) & ~0x1;
+    hout = ((state->hres * scale_mul) / scale_div) & ~0xF;
+    vout = ((state->vres * scale_mul) / scale_div) & ~0x1;
+    hoff = (output->xoff + (output->hres - hout) / 2) & ~0x1;
+    voff = (output->yoff + (output->vres - vout) / 2) & ~0x1;
 
 #ifdef DEBUG
     fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
-    fprintf(stderr, "DEBUG: input = [%u, %u]\n", hsrc, vsrc);
+    fprintf(stderr, "DEBUG: input = [%u, %u]\n", state->hres, state->vres);
     fprintf(stderr, "DEBUG: output = [%u, %u]\n", hout, vout);
     fprintf(stderr, "DEBUG: offset = [%u, %u]\n", hoff, voff);
 #endif

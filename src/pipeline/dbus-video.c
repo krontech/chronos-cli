@@ -35,7 +35,6 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_boolean(dict, "playback", 0);     /* TODO: Pipeline state. */
     cam_dbus_dict_add_boolean(dict, "recording", 0);    /* TODO: Video record API */
     cam_dbus_dict_add_uint(dict, "segment", 0);
-
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
     cam_dbus_dict_add_uint(dict, "position", state->lastframe);
     cam_dbus_dict_add_int(dict, "framerate", state->playrate);
@@ -67,8 +66,8 @@ static gboolean
 cam_video_addregion(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    unsigned long size = cam_dbus_dict_get_uint(args, "size", 0);
     unsigned long base = cam_dbus_dict_get_uint(args, "base", 0);
+    unsigned long size = cam_dbus_dict_get_uint(args, "size", 0);
     unsigned long offset = cam_dbus_dict_get_uint(args, "offset", 0);
     GHashTable *dict = cam_dbus_dict_new();
 
@@ -103,6 +102,63 @@ static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable 
 static gboolean
 cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
+    struct pipeline_state *state = vobj->state;
+    GHashTable *dict;
+    const char *filename = cam_dbus_dict_get_string(args, "filename", NULL);
+    const char *format = cam_dbus_dict_get_string(args, "format", NULL);
+
+    /* Format and filename are mandatory */
+    if (!filename || !format) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing arguments");
+        return 0;
+    }
+
+    /* Sanity check the file name. */
+    if (filename[0] != '/') {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename");
+        return 0;
+    }
+    if (strlen(filename) >= sizeof(state->filename)) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long");
+        return 0;
+    }
+
+    /* Make sure that an encoding operation is not already in progress. */
+    if (state->encoding != PIPELINE_ENCODE_IDLE) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Encoding in progress");
+        return 0;
+    }
+
+    /* TODO: Perform a free-space check if the file does not already exists. */
+    /* TODO: Test that the file and/or directory is writeable. */
+    /* TODO: Test that the destination file is *NOT* the root filesystem. */
+
+    /* Dive deeper based on the format */
+    state->startframe = cam_dbus_dict_get_uint(args, "start", 0);
+    state->recordlen = cam_dbus_dict_get_uint(args, "length", state->totalframes);
+    if (strcmp(format, "h264") == 0) {
+        state->encoding = PIPELINE_ENCODE_H264;
+        state->encrate = cam_dbus_dict_get_uint(args, "framerate", 30);
+        state->bitrate = cam_dbus_dict_get_uint(args, "bitrate", 40000000);
+    }
+    /* Otherwise, this encoding format is not supported. */
+    else {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Unsupported encoding method");
+        return 0;
+    }
+
+    /* Generate the response */
+    dict = cam_dbus_dict_new();
+    if (dict) {
+        cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
+        cam_dbus_dict_add_boolean(dict, "playback", 0);     /* TODO: Pipeline state. */
+        cam_dbus_dict_add_boolean(dict, "recording", 0);    /* TODO: Video record API */
+        cam_dbus_dict_add_uint(dict, "segment", 0);
+    }
+    *data = dict;
+
+    /* Restart the video pipeline to enter recording mode. */
+    g_main_loop_quit(state->mainloop);
     return 1;
 }
 
@@ -169,6 +225,7 @@ dbus_service_launch(struct pipeline_state *state)
     /* Init glib */
     g_type_init();
     state->video = g_object_new(CAM_VIDEO_TYPE, NULL);
+    state->video->state = state;
 
     /* Bring up DBus and register with the system. */
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
