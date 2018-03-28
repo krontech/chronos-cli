@@ -196,7 +196,7 @@ cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline)
                 "height", G_TYPE_INT, vout,
                 NULL);
 
-    /* Link LCD Output capabilities. */
+    /* Link HDMI Output capabilities. */
     ret = gst_element_link_pads_filtered(scaler, "src_00", ctrl, "sink", caps);
     if (!ret) {
         gst_object_unref(GST_OBJECT(pipeline));

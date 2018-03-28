@@ -1,6 +1,6 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a
-bin_PROGRAMS = cam-daemon cam-loader cam-json
+bin_PROGRAMS = cam-daemon cam-loader cam-json cam-listener
 bin_PROGRAMS += cam-regdump cam-mock
 AM_CFLAGS = -I ${srcdir}/lib ${GLIB_CFLAGS}
 AM_CFLAGS += -Wno-deprecated-declarations
@@ -72,14 +72,23 @@ cam_mock_SOURCES += mock/mock-control.c
 cam_mock_SOURCES += mock/mock-video.c
 cam_mock_SOURCES += mock/mock-video-data.c
 
-## Camera DBus JSON translator
+## Camera DBus JSON translator tools
 cam_json_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
 cam_json_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_json_LDFLAGS = ${AM_LDFLAGS}
 cam_json_SOURCES = client/cam-json.c
+cam_json_SOURCES += client/dbus-json.c
+cam_json_SOURCES += client/dbus-json.h
 cam_json_SOURCES += client/jsmn.c
 cam_json_SOURCES += client/jsmn.h
-cam_json_SOURCES += api/cam-dbus-client.h
+cam_listener_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
+cam_listener_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_listener_LDFLAGS = ${AM_LDFLAGS}
+cam_listener_SOURCES = client/cam-listener.c
+cam_listener_SOURCES += client/dbus-json.c
+cam_listener_SOURCES += client/dbus-json.h
+cam_listener_SOURCES += client/jsmn.c
+cam_listener_SOURCES += client/jsmn.h
 
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.
@@ -96,6 +105,7 @@ cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
 cam_pipeline_LDADD += -l:libjpeg.so.8 -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
 cam_pipeline_SOURCES += pipeline/dbus-video.c
+cam_pipeline_SOURCES += pipeline/h264.c
 cam_pipeline_SOURCES += pipeline/hdmi.c
 cam_pipeline_SOURCES += pipeline/lcd.c
 cam_pipeline_SOURCES += pipeline/playback.c

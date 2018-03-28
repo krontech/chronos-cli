@@ -115,6 +115,25 @@ cam_video_playback(MockVideo *mock, GHashTable *args, GHashTable **data, GError 
 }
 
 gboolean
+cam_video_liveflags(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
+{
+    return cam_video_status(mock, data, error);
+}
+
+gboolean
+cam_video_livedisplay(MockVideo *mock, GHashTable **data, GError **error)
+{
+    struct mock_state *state = mock->state;
+    
+    state->play_start_time.tv_sec = 0;
+    state->play_start_time.tv_nsec = 0;
+    state->play_frame_rate = 0;
+
+    /* Return the updated playback status */
+    return cam_video_status(mock, data, error);
+}
+
+gboolean
 cam_video_status(MockVideo *mock, GHashTable **data, GError **error)
 {
     struct mock_state *state = mock->state;

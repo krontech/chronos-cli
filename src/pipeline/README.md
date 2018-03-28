@@ -80,15 +80,29 @@ This function takes a hash map with the following members, and returns no values
 
 playback
 --------
-Sets the framerate when in playback mode. The framerate can be set to positive numbers to play
-the video foreward, or to negative values to play backwards. A value of zero will pause the
-video. The caller can also specify a frame number from which to begin playback. This method
-takes the following optional arguments.
+Sets the pipeline into playback mode and begins replaying frames from video memory out to the
+output devices. If the pipeline is already in playback mode, this call will adjust the playback
+rate and position. The framerate can be set to positive numbers to play the video foreward, or
+to negative values to play backwards. A value of zero will pause the video. The caller can
+also specify a frame number from which to begin playback. This method takes the following
+optional arguments.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"framerate"`     | `int`     | The frame rate to use in playback mode.
 | `"position"`      | `uint`    | The frame number to start playback from.
+
+This method will return the same values as the [`status`](#status) method.
+
+livedisplay
+-----------
+Sets the pipeline into live display mode, and enables can select focus and playback aids.
+The input parameters are optional, and will default to `false` if omitted.
+
+| Input             | Type      | Description
+|:----------------- |:--------- |:--------------
+| `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
+| `"peaking"`       | `boolean` | Enable peaking for focus aid.
 
 This method will return the same values as the [`status`](#status) method.
 

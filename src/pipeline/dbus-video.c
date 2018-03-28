@@ -32,11 +32,11 @@ cam_dbus_video_status(struct pipeline_state *state)
     GHashTable *dict = cam_dbus_dict_new();
     if (!dict) return NULL;
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-    cam_dbus_dict_add_boolean(dict, "playback", 0);     /* TODO: Pipeline state. */
-    cam_dbus_dict_add_boolean(dict, "recording", 0);    /* TODO: Video record API */
+    cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY));
+    cam_dbus_dict_add_boolean(dict, "recording", PIPELINE_IS_RECORDING(state->mode));
     cam_dbus_dict_add_uint(dict, "segment", 0);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
-    cam_dbus_dict_add_uint(dict, "position", state->lastframe);
+    cam_dbus_dict_add_uint(dict, "position", state->position);
     cam_dbus_dict_add_int(dict, "framerate", state->playrate);
     return dict;
 }
@@ -52,9 +52,9 @@ typedef struct CamVideo {
 
 typedef struct CamVideoClass {
     GObjectClass parent;
+    guint sof_signalid;
     guint eof_signalid;
 } CamVideoClass;
-
 
 static gboolean
 cam_video_livestream(CamVideo *vobj, GHashTable *args, GError **error)
@@ -88,13 +88,54 @@ cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
     return (data != NULL);
 }
 
-static gboolean cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
+static gboolean
+cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    unsigned long framenum = cam_dbus_dict_get_uint(args, "position", state->lastframe);
+    unsigned long position = cam_dbus_dict_get_uint(args, "position", state->position);
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
-    playback_set(state, framenum, framerate);
+    /* Compute the timer rate, and the change in frame number at each expiration. */
+    int delta = (abs(framerate) + LIVE_MAX_FRAMERATE - 1) / LIVE_MAX_FRAMERATE;
+    unsigned int timer_rate = (delta) ? (framerate / delta) : 0;
+
+    playback_set(state, position, timer_rate, delta);
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
+}
+
+static gboolean
+cam_video_liveflags(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    gboolean zebra = cam_dbus_dict_get_boolean(args, "zebra");
+    gboolean peaking = cam_dbus_dict_get_boolean(args, "peaking");
+    if (zebra) {
+        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+    } else {
+        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
+    }
+    if (peaking) {
+        state->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+    } else {
+        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+    }
+
+    /* If the pipeline happens to be in live display mode, update the FPGA registers directly. */
+    if (state->mode == PIPELINE_MODE_LIVE) {
+        state->fpga->display->control &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE);
+        state->fpga->display->control |= (state->control & (DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE));
+    }
+
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
+}
+
+static gboolean
+cam_video_livedisplay(CamVideo *vobj, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    playback_goto(state, PIPELINE_MODE_LIVE);
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -118,13 +159,14 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename");
         return 0;
     }
-    if (strlen(filename) >= sizeof(state->filename)) {
+    if (strlen(filename) >= sizeof(state->args.filename)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long");
         return 0;
     }
+    strcpy(state->args.filename, filename);
 
     /* Make sure that an encoding operation is not already in progress. */
-    if (state->encoding != PIPELINE_ENCODE_IDLE) {
+    if ((state->mode != PIPELINE_MODE_LIVE) && (state->mode != PIPELINE_MODE_PLAY)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Encoding in progress");
         return 0;
     }
@@ -134,12 +176,12 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     /* TODO: Test that the destination file is *NOT* the root filesystem. */
 
     /* Dive deeper based on the format */
-    state->startframe = cam_dbus_dict_get_uint(args, "start", 0);
-    state->recordlen = cam_dbus_dict_get_uint(args, "length", state->totalframes);
+    state->args.start = cam_dbus_dict_get_uint(args, "start", 0);
+    state->args.length = cam_dbus_dict_get_uint(args, "length", state->totalframes);
     if (strcmp(format, "h264") == 0) {
-        state->encoding = PIPELINE_ENCODE_H264;
-        state->encrate = cam_dbus_dict_get_uint(args, "framerate", 30);
-        state->bitrate = cam_dbus_dict_get_uint(args, "bitrate", 40000000);
+        state->args.mode = PIPELINE_MODE_H264;
+        state->args.framerate = cam_dbus_dict_get_uint(args, "framerate", 30);
+        state->args.bitrate = cam_dbus_dict_get_uint(args, "bitrate", 40000000);
     }
     /* Otherwise, this encoding format is not supported. */
     else {
@@ -148,14 +190,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     }
 
     /* Generate the response */
-    dict = cam_dbus_dict_new();
-    if (dict) {
-        cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-        cam_dbus_dict_add_boolean(dict, "playback", 0);     /* TODO: Pipeline state. */
-        cam_dbus_dict_add_boolean(dict, "recording", 0);    /* TODO: Video record API */
-        cam_dbus_dict_add_uint(dict, "segment", 0);
-    }
-    *data = dict;
+    *data = cam_dbus_dict_new();
 
     /* Restart the video pipeline to enter recording mode. */
     g_main_loop_quit(state->mainloop);
@@ -187,27 +222,21 @@ cam_video_class_init(CamVideoClass *vclass)
     g_assert(vclass != NULL);
 
     /* Register signals. */
-    vclass->eof_signalid = g_signal_new("eof", G_OBJECT_CLASS_TYPE(vclass),
-                   G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
-                   0,
-                   NULL,                /* GSignalAccumulator to use. We don't need one. */
-                   NULL,                /* User-data to pass to the accumulator. */
-                   /* Function to use to marshal the signal data into
-                      the parameters of the signal call. Luckily for
-                      us, GLib (GCClosure) already defines just the
-                      function that we want for a signal handler that
-                      we don't expect any return values (void) and
-                      one that will accept one string as parameter
-                      (besides the instance pointer and pointer to
-                      user-data).
+    vclass->sof_signalid = g_signal_new("sof", G_OBJECT_CLASS_TYPE(vclass),
+                    G_SIGNAL_RUN_LAST,
+                    0,
+                    NULL, NULL,             /* GSignalAccumulator and its user data. */
+                    NULL,                   /* C signal marshaller - should be replaced with static version. */
+                    G_TYPE_NONE,            /* GType of the return value */
+                    1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
 
-                      If no such function would exist, you would need
-                      to create a new one (by using glib-genmarshal
-                      tool). */
-                   g_cclosure_marshal_VOID__STRING,
-                   G_TYPE_NONE,         /* Return GType of the return value. */
-                   1,                   /* Number of parameter GTypes to follow. */
-                   CAM_DBUS_HASH_MAP);  /* GType of the parameters. */
+    vclass->eof_signalid = g_signal_new("eof", G_OBJECT_CLASS_TYPE(vclass),
+                    G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
+                    0,
+                    NULL, NULL,             /* GSignalAccumulator and its user data. */
+                    NULL,                   /* C signal marshaller - should be replaced with static version. */
+                    G_TYPE_NONE,            /* Return GType of the return value. */
+                    1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
 
     dbus_g_object_type_install_info(CAM_VIDEO_TYPE, &dbus_glib_cam_video_object_info);
 }
@@ -256,6 +285,13 @@ dbus_service_launch(struct pipeline_state *state)
     }
     dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(state->video));
     printf("Registered video control device at %s\n", CAM_DBUS_VIDEO_PATH);
+}
+
+void
+dbus_signal_sof(struct pipeline_state *state)
+{
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
+    g_signal_emit(state->video, vclass->sof_signalid, 0, cam_dbus_video_status(state));
 }
 
 void
