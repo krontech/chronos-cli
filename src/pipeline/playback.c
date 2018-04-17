@@ -339,20 +339,17 @@ playback_fsync_callback(struct pipeline_state *state)
             state->estrate = ((state->estrate * 7) + (1000000000 / dt)) / 8;
         }
         memcpy(&state->frametime, &ts, sizeof(struct timespec));
-        fprintf(stderr, "dt=%ld nsec fps=%lu\n", dt, state->estrate);
 
         if (state->mode != PIPELINE_MODE_H264) {
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_12BPP;
         }
-        /* TODO: FLow control would go here. */
-#if 0
-        for (;;) {
+        while (state->source) {
+            /* Wait for flow control issues to clear. */
             gint level = 10;
-            g_object_get(G_OBJECT(source), "buffer-level", &level, NULL);
+            g_object_get(G_OBJECT(state->source), "buffer-level", &level, NULL);
             if (level > 1) break;
             usleep(10000);
         }
-#endif
         playback_frame_advance(state, 1);
     }
     return;

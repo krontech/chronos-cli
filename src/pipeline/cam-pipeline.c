@@ -67,32 +67,32 @@ static GstElement *
 cam_pipeline(struct pipeline_state *state, struct display_config *config, struct pipeline_args *args)
 {
     gboolean ret;
-	GstElement *pipeline;
-    GstElement *source, *tee;
+    GstElement *pipeline;
+    GstElement *tee;
     GstPad *sinkpad;
+    GstPad *tpad;
     GstCaps *caps;
-	GstPad *tpad;
     
     /* Build the GStreamer Pipeline */
-    pipeline =	gst_pipeline_new ("pipeline");
-	source =    gst_element_factory_make("omx_camera",  "vfcc-source");
-    tee =       gst_element_factory_make("tee",         "tee");
-    if (!pipeline || !source || !tee) {
+    pipeline        = gst_pipeline_new ("pipeline");
+    state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
+    tee             = gst_element_factory_make("tee",         "tee");
+    if (!pipeline || !state->source || !tee) {
         return NULL;
     }
     /* Configure elements. */
-	g_object_set(G_OBJECT(source), "input-interface", "VIP1_PORTA", NULL);
-	g_object_set(G_OBJECT(source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
-	g_object_set(G_OBJECT(source), "vif-mode", "24BIT", NULL);
-	g_object_set(G_OBJECT(source), "output-buffers", (guint)10, NULL);
-    g_object_set(G_OBJECT(source), "skip-frames", (guint)0, NULL);
+    g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
+    g_object_set(G_OBJECT(state->source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
+    g_object_set(G_OBJECT(state->source), "vif-mode", "24BIT", NULL);
+    g_object_set(G_OBJECT(state->source), "output-buffers", (guint)10, NULL);
+    g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
 
-	gst_bin_add_many(GST_BIN(pipeline), source, tee, NULL);
+    gst_bin_add_many(GST_BIN(pipeline), state->source, tee, NULL);
 
     /* Configure the input video resolution */
     state->hres = state->fpga->display->h_res;
     state->vres = state->fpga->display->v_res;
-	caps = gst_caps_new_simple ("video/x-raw-yuv",
+    caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC,
                 GST_MAKE_FOURCC('N', 'V', '1', '2'),
                 "width", G_TYPE_INT, state->hres,
@@ -100,7 +100,7 @@ cam_pipeline(struct pipeline_state *state, struct display_config *config, struct
                 "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                 "buffer-count-requested", G_TYPE_INT, 4,
                 NULL);
-    ret = gst_element_link_filtered(source, tee, caps);
+    ret = gst_element_link_filtered(state->source, tee, caps);
     if (!ret) {
         gst_object_unref(GST_OBJECT(pipeline));
         return NULL;
@@ -142,34 +142,34 @@ static GstElement *
 cam_recorder(struct pipeline_state *state, struct display_config *config, struct pipeline_args *args)
 {
     gboolean ret;
-	GstElement *pipeline;
-    GstElement *source, *tee;
+    GstElement *pipeline;
+    GstElement *tee;
     GstPad *sinkpad;
+    GstPad *tpad;
     GstCaps *caps;
-	GstPad *tpad;
 
     /* Build the GStreamer Pipeline */
-    pipeline =	gst_pipeline_new ("pipeline");
-	source =    gst_element_factory_make("omx_camera",  "vfcc-source");
-    tee =       gst_element_factory_make("tee",         "tee");
-    if (!pipeline || !source || !tee) {
+    pipeline        = gst_pipeline_new ("pipeline");
+    state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
+    tee             = gst_element_factory_make("tee",         "tee");
+    if (!pipeline || !state->source || !tee) {
         return NULL;
     }
 
     /* Configure elements. */
-	g_object_set(G_OBJECT(source), "input-interface", "VIP1_PORTA", NULL);
-	g_object_set(G_OBJECT(source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
-	g_object_set(G_OBJECT(source), "vif-mode", "24BIT", NULL);
-	g_object_set(G_OBJECT(source), "output-buffers", (guint)10, NULL);
-    g_object_set(G_OBJECT(source), "skip-frames", (guint)0, NULL);
-	g_object_set(G_OBJECT(source), "num-buffers", (guint)args->length, NULL);
+    g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
+    g_object_set(G_OBJECT(state->source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
+    g_object_set(G_OBJECT(state->source), "vif-mode", "24BIT", NULL);
+    g_object_set(G_OBJECT(state->source), "output-buffers", (guint)10, NULL);
+    g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
+    g_object_set(G_OBJECT(state->source), "num-buffers", (guint)args->length, NULL);
 
-	gst_bin_add_many(GST_BIN(pipeline), source, tee, NULL);
+    gst_bin_add_many(GST_BIN(pipeline), state->source, tee, NULL);
 
     /* Configure the input video resolution */
     state->hres = state->fpga->display->h_res;
     state->vres = state->fpga->display->v_res;
-	caps = gst_caps_new_simple ("video/x-raw-yuv",
+    caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC,
                 GST_MAKE_FOURCC('N', 'V', '1', '2'),
                 "width", G_TYPE_INT, state->hres,
@@ -177,7 +177,7 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
                 "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                 "buffer-count-requested", G_TYPE_INT, 4,
                 NULL);
-    ret = gst_element_link_filtered(source, tee, caps);
+    ret = gst_element_link_filtered(state->source, tee, caps);
     if (!ret) {
         gst_object_unref(GST_OBJECT(pipeline));
         return NULL;
@@ -234,14 +234,14 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 #if 0
             gchar  *debug;
             GError *error;
-			
+
             gst_message_parse_error (msg, &error, &debug);
-			
+
             g_printerr ("Error: %s\n", error->message);
             gstDia->error = true;
             if(gstDia->errorCallback)
                 (*gstDia->errorCallback)(gstDia->errorCallbackArg, error->message);
-            g_error_free (error);		
+            g_error_free (error);
             break;
 #endif
 
@@ -408,10 +408,11 @@ main(int argc, char * argv[])
         }
 
         /* Garbage collect the pipeline. */
-	    gst_element_set_state(pipeline, GST_STATE_READY);
+        state->source = NULL;
+        gst_element_set_state(pipeline, GST_STATE_READY);
         gst_element_set_state(pipeline, GST_STATE_NULL);
         gst_object_unref(GST_OBJECT(pipeline));
-	    g_source_remove(watchid);
+        g_source_remove(watchid);
 
         /* Close any output files that might be in progress. */
         if (state->write_fd >= 0) {

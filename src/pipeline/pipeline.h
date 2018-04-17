@@ -61,6 +61,7 @@ struct pipeline_args {
 
 struct pipeline_state {
     GMainLoop           *mainloop;
+    GstElement          *source;
     struct CamVideo     *video;
     struct fpga         *fpga;
     const struct ioport *iops;
