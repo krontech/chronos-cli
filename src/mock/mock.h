@@ -67,6 +67,7 @@ gboolean cam_control_get_sensor_data(MockControl *cam, GHashTable **data, GError
 gboolean cam_control_get_timing_limits(MockControl *cam, GHashTable *args, GHashTable **data, GError **error);
 
 /* Video API calls to be mocked. */
+gboolean cam_video_stop(MockVideo *cam, GHashTable **data, GError **error);
 gboolean cam_video_recordfile(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
 gboolean cam_video_livestream(MockVideo *cam, GHashTable *args, GError **error);
 gboolean cam_video_addregion(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);

@@ -217,6 +217,8 @@ struct fpga_display {
 #define DISPLAY_PIPELINE_RAW_16BPP          (1<<6)
 #define DISPLAY_PIPELINE_RAW_16PAD          (1<<7)
 #define DISPLAY_PIPELINE_TEST_PATTERN       (1<<15)
+#define DISPLAY_PIPELINE_RAW_MODES          (0x7 << 5)
+
 
 #define SENSOR_DATA_WIDTH		        12
 #define COLOR_MATRIX_INT_BITS	        3

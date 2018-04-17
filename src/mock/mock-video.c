@@ -29,6 +29,12 @@
  *-------------------------------------
  */
 gboolean
+cam_video_stop(MockVideo *mock, GHashTable **data, GError **error)
+{
+    return cam_video_status(mock, data, error);
+}
+
+gboolean
 cam_video_recordfile(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
 #if 0

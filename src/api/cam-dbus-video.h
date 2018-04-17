@@ -210,13 +210,14 @@ static const DBusGMethodInfo dbus_glib_cam_video_methods[] = {
   { (GCallback) cam_video_livedisplay, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 193 },
   { (GCallback) cam_video_liveflags, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 252 },
   { (GCallback) cam_video_recordfile, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 322 },
-  { (GCallback) cam_video_livestream, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 399 },
+  { (GCallback) cam_video_stop, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 399 },
+  { (GCallback) cam_video_livestream, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 453 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_video_object_info = {  1,
   dbus_glib_cam_video_methods,
-  7,
-"com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0addregion\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0liveflags\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0\0",
+  8,
+"com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0addregion\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0liveflags\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0\0",
 "com.krontech.chronos.video\0sof\0com.krontech.chronos.video\0eof\0\0",
 "\0"
 };

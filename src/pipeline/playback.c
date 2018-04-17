@@ -79,7 +79,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
         state->position = (state->position + delta) % state->totalframes;
     }
     else if (delta < 0) {
-        if (state->position < delta) state->position += state->totalframes;
+        if ((state->position + delta) < 0) state->position += state->totalframes;
         state->position -= delta;
     }
 
@@ -221,7 +221,6 @@ playback_region_flush(struct pipeline_state *state)
     playback_unlock(&sigset);
 }
 
-
 void
 playback_goto(struct pipeline_state *state, unsigned int mode)
 {
@@ -258,6 +257,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
             state->fpga->display->control = control;
+            state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES);
             break;
 
         case PIPELINE_MODE_H264:
@@ -323,10 +323,36 @@ playback_fsync_callback(struct pipeline_state *state)
         state->preroll--;
         if (!state->preroll) {
             state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
+            state->estrate = 0;
+            clock_gettime(CLOCK_MONOTONIC, &state->frametime);
         }
         state->fpga->display->manual_sync = 1;
     }
     else {
+        struct timespec ts;
+        long dt;
+
+        /* Update framerate estimates */
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        dt = (ts.tv_sec - state->frametime.tv_sec) * 1000000000 + ts.tv_nsec - state->frametime.tv_nsec;
+        if (dt > 0) {
+            state->estrate = ((state->estrate * 7) + (1000000000 / dt)) / 8;
+        }
+        memcpy(&state->frametime, &ts, sizeof(struct timespec));
+        fprintf(stderr, "dt=%ld nsec fps=%lu\n", dt, state->estrate);
+
+        if (state->mode != PIPELINE_MODE_H264) {
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_12BPP;
+        }
+        /* TODO: FLow control would go here. */
+#if 0
+        for (;;) {
+            gint level = 10;
+            g_object_get(G_OBJECT(source), "buffer-level", &level, NULL);
+            if (level > 1) break;
+            usleep(10000);
+        }
+#endif
         playback_frame_advance(state, 1);
     }
     return;

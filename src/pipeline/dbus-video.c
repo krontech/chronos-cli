@@ -37,7 +37,11 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_uint(dict, "segment", 0);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
     cam_dbus_dict_add_uint(dict, "position", state->position);
-    cam_dbus_dict_add_int(dict, "framerate", state->playrate);
+    if (PIPELINE_IS_RECORDING(state->mode)) {
+        cam_dbus_dict_add_int(dict, "framerate", state->estrate);
+    } else {
+        cam_dbus_dict_add_int(dict, "framerate", state->playrate);
+    }
     return dict;
 }
 
@@ -96,8 +100,8 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
     /* Compute the timer rate, and the change in frame number at each expiration. */
-    int delta = (abs(framerate) + LIVE_MAX_FRAMERATE - 1) / LIVE_MAX_FRAMERATE;
-    unsigned int timer_rate = (delta) ? (framerate / delta) : 0;
+    int delta = ((framerate > 0) ? (framerate + LIVE_MAX_FRAMERATE - 1) : (framerate - LIVE_MAX_FRAMERATE + 1)) / LIVE_MAX_FRAMERATE;
+    unsigned int timer_rate = (delta) ? (framerate / delta) : LIVE_MAX_FRAMERATE;
 
     playback_set(state, position, timer_rate, delta);
     *data = cam_dbus_video_status(state);
@@ -196,6 +200,14 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     g_main_loop_quit(state->mainloop);
     return 1;
 }
+
+static gboolean
+cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    g_main_loop_quit(state->mainloop);
+}
+
 
 #include "api/cam-dbus-video.h"
 

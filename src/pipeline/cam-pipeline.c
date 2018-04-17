@@ -364,11 +364,13 @@ main(int argc, char * argv[])
 
         /* Pause playback while we get setup. */
         memcpy(&args, &state->args, sizeof(args));
-        memset(&state->args, 0, sizeof(state->args));
         playback_goto(state, PIPELINE_MODE_PAUSE);
 
         /* Recording modes should fail gracefully back to playback. */
         if (PIPELINE_IS_RECORDING(args.mode)) {
+            /* Return to playback mode after recording. */
+            state->args.mode = PIPELINE_MODE_PLAY;
+
             pipeline = cam_recorder(state, &config, &args);
             if (!pipeline) {
                 /* Throw an EOF and revert to playback. */
@@ -379,6 +381,7 @@ main(int argc, char * argv[])
         }
         /* Live display and playback modes should only return fatal errors. */
         else {
+            memset(&state->args, 0, sizeof(state->args));
             pipeline = cam_pipeline(state, &config, &args);
             if (!pipeline) {
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
@@ -412,6 +415,7 @@ main(int argc, char * argv[])
 
         /* Close any output files that might be in progress. */
         if (state->write_fd >= 0) {
+            fsync(state->write_fd);
             close(state->write_fd);
             state->write_fd = -1;
         }

@@ -85,8 +85,10 @@ struct pipeline_state {
     struct playback_region *region_head;
     struct playback_region *region_tail;
 
-    /* Preroll Mode */
+    /* Recording Mode */
     unsigned int    preroll;
+    unsigned int    estrate;
+    struct timespec frametime;
 
     /* Pipeline args */
     struct pipeline_args args;
