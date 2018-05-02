@@ -42,6 +42,7 @@ cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct di
     }
 
 	g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
+	g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
 	g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
 	g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
 	g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
