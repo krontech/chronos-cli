@@ -37,20 +37,40 @@
 static void *
 hdmi_hotplug_thread(void *arg)
 {
-    int prev_status = -1;
+    int err;
+    int prev = -1;
+
+    struct ti81xxhdmi_status status;
     int fd = open("/dev/TI81XX_HDMI", O_RDWR);
+    if (fd < 0) {
+        return NULL;
+    }
+
+    /* Get the initial hotplug state. */
+    err = ioctl(fd, TI81XXHDMI_GET_STATUS, &status);
+    if (err >= 0) {
+        prev = (status.is_hpd_detected != 0);
+    }
+
+    /* Wait for hotplug events. */
     while (fd >= 0) {
-        struct ti81xxhdmi_hpd_status status;
-        int err = ioctl(fd, TI81XXHDMI_WAIT_FOR_HPD_CHANGE, &status);
+        struct ti81xxhdmi_hpd_status hpd;
+        int next;
+        int err = ioctl(fd, TI81XXHDMI_WAIT_FOR_HPD_CHANGE, &hpd);
         if (err < 0) {
             fprintf(stderr, "DEBUG: ioctl(TI81XXHDMI_WAIT_FOR_HPD_CHANGE) error: %s\n", strerror(errno));
             continue;
         }
-        if (status.hpd_status != prev_status) {
-            fprintf(stderr, "HDMI Hotplug event detected\n");
+        if (hpd.hpd_status == 0) {
+            /* Ignore spurious hotplug events during video changes. */
+            continue;
+        }
+        next = (hpd.hpd_status & TI81XXHDMI_HPD_HIGH) != 0;
+        if (prev != next) {
+            fprintf(stderr, "HDMI Hotplug Event 0x%02x\n", hpd.hpd_status);
             pthread_kill((uintptr_t)arg, SIGHUP);
         }
-        prev_status = status.hpd_status;
+        prev = next;
     }
     return NULL;
 }
