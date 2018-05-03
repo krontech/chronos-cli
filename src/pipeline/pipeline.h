@@ -88,7 +88,7 @@ struct pipeline_state {
 
     /* Recording Mode */
     unsigned int    preroll;
-    unsigned int    estrate;
+    double          estrate;
     struct timespec frametime;
 
     /* Pipeline args */

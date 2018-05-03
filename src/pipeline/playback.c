@@ -323,7 +323,7 @@ playback_fsync_callback(struct pipeline_state *state)
         state->preroll--;
         if (!state->preroll) {
             state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
-            state->estrate = 0;
+            state->estrate = 0.0;
             clock_gettime(CLOCK_MONOTONIC, &state->frametime);
         }
         state->fpga->display->manual_sync = 1;
@@ -336,7 +336,7 @@ playback_fsync_callback(struct pipeline_state *state)
         clock_gettime(CLOCK_MONOTONIC, &ts);
         dt = (ts.tv_sec - state->frametime.tv_sec) * 1000000000 + ts.tv_nsec - state->frametime.tv_nsec;
         if (dt > 0) {
-            state->estrate = ((state->estrate * 7) + (1000000000 / dt)) / 8;
+            state->estrate = ((state->estrate * 7.0) + (1000000000.0 / dt)) / 8.0;
         }
         memcpy(&state->frametime, &ts, sizeof(struct timespec));
 

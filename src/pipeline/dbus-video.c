@@ -38,9 +38,9 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
     cam_dbus_dict_add_uint(dict, "position", state->position);
     if (PIPELINE_IS_RECORDING(state->mode)) {
-        cam_dbus_dict_add_int(dict, "framerate", state->estrate);
+        cam_dbus_dict_add_float(dict, "framerate", state->estrate);
     } else {
-        cam_dbus_dict_add_int(dict, "framerate", state->playrate);
+        cam_dbus_dict_add_float(dict, "framerate", (double)state->playrate);
     }
     return dict;
 }
