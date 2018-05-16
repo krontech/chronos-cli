@@ -92,7 +92,6 @@ edid_fprintf_boolean(FILE *fp, const char *name, int bval)
     fprintf(fp, "\t%s: %s\n", name, bval ? "true" : "false");
 }
 
-
 uint8_t
 edid_checksum(const void *data)
 {
@@ -118,27 +117,55 @@ edid_get_timing(const void *data, int pref, unsigned int *hres, unsigned int *vr
 {
     const struct edid_data *edid = data;
     uint16_t timing;
-    if ((pref < 0) || (pref >= ARRAY_SIZE(edid->timing))) {
+    if (pref < 0) {
         return 0;
     }
-    timing = htole16(edid->timing[pref]);
-    *hres = EDID_TIMING_XRES_GET(timing);
-    switch (timing & EDID_TIMING_ASPECT) {
-        case EDID_TIMING_ASPECT_16_10:
-            *vres = (*hres * 10) / 16;
-            break;
-        case EDID_TIMING_ASPECT_4_3:
-            *vres = (*hres * 3) / 4;
-            break;
-        case EDID_TIMING_ASPECT_5_4:
-            *vres = (*hres * 4) / 5;
-            break;
-        case EDID_TIMING_ASPECT_16_9:
-        default:
-            *vres = (*hres * 9) / 16;
-            break;
+
+    /* Check for detailed timings. */
+    if (pref < ARRAY_SIZE(edid->detail)) {
+        const struct edid_detail *detail = &edid->detail[pref];
+        unsigned long pxclock = htole16(detail->pxclock) * 10000UL;
+        unsigned long framesize;
+
+        *hres = detail->hactive_lsb + ((detail->hpixel_msb & 0xF0) << 4);
+        *vres = detail->vactive_lsb + ((detail->vlines_msb & 0xF0) << 4);
+        
+        /* If either resolution is zero, skip this timing descriptor. */
+        if ((hres == 0) || (vres == 0)) {
+            return 0;
+        }
+
+        /* Compute the total frame size */
+        framesize = *hres + detail->hblank_lsb + ((detail->hpixel_msb & 0x0F) << 8);
+        framesize *= (unsigned long)(*vres + detail->vblank_lsb + ((detail->vlines_msb & 0x0F) << 8));
+        return (pxclock + (framesize/2)) / framesize;
     }
-    return EDID_TIMING_FREQUENCY_GET(timing);
+    pref -= ARRAY_SIZE(edid->detail);
+    
+    /* Check for standard timings. */
+    if (pref < ARRAY_SIZE(edid->timing)) {
+        timing = htole16(edid->timing[pref]);
+        *hres = EDID_TIMING_XRES_GET(timing);
+        switch (timing & EDID_TIMING_ASPECT) {
+            case EDID_TIMING_ASPECT_16_10:
+                *vres = (*hres * 10) / 16;
+                break;
+            case EDID_TIMING_ASPECT_4_3:
+                *vres = (*hres * 3) / 4;
+                break;
+            case EDID_TIMING_ASPECT_5_4:
+                *vres = (*hres * 4) / 5;
+                break;
+            case EDID_TIMING_ASPECT_16_9:
+            default:
+                *vres = (*hres * 9) / 16;
+                break;
+        }
+        return EDID_TIMING_FREQUENCY_GET(timing);
+    }
+    pref -= ARRAY_SIZE(edid->timing);
+
+    return 0;
 }
 
 static void
@@ -219,13 +246,23 @@ edid_fprintf_std_timing(FILE *stream, uint16_t timing)
     fprintf(stream, "\tTiming: %ux%u @ %uHz\n", hres, vres, freq);
 }
 
-#if 0
 static void
 edid_fprintf_detail(FILE *stream, const struct edid_detail *detail)
 {
+    unsigned int hres = detail->hactive_lsb + ((detail->hpixel_msb & 0xF0) << 4);
+    unsigned int vres = detail->vactive_lsb + ((detail->vlines_msb & 0xF0) << 4);
+    unsigned long pxclock = htole16(detail->pxclock) * 10000UL;
+    unsigned long framesize;
 
+    /* If either resolution is zero, skip this timing descriptor. */
+    if ((hres == 0) || (vres == 0)) {
+        return;
+    }
+    framesize = hres + detail->hblank_lsb + ((detail->hpixel_msb & 0xF) << 8);
+    framesize *= (unsigned long)(vres + detail->vblank_lsb + ((detail->vlines_msb & 0xF) << 8));
+
+    fprintf(stream, "\tTiming: %ux%u @ %luHz\n", hres, vres, (pxclock + framesize/2) / framesize);
 } /* edid_fprintf_detail */
-#endif
 
 void
 edid_fprint(const void *data, FILE *stream)
@@ -244,5 +281,9 @@ edid_fprint(const void *data, FILE *stream)
     edid_fprintf_basic(stream, edid);
     for (i = 0; i < ARRAY_SIZE(edid->timing); i++) {
         edid_fprintf_std_timing(stream, htole16(edid->timing[i]));
+    }
+
+    for (i = 0; i < ARRAY_SIZE(edid->detail); i++) {
+        edid_fprintf_detail(stream, &edid->detail[i]);
     }
 } /* edid_fprint */

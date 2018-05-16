@@ -152,25 +152,31 @@ cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline)
         return NULL;
     }
 
-    pref = 0;
-    while (1) {
+    for (pref = 0; pref < EDID_MAX_TIMINGS; pref++) {
         panel_refresh = edid_get_timing(&u.data, pref, &panel_hres, &panel_vres);
         if (!panel_refresh) {
-            /* No supported display timing. */
-            return NULL;
+            continue;
         }
         /* OMX only supports 1080p and 720p for now. */
-        if ((panel_hres == 1920) && (panel_vres == 1080) && (panel_refresh == 60)) {
+        if ((panel_hres == 1920) && (panel_vres == 1080) && (panel_refresh >= 60)) {
             set_hdmi_mode("1080p-60");
             omx_mode = "OMX_DC_MODE_1080P_60";
             break;
         }
-        if ((panel_hres == 1280) && (panel_vres == 720) && (panel_refresh == 30)) {
+        if ((panel_hres == 1280) && (panel_vres == 720) && (panel_refresh >= 60)) {
             set_hdmi_mode("720p-60");
             omx_mode = "OMX_DC_MODE_720P_60";
             break;
         }
-        pref++;
+    }
+    /* Fall-back to 1080p if all else fails. */
+    if (pref >= EDID_MAX_TIMINGS) {
+        fprintf(stderr, "HDMI: No supported timgings, falling back to 1080p @60Hz\n");
+        panel_hres = 1920;
+        panel_vres = 1080;
+        panel_refresh = 60;
+        set_hdmi_mode("1080p-60");
+        omx_mode = "OMX_DC_MODE_1080P_60";
     }
 
     /* Pipeline setup */
@@ -204,6 +210,7 @@ cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline)
     voff = ((panel_vres - vout) / 2) & ~0x1;
 
 #ifdef DEBUG
+    fprintf(stderr, "DEBUG: refresh = %u Hz\n", panel_refresh);
     fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
     fprintf(stderr, "DEBUG: input = [%lu, %lu]\n", state->hres, state->vres);
     fprintf(stderr, "DEBUG: output = [%u, %u]\n", hout, vout);

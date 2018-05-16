@@ -138,6 +138,8 @@ struct edid_data {
     uint8_t checksum;
 };
 
+#define EDID_MAX_TIMINGS    12
+
 uint8_t edid_checksum(const void *data);
 int edid_sanity(const void *data);
 void edid_fprint(const void *edid, FILE *stream);
