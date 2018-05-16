@@ -80,7 +80,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
     }
     else if (delta < 0) {
         if ((state->position + delta) < 0) state->position += state->totalframes;
-        state->position -= delta;
+        state->position += delta;
     }
 
     /* Search the recording regions for the actual frame address. */
