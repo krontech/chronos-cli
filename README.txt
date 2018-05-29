@@ -1,4 +1,4 @@
-# chronos-cli
+chronos-cli
 Command line tools for controlling the Chronos camera. Includes a D-Bus API mock.
 
 Build:
