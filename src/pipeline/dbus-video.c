@@ -97,13 +97,18 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
 {
     struct pipeline_state *state = vobj->state;
     unsigned long position = cam_dbus_dict_get_uint(args, "position", state->position);
+    unsigned long loopcount = cam_dbus_dict_get_uint(args, "loopcount", 0);
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
     /* Compute the timer rate, and the change in frame number at each expiration. */
     int delta = ((framerate > 0) ? (framerate + LIVE_MAX_FRAMERATE - 1) : (framerate - LIVE_MAX_FRAMERATE + 1)) / LIVE_MAX_FRAMERATE;
     unsigned int timer_rate = (delta) ? (framerate / delta) : LIVE_MAX_FRAMERATE;
 
-    playback_set(state, position, timer_rate, delta);
+    if (loopcount) {
+        playback_loop(state, position, timer_rate, delta, loopcount);
+    } else {
+        playback_set(state, position, timer_rate, delta);
+    }
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }

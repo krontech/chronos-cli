@@ -83,6 +83,8 @@ struct pipeline_state {
     timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
     unsigned int    playrate;       /* Rate (in FPS) of the playback timer. */
     int             playdelta;      /* Change (in frames) to apply at each playback timer expiry. */
+    unsigned long   loopstart;      /* Starting frame to play from when in playback mode. */
+    unsigned long   loopend;        /* Ending frame to play from when in playback mode. */
     struct playback_region *region_head;
     struct playback_region *region_tail;
 
@@ -121,6 +123,7 @@ void dbus_signal_eof(struct pipeline_state *state);
 void playback_init(struct pipeline_state *state);
 void playback_goto(struct pipeline_state *state, unsigned int mode);
 void playback_set(struct pipeline_state *state, unsigned long frame, unsigned int rate, int delta);
+void playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int delta, unsigned long count);
 int playback_region_add(struct pipeline_state *state, unsigned long base, unsigned long size, unsigned long offset);
 void playback_region_flush(struct pipeline_state *state);
 

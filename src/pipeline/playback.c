@@ -76,10 +76,11 @@ playback_frame_advance(struct pipeline_state *state, int delta)
 
     /* Advance the logical frame number. */
     if (delta > 0) {
-        state->position = (state->position + delta) % state->totalframes;
+        state->position += delta;
+        if (state->position > state->loopend) state->position -= (state->loopend - state->loopstart);
     }
     else if (delta < 0) {
-        if ((state->position + delta) < 0) state->position += state->totalframes;
+        if (state->position < (state->loopstart - delta)) state->position += (state->loopend - state->loopstart);
         state->position += delta;
     }
 
@@ -224,7 +225,7 @@ playback_region_flush(struct pipeline_state *state)
 void
 playback_goto(struct pipeline_state *state, unsigned int mode)
 {
-    uint32_t control = state->fpga->display->control;
+    uint32_t control = state->control;
 
     switch (mode) {
         case PIPELINE_MODE_LIVE:
@@ -288,6 +289,28 @@ playback_set(struct pipeline_state *state, unsigned long frame, unsigned int rat
     state->playdelta = mul;
     state->playrate = rate;
     state->position = frame;
+    state->loopstart = 0;
+    state->loopend = state->totalframes;
+
+    /* Set playback mode and re-arm the timer. */
+    control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+    control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
+    state->fpga->display->control = control;
+    playback_timer_rearm(state);
+}
+
+/* Start playback at a given framerate and loop over a subset of frames. */
+void
+playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int mul, unsigned long count)
+{
+    uint32_t control = state->fpga->display->control;
+
+    state->mode = PIPELINE_MODE_PLAY;
+    state->playdelta = mul;
+    state->playrate = rate;
+    state->position = start;
+    state->loopstart = start;
+    state->loopend = start + count;
 
     /* Set playback mode and re-arm the timer. */
     control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
