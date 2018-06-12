@@ -253,7 +253,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             break;
         
         case PIPELINE_MODE_PAUSE:
-            state->mode = PIPELINE_MODE_PLAY;
+            state->mode = PIPELINE_MODE_PAUSE;
             playback_timer_disarm(state);
             control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
@@ -261,13 +261,14 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES);
             break;
 
-        case PIPELINE_MODE_H264:
-        case PIPELINE_MODE_RAW:
+        case PIPELINE_MODE_RAW12:
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
+        case PIPELINE_MODE_RAW16:
         case PIPELINE_MODE_DNG:
-        case PIPELINE_MODE_PNG:
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
+        case PIPELINE_MODE_H264:
             state->mode = mode;
-            state->preroll = 4; /* TODO: How many prerolled frames? */
-            //state->position = 0; /* TODO: Need a better way to configure starting position. */
+            state->preroll = 3;
 
             /* Enable the test pattern and begin prerolling */
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_TEST_PATTERN;
@@ -342,6 +343,7 @@ playback_fsync_callback(struct pipeline_state *state)
     }
     /* Recording Modes: Preroll and then begin playback. */
     else if (state->preroll) {
+        state->fpga->display->manual_sync = 1;
         fprintf(stderr, "Prerolling... %d\n", state->preroll);
         state->preroll--;
         if (!state->preroll) {
@@ -349,7 +351,6 @@ playback_fsync_callback(struct pipeline_state *state)
             state->estrate = 0.0;
             clock_gettime(CLOCK_MONOTONIC, &state->frametime);
         }
-        state->fpga->display->manual_sync = 1;
     }
     else {
         struct timespec ts;
@@ -363,9 +364,6 @@ playback_fsync_callback(struct pipeline_state *state)
         }
         memcpy(&state->frametime, &ts, sizeof(struct timespec));
 
-        if (state->mode != PIPELINE_MODE_H264) {
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_12BPP;
-        }
         while (state->source) {
             /* Wait for flow control issues to clear. */
             gint level = 10;

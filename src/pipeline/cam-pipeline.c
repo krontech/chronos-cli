@@ -137,6 +137,22 @@ cam_pipeline(struct pipeline_state *state, struct display_config *config, struct
     return pipeline;
 } /* cam_pipeline */
 
+/*
+ * Workaround for OMX buffering bug in the omx_camera element, which doesn't
+ * flush itself when restarting. This leads to a garbled first frame in the
+ * input stream from the last camera activity.
+ */
+static gboolean
+buffer_drop_phantom(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
+{
+    struct pipeline_state *state = cbdata;
+    if (state->phantom) {
+        state->phantom--;
+        return FALSE;
+    }
+    return TRUE;
+} /* buffer_drop_phantom */
+
 /* Launch a gstreamer pipeline to perform video recording. */
 static GstElement *
 cam_recorder(struct pipeline_state *state, struct display_config *config, struct pipeline_args *args)
@@ -146,6 +162,7 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
     GstElement *tee;
     GstPad *sinkpad;
     GstPad *tpad;
+    GstPad *pad;
     GstCaps *caps;
 
     /* Build the GStreamer Pipeline */
@@ -156,41 +173,86 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
         return NULL;
     }
 
+    /*
+     * Hack! The OMX camera element doesn't correctly flush itself when restaring
+     * which leads to a phantom frame being generated in the playback stream. Drop
+     * these phantom frames when starting the recording.
+     * 
+     * TODO: Is there a way to check for these things before starting?
+     */
+    state->phantom = 1;
+
     /* Configure elements. */
     g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
     g_object_set(G_OBJECT(state->source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
     g_object_set(G_OBJECT(state->source), "vif-mode", "24BIT", NULL);
     g_object_set(G_OBJECT(state->source), "output-buffers", (guint)10, NULL);
     g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
-    g_object_set(G_OBJECT(state->source), "num-buffers", (guint)args->length, NULL);
+    g_object_set(G_OBJECT(state->source), "num-buffers", (guint)(args->length + state->phantom), NULL);
 
     gst_bin_add_many(GST_BIN(pipeline), state->source, tee, NULL);
+
+    /* Add a probe to drop the very first frame from the camera */
+    pad = gst_element_get_static_pad(state->source, "src");
+    gst_pad_add_buffer_probe(pad, G_CALLBACK(buffer_drop_phantom), state);
+    gst_object_unref(pad);
 
     /* Configure the input video resolution */
     state->hres = state->fpga->display->h_res;
     state->vres = state->fpga->display->v_res;
-    caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "format", GST_TYPE_FOURCC,
-                GST_MAKE_FOURCC('N', 'V', '1', '2'),
-                "width", G_TYPE_INT, state->hres,
-                "height", G_TYPE_INT, state->vres,
-                "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
-                "buffer-count-requested", G_TYPE_INT, 4,
-                NULL);
-    ret = gst_element_link_filtered(state->source, tee, caps);
-    if (!ret) {
-        gst_object_unref(GST_OBJECT(pipeline));
-        return NULL;
-    }
-    gst_caps_unref(caps);
+    state->position = args->start;
 
     /*=====================================================
      * Setup the Pipeline in H.264 Recording Mode
      *=====================================================
      */
-    state->position = args->start;
     if (args->mode == PIPELINE_MODE_H264) {
+        GstCaps *caps = gst_caps_new_simple ("video/x-raw-yuv",
+                    "format", GST_TYPE_FOURCC,
+                    GST_MAKE_FOURCC('N', 'V', '1', '2'),
+                    "width", G_TYPE_INT, state->hres,
+                    "height", G_TYPE_INT, state->vres,
+                    "framerate", GST_TYPE_FRACTION, args->framerate, 1,
+                    "buffer-count-requested", G_TYPE_INT, 4,
+                    NULL);
+        ret = gst_element_link_filtered(state->source, tee, caps);
+        if (!ret) {
+            gst_object_unref(GST_OBJECT(pipeline));
+            return NULL;
+        }
+        gst_caps_unref(caps);
+
+        /* Create the H.264 sink */
         sinkpad = cam_h264_sink(state, args, pipeline);
+        if (!sinkpad) {
+            gst_object_unref(GST_OBJECT(pipeline));
+            return NULL;
+        }
+        tpad = gst_element_get_request_pad(tee, "src%d");
+        gst_pad_link(tpad, sinkpad);
+        gst_object_unref(sinkpad);
+    }
+    /*=====================================================
+     * Setup the Pipeline in 12/16-bit Raw Recording Mode
+     *=====================================================
+     */
+    else if ((args->mode == PIPELINE_MODE_RAW12) || (args->mode == PIPELINE_MODE_RAW16)) {
+        GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
+                    "bpp", G_TYPE_INT, 16,
+                    "width", G_TYPE_INT, state->hres,
+                    "height", G_TYPE_INT, state->vres,
+                    "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
+                    "buffer-count-requested", G_TYPE_INT, 4,
+                    NULL);
+        ret = gst_element_link_filtered(state->source, tee, caps);
+        if (!ret) {
+            gst_object_unref(GST_OBJECT(pipeline));
+            return NULL;
+        }
+        gst_caps_unref(caps);
+
+        /* Create the raw video sink */
+        sinkpad = cam_raw_sink(state, args, pipeline);
         if (!sinkpad) {
             gst_object_unref(GST_OBJECT(pipeline));
             return NULL;
@@ -391,6 +453,10 @@ main(int argc, char * argv[])
 
         /* Install an pipeline error handler. */
         bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+        event = gst_event_new_flush_start();
+        gst_element_send_event(pipeline, event);
+        event = gst_event_new_flush_stop();
+        gst_element_send_event(pipeline, event);
         watchid = gst_bus_add_watch(bus, cam_bus_watch, state);
         gst_object_unref(bus);
 

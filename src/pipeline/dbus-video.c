@@ -187,10 +187,29 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     /* Dive deeper based on the format */
     state->args.start = cam_dbus_dict_get_uint(args, "start", 0);
     state->args.length = cam_dbus_dict_get_uint(args, "length", state->totalframes);
-    if (strcmp(format, "h264") == 0) {
+    
+    /* Accept all microsoft variants of the H264 FOURCC codes */
+    if ((strcasecmp(format, "h264") == 0) || (strcasecmp(format, "x264") == 0)) {
         state->args.mode = PIPELINE_MODE_H264;
         state->args.framerate = cam_dbus_dict_get_uint(args, "framerate", 30);
         state->args.bitrate = cam_dbus_dict_get_uint(args, "bitrate", 40000000);
+    }
+    /* Handle Bayer and monochrome formats interchangeably */
+    else if ((strcasecmp(format, "byr2") == 0) || 
+                (strcasecmp(format, "gb16") == 0) ||
+                (strcasecmp(format, "gr16") == 0) ||
+                (strcasecmp(format, "rg16") == 0) ||
+                (strcasecmp(format, "y16") == 0)) {
+        /* 12-bit samples padded with lsb to fit 16-bit encoding. */
+        state->args.mode = PIPELINE_MODE_RAW16;
+    }
+    else if ((strcasecmp(format, "ba12") == 0) || 
+                (strcasecmp(format, "gb12") == 0) ||
+                (strcasecmp(format, "bg12") == 0) ||
+                (strcasecmp(format, "rg12") == 0) ||
+                (strcasecmp(format, "y12") == 0)) {
+        /* 12-bit samples padded with msb to fit 16-bit encoding. */
+        state->args.mode = PIPELINE_MODE_RAW12;
     }
     /* Otherwise, this encoding format is not supported. */
     else {

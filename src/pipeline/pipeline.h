@@ -44,9 +44,9 @@ struct playback_region {
 #define PIPELINE_MODE_PLAY      1   /* Playing recoded frames back to the display device. */
 #define PIPELINE_MODE_PAUSE     2   /* Pause video output during transitions */
 #define PIPELINE_MODE_H264      3
-#define PIPELINE_MODE_RAW       4
-#define PIPELINE_MODE_DNG       5
-#define PIPELINE_MODE_PNG       6
+#define PIPELINE_MODE_RAW16     4
+#define PIPELINE_MODE_RAW12     5
+#define PIPELINE_MODE_DNG       6
 
 #define PIPELINE_IS_RECORDING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
 
@@ -89,6 +89,7 @@ struct pipeline_state {
     struct playback_region *region_tail;
 
     /* Recording Mode */
+    unsigned int    phantom;        /* OMX buffering workaround */
     unsigned int    preroll;
     double          estrate;
     struct timespec frametime;
