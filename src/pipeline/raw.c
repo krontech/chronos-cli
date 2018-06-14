@@ -43,7 +43,7 @@ cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args, GstElemen
 	}
 
     /* Allocate our segment of the video pipeline. */
-    queue =		gst_element_factory_make("queue",		    "h264-queue");
+    queue =		gst_element_factory_make("queue",		    "raw-queue");
     sink =		gst_element_factory_make("fdsink",			"file-sink");
     if (!queue || !sink) {
         close(state->write_fd);

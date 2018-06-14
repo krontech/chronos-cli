@@ -103,6 +103,4 @@ gpio_write(int fd, int val)
     return write(fd, val ? "1" : "0", 1);
 } /* gpio_write */
 
-
-
 #endif /* _CLI_UTILS_H */

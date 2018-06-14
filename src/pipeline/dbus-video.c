@@ -194,6 +194,9 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
         state->args.framerate = cam_dbus_dict_get_uint(args, "framerate", 30);
         state->args.bitrate = cam_dbus_dict_get_uint(args, "bitrate", 40000000);
     }
+    else if (strcasecmp(format, "dng") == 0) {
+        state->args.mode = PIPELINE_MODE_DNG;
+    }
     /* Handle Bayer and monochrome formats interchangeably */
     else if ((strcasecmp(format, "byr2") == 0) || 
                 (strcasecmp(format, "gb16") == 0) ||

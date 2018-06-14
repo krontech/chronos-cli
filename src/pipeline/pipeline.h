@@ -90,7 +90,8 @@ struct pipeline_state {
 
     /* Recording Mode */
     unsigned int    phantom;        /* OMX buffering workaround */
-    unsigned int    preroll;
+    unsigned long   dngcount;       /* Frame number for DNG rendering. */
+    unsigned int    preroll;        /* Preroll frame counter. */
     double          estrate;
     struct timespec frametime;
 
@@ -113,6 +114,7 @@ GstPad *cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const s
 GstPad *cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline);
 GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
 GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
+GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
 
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);

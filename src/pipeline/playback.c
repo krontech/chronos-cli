@@ -24,6 +24,7 @@
 #include <sys/types.h>
 
 #include "pipeline.h"
+#include "utils.h"
 
 /*
  * Re-arm the playback timer in single-shot mode. By blocking the delivery
