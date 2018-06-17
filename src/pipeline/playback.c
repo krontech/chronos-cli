@@ -24,7 +24,6 @@
 #include <sys/types.h>
 
 #include "pipeline.h"
-#include "utils.h"
 
 /*
  * Re-arm the playback timer in single-shot mode. By blocking the delivery
@@ -263,9 +262,9 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             break;
 
         case PIPELINE_MODE_RAW12:
+        case PIPELINE_MODE_DNG:
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
         case PIPELINE_MODE_RAW16:
-        case PIPELINE_MODE_DNG:
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
         case PIPELINE_MODE_H264:
             state->mode = mode;

@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <dirent.h>
 #include <sys/uio.h>
+#include <sys/mman.h>
 #include <gst/gst.h>
 
 #include "pipeline.h"
@@ -196,6 +197,55 @@ tiff_build_header(const struct tiff_tag_data *tags, uint16_t count)
     return header;
 }
 
+/* Write a DNG file without compression. */
+void
+dng_write(int fd, const void *header, GstBuffer *buffer)
+{
+#if 0
+    write(fd, header, TIFF_HEADER_SIZE);
+    if (ftruncate(fd, GST_BUFFER_SIZE(buffer) + TIFF_HEADER_SIZE) == 0) {
+        /* This is probably a block device - map it and attempt to memcpy. */
+        uint8_t *kpage = mmap(NULL, GST_BUFFER_SIZE(buffer), PROT_READ | PROT_WRITE, MAP_SHARED, fd, TIFF_HEADER_SIZE);
+        if (kpage == MAP_FAILED) {
+            fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
+            ftruncate(fd, 0);
+            return;
+        }
+#if defined(__ARM_NEON)
+        asm volatile (
+            "dng_neon_memcpy:               \n"
+            "   pld [%[s], #0xc0]           \n"
+            "   vldm %[s]!,{d0-d7}          \n"
+            "   vstm %[d]!,{d0-d7}          \n"
+            "   subs %[count],%[count], #64 \n"
+            "   bgg dng_neon_memcpy         \n"
+            : [d]"+r"(kpage), [s]"+r"(GST_BUFFER_DATA(buffer)), [count]"+r"(GST_BUFFER_SIZE(buffer)) :: "cc" );
+#else
+        asm volatile (
+            "dng_memcpy:                    \n"
+            "   pld [%[s], #0xc0]           \n"
+            "   ldmia %[s]!, {r3-r10}       \n"
+            "   stmia %[d]!, {r3-r10}       \n"
+            "   subs %[count],%[count], #32 \n"
+            "   bgt dng_memcpy              \n"
+            : [d]"+r"(kpage), [s]"+r"(GST_BUFFER_DATA(buffer)), [count]"+r"(GST_BUFFER_SIZE(buffer))
+            :: "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "cc");
+#endif
+        munmap(kpage, GST_BUFFER_SIZE(buffer));
+    }
+    else {
+        /* This is some other thing that doesn't handle memory mapping. */
+        write(fd, GST_BUFFER_DATA(buffer), GST_BUFFER_SIZE(buffer));
+    }
+#else
+    struct iovec iov[2] = {
+        { .iov_base = (void *)header, .iov_len = TIFF_HEADER_SIZE, },
+        { .iov_base = GST_BUFFER_DATA(buffer), .iov_len = GST_BUFFER_SIZE(buffer), },
+    };
+    writev(fd, iov, 2);
+#endif
+} /* dng_write */
+
 static gboolean
 dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
@@ -245,20 +295,16 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 
     /* Write the frame data. */
     state->dngcount++;
-    iov[0].iov_base = tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data));
-    iov[0].iov_len = TIFF_HEADER_SIZE;
-    iov[1].iov_base = GST_BUFFER_DATA(buffer);
-    iov[1].iov_len = GST_BUFFER_SIZE(buffer);
     sprintf(fname, "frame_%06lu.dng", state->dngcount);
     fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd < 0) {
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    writev(fd, iov, 2);
+    dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
     close(fd);
     return TRUE;
-}
+} /* dng_probe_grayscale */
 
 static gboolean
 dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
@@ -268,7 +314,6 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     GstStructure *gstruct = gst_caps_get_structure(caps, 0);
     unsigned long xres = g_value_get_int(gst_structure_get_value(gstruct, "width"));
     unsigned long yres = g_value_get_int(gst_structure_get_value(gstruct, "height"));
-    struct iovec iov[2];
     const uint8_t cfa_pattern[] = {1, 0, 2, 1}; /* GRBG Bayer pattern */
     const uint16_t cfa_repeat[] = {2, 2};       /* 2x2 Bayer Pattern */
     const uint8_t dng_version[] = {1, 4, 0, 0};
@@ -317,20 +362,16 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 
     /* Write the frame data. */
     state->dngcount++;
-    iov[0].iov_base = tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data));
-    iov[0].iov_len = TIFF_HEADER_SIZE;
-    iov[1].iov_base = GST_BUFFER_DATA(buffer);
-    iov[1].iov_len = GST_BUFFER_SIZE(buffer);
     sprintf(fname, "frame_%06lu.dng", state->dngcount);
     fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd < 0) {
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    writev(fd, iov, 2);
+    dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
     close(fd);
     return TRUE;
-} /* dng_probe */
+} /* dng_probe_bayer */
 
 GstPad *
 cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline)
