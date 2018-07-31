@@ -19,6 +19,7 @@ if SYSROOT
 AM_CFLAGS += -U_FORTIFY_SOURCE
 AM_CFLAGS += --sysroot=${SYSROOT}
 AM_LDFLAGS += --sysroot=${SYSROOT}
+noinst_LIBRARIES += libcam-neon.a
 endif
 
 ## Bundle the common FPGA and image sensor tools into a library.
@@ -42,6 +43,10 @@ libcamera_a_CFLAGS = ${AM_CFLAGS}
 ## ARM-Only sources
 if SYSROOT
 libcamera_a_SOURCES += lib/glibc-hacks.c
+
+## NEON acceleration library.
+libcam_neon_a_SOURCES = lib/memcpy-neon.c
+libcam_neon_a_CFLAGS = -mfloat-abi=softfp -mcpu=cortex-a8
 endif
 
 ## FPGA and Image Sensor register dump tool
@@ -98,7 +103,7 @@ cam_loader_LDFLAGS = ${AM_LDFLAGS}
 cam_loader_SOURCES = cam-loader.c
 
 ## GStreamer Daemon for running the video system.
-cam_pipeline_LDADD = libcamera.a ${DBUS_LIBS} ${GLIB_LIBS}
+cam_pipeline_LDADD = libcamera.a libcam-neon.a ${DBUS_LIBS} ${GLIB_LIBS}
 cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
 cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -L ${prefix}/usr/lib/gstreamer-0.10
 cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10

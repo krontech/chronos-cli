@@ -201,42 +201,26 @@ tiff_build_header(const struct tiff_tag_data *tags, uint16_t count)
 void
 dng_write(int fd, const void *header, GstBuffer *buffer)
 {
-#if 0
+#if 1
     write(fd, header, TIFF_HEADER_SIZE);
-    if (ftruncate(fd, GST_BUFFER_SIZE(buffer) + TIFF_HEADER_SIZE) == 0) {
-        /* This is probably a block device - map it and attempt to memcpy. */
-        uint8_t *kpage = mmap(NULL, GST_BUFFER_SIZE(buffer), PROT_READ | PROT_WRITE, MAP_SHARED, fd, TIFF_HEADER_SIZE);
-        if (kpage == MAP_FAILED) {
-            fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
-            ftruncate(fd, 0);
-            return;
-        }
-#if defined(__ARM_NEON)
-        asm volatile (
-            "dng_neon_memcpy:               \n"
-            "   pld [%[s], #0xc0]           \n"
-            "   vldm %[s]!,{d0-d7}          \n"
-            "   vstm %[d]!,{d0-d7}          \n"
-            "   subs %[count],%[count], #64 \n"
-            "   bgg dng_neon_memcpy         \n"
-            : [d]"+r"(kpage), [s]"+r"(GST_BUFFER_DATA(buffer)), [count]"+r"(GST_BUFFER_SIZE(buffer)) :: "cc" );
-#else
-        asm volatile (
-            "dng_memcpy:                    \n"
-            "   pld [%[s], #0xc0]           \n"
-            "   ldmia %[s]!, {r3-r10}       \n"
-            "   stmia %[d]!, {r3-r10}       \n"
-            "   subs %[count],%[count], #32 \n"
-            "   bgt dng_memcpy              \n"
-            : [d]"+r"(kpage), [s]"+r"(GST_BUFFER_DATA(buffer)), [count]"+r"(GST_BUFFER_SIZE(buffer))
-            :: "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "cc");
-#endif
-        munmap(kpage, GST_BUFFER_SIZE(buffer));
+    uint8_t *kpage = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (kpage == MAP_FAILED) {
+        fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
+        return;
     }
-    else {
-        /* This is some other thing that doesn't handle memory mapping. */
-        write(fd, GST_BUFFER_DATA(buffer), GST_BUFFER_SIZE(buffer));
+    const uint8_t *data = GST_BUFFER_DATA(buffer);
+    int size = GST_BUFFER_SIZE(buffer);
+    while (size > 4096) {
+        memcpy_neon(kpage, data, 4096);
+        write(fd, kpage, 4096);
+        data += 4096;
+        size -= 4096;
     }
+    if (size) {
+        memcpy_neon(kpage, data, size);
+        write(fd, kpage, size);
+    }
+    munmap(kpage, 4096);
 #else
     struct iovec iov[2] = {
         { .iov_base = (void *)header, .iov_len = TIFF_HEADER_SIZE, },
