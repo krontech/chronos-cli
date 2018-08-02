@@ -43,6 +43,12 @@ static struct pipeline_state cam_global_state = {0};
 static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
 static sig_atomic_t catch_sigint = 0;
 
+struct pipeline_state *
+cam_pipeline_state(void)
+{
+    return &cam_global_state;
+}
+
 static void handle_sigint(int sig)
 {
     catch_sigint = 1;
@@ -52,14 +58,11 @@ static void handle_sigint(int sig)
 static void
 handle_sighup(int sig)
 {
-    scaler_mode = (sig == SIGHUP) ? CAM_SCALE_ASPECT : CAM_SCALE_CROP;
-    g_main_loop_quit(cam_pipeline_state()->mainloop);
-}
-
-struct pipeline_state *
-cam_pipeline_state(void)
-{
-    return &cam_global_state;
+    struct pipeline_state *state = cam_pipeline_state();
+    if (!PIPELINE_IS_RECORDING(state->mode)) {
+        scaler_mode = (sig == SIGHUP) ? CAM_SCALE_ASPECT : CAM_SCALE_CROP;
+        g_main_loop_quit(state->mainloop);
+    }
 }
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
@@ -153,6 +156,7 @@ buffer_drop_phantom(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     return TRUE;
 } /* buffer_drop_phantom */
 
+
 /* Launch a gstreamer pipeline to perform video recording. */
 static GstElement *
 cam_recorder(struct pipeline_state *state, struct display_config *config, struct pipeline_args *args)
@@ -179,8 +183,14 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
      * these phantom frames when starting the recording.
      * 
      * TODO: Is there a way to check for these things before starting?
+     * BUG: The mp4mux element appears corrupt the mp4 metadata when the first frame
+     *      is dropped, so we only do the phantom dropping for raw modes.
      */
-    state->phantom = 1;
+    if (args->mode != PIPELINE_MODE_H264) {
+        state->phantom = 1;
+    } else {
+        state->phantom = 0;
+    }
 
     /* Configure elements. */
     g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
@@ -472,7 +482,7 @@ main(int argc, char * argv[])
         }
         /* Live display and playback modes should only return fatal errors. */
         else {
-            memset(&state->args, 0, sizeof(state->args));
+            //memset(&state->args, 0, sizeof(state->args));
             pipeline = cam_pipeline(state, &config, &args);
             if (!pipeline) {
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");

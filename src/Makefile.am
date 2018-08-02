@@ -46,7 +46,7 @@ libcamera_a_SOURCES += lib/glibc-hacks.c
 
 ## NEON acceleration library.
 libcam_neon_a_SOURCES = lib/memcpy-neon.c
-libcam_neon_a_CFLAGS = -mfloat-abi=softfp -mcpu=cortex-a8
+libcam_neon_a_CFLAGS = -mfloat-abi=softfp -mcpu=cortex-a8 -mfpu=neon
 endif
 
 ## FPGA and Image Sensor register dump tool
