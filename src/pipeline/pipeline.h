@@ -47,6 +47,7 @@ struct playback_region {
 #define PIPELINE_MODE_RAW16     4
 #define PIPELINE_MODE_RAW12     5
 #define PIPELINE_MODE_DNG       6
+#define PIPELINE_MODE_TIFF      7   /* TIFF/RGB format - for development use */
 
 #define PIPELINE_IS_RECORDING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
 
@@ -115,6 +116,7 @@ GstPad *cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline);
 GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
 GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
 GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
+GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
 
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);

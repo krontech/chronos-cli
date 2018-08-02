@@ -238,7 +238,6 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     GstStructure *gstruct = gst_caps_get_structure(caps, 0);
     unsigned long xres = g_value_get_int(gst_structure_get_value(gstruct, "width"));
     unsigned long yres = g_value_get_int(gst_structure_get_value(gstruct, "height"));
-    struct iovec iov[2];
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
     char fname[64];
@@ -266,7 +265,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
         /* TODO: Software */
         /* TODO: DateTIme */
-    
+
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
@@ -353,6 +352,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         return TRUE;
     }
     dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
+    //dng_write_deflate(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer, xres);
     close(fd);
     return TRUE;
 } /* dng_probe_bayer */
@@ -407,3 +407,94 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElemen
     gst_element_link_many(queue, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 } /* cam_dng_sink */
+
+static gboolean
+tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
+{
+
+    struct pipeline_state *state = cbdata;
+    GstCaps *caps = GST_BUFFER_CAPS(buffer);
+    GstStructure *gstruct = gst_caps_get_structure(caps, 0);
+    unsigned long xres = g_value_get_int(gst_structure_get_value(gstruct, "width"));
+    unsigned long yres = g_value_get_int(gst_structure_get_value(gstruct, "height"));
+    const uint16_t bpp[] = {8,8,8};
+    char fname[64];
+    int fd;
+    
+    /* The list of tags we want. */
+    const struct tiff_tag_data tags[] = {
+        /* TIFF Baseline Tags */
+        TIFF_TAG_LONG(254, 0),              /* SubFieldType = DNG Highest quality */
+        TIFF_TAG_LONG(256, xres),           /* ImageWidth */
+        TIFF_TAG_LONG(257, yres),           /* ImageLength */
+        TIFF_TAG(258, TIFF_TYPE_SHORT, bpp),/* BitsPerSample */
+        TIFF_TAG_SHORT(259, 1),             /* Compression = None */
+        TIFF_TAG_SHORT(262, 2),             /* PhotometricInterpretation = RGB */
+        TIFF_TAG_STRING(271, "Kron Technologies"), /* Make */
+        TIFF_TAG_STRING(272, "Chronos 1.4"),    /* Model */
+        TIFF_TAG_LONG(273, TIFF_HEADER_SIZE),   /* StripOffsets */
+        TIFF_TAG_SHORT(274, 1),             /* Orientation = Zero/zero is Top Left */
+        TIFF_TAG_SHORT(277, 3),             /* SamplesPerPixel */
+        TIFF_TAG_LONG(278, xres),           /* RowsPerStrip */
+        TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buffer)),    /* StripByteCounts */
+        TIFF_TAG_RATIONAL(282, xres, 1),    /* XResolution */
+        TIFF_TAG_RATIONAL(283, yres, 1),    /* YResolution */
+        TIFF_TAG_SHORT(284, 1),             /* PlanarConfiguration = Chunky */
+        TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
+        /* TODO: Software */
+        /* TODO: DateTIme */
+    };
+
+    /* Write the frame data. */
+    state->dngcount++;
+    sprintf(fname, "frame_%06lu.tiff", state->dngcount);
+    fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to create TIFF frame (%s)\n", strerror(errno));
+        return TRUE;
+    }
+    dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
+    close(fd);
+    return TRUE;
+} /* tiff_probe_rgb */
+
+
+GstPad *
+cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline)
+{
+    GstElement *queue, *sink;
+    GstPad *pad;
+    int flags = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+    int ret;
+
+    ret = mkdir(args->filename, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (ret < 0) {
+        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, strerror(errno));
+        return NULL;
+    }
+
+    state->write_fd = open(args->filename, O_RDONLY | O_DIRECTORY);
+    if (state->write_fd < 0) {
+        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, strerror(errno));
+        return NULL;
+    }
+    state->dngcount = 0;
+
+    /* Allocate our segment of the video pipeline. */
+    queue =		gst_element_factory_make("queue",		    "dng-queue");
+    sink =		gst_element_factory_make("fakesink",		"file-sink");
+    if (!queue || !sink) {
+        close(state->write_fd);
+        return NULL;
+    }
+
+    /* Read the color detection pin. */
+	pad = gst_element_get_static_pad(queue, "src");
+	gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
+	gst_object_unref(pad);
+
+    gst_bin_add_many(GST_BIN(pipeline), queue, sink, NULL);
+    gst_element_link_many(queue, sink, NULL);
+    return gst_element_get_static_pad(queue, "sink");
+} /* cam_tiff_sink */
+

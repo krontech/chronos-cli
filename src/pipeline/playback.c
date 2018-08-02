@@ -266,6 +266,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
         case PIPELINE_MODE_RAW16:
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
+        case PIPELINE_MODE_TIFF:
         case PIPELINE_MODE_H264:
             state->mode = mode;
             state->preroll = 3;

@@ -197,6 +197,10 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     else if (strcasecmp(format, "dng") == 0) {
         state->args.mode = PIPELINE_MODE_DNG;
     }
+    else if (strcasecmp(format, "tiff") == 0) {
+        /* 8-bit RGB samples */
+        state->args.mode = PIPELINE_MODE_TIFF;
+    }
     /* Handle Bayer and monochrome formats interchangeably */
     else if ((strcasecmp(format, "byr2") == 0) || 
                 (strcasecmp(format, "gb16") == 0) ||
