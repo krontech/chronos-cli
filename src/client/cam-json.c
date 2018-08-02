@@ -180,7 +180,7 @@ json_parse(FILE *fp, unsigned long flags)
                 continue;
             }
             /* Break it down by primitive types. */
-            if (*value == 't') {
+            else if (*value == 't') {
                 cam_dbus_dict_add_boolean(h, name, 1);
             } else if (*value == 'f') {
                 cam_dbus_dict_add_boolean(h, name, 0);
