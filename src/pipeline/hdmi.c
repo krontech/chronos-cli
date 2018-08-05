@@ -65,7 +65,7 @@ hdmi_hotplug_thread(void *arg)
             /* Ignore spurious hotplug events during video changes. */
             continue;
         }
-        next = (hpd.hpd_status & TI81XXHDMI_HPD_HIGH) != 0;
+        next = (hpd.hpd_status & (TI81XXHDMI_HPD_HIGH | TI81XXHDMI_HPD_MODIFY)) != 0;
         if (prev != next) {
             fprintf(stderr, "HDMI Hotplug Event 0x%02x\n", hpd.hpd_status);
             pthread_kill((uintptr_t)arg, SIGHUP);
