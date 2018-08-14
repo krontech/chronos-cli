@@ -92,6 +92,9 @@ struct tiff_srational {
 /* Length of data allocated for the Image file directory */
 #define TIFF_HEADER_SIZE    4096
 
+/* Typical kernel page size. */
+#define KPAGE_SIZE          4096
+
 /* Returns the number of bytes that a tag overflows by, or zero if it fits in the value. */
 static unsigned int
 tiff_tag_datalen(const struct tiff_tag_data *t)
@@ -408,6 +411,39 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElemen
     return gst_element_get_static_pad(queue, "sink");
 } /* cam_dng_sink */
 
+/* Write a TIFF file without compression. */
+void
+tiff_rgb_write(int fd, const void *header, GstBuffer *buffer)
+{
+#if 1
+    write(fd, header, TIFF_HEADER_SIZE);
+    uint8_t *kpage = mmap(NULL, 3 * KPAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (kpage == MAP_FAILED) {
+        fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
+        return;
+    }
+    const uint8_t *data = GST_BUFFER_DATA(buffer);
+    int size = GST_BUFFER_SIZE(buffer);
+    while (size > (3 * KPAGE_SIZE)) {
+        memcpy_bgr2rgb(kpage, data, 3 * KPAGE_SIZE);
+        write(fd, kpage, 3 * KPAGE_SIZE);
+        data += (3 * KPAGE_SIZE);
+        size -= (3 * KPAGE_SIZE);
+    }
+    if (size) {
+        memcpy_bgr2rgb(kpage, data, size);
+        write(fd, kpage, size);
+    }
+    munmap(kpage, 3 * KPAGE_SIZE);
+#else
+    struct iovec iov[2] = {
+        { .iov_base = (void *)header, .iov_len = TIFF_HEADER_SIZE, },
+        { .iov_base = GST_BUFFER_DATA(buffer), .iov_len = GST_BUFFER_SIZE(buffer), },
+    };
+    writev(fd, iov, 2);
+#endif
+} /* dng_write */
+
 static gboolean
 tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
@@ -453,7 +489,7 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         fprintf(stderr, "Failed to create TIFF frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
+    tiff_rgb_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
     close(fd);
     return TRUE;
 } /* tiff_probe_rgb */

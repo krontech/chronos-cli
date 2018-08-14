@@ -105,6 +105,7 @@ gpio_write(int fd, int val)
 
 #ifdef __arm__
 void memcpy_neon(void *dest, const void *src, size_t len);
+void memcpy_bgr2rgb(void *dst, const void *src, size_t len);
 #endif
 
 #endif /* _CLI_UTILS_H */
