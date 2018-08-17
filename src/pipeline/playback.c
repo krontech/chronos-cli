@@ -321,6 +321,43 @@ playback_loop(struct pipeline_state *state, unsigned long start, unsigned int ra
     playback_timer_rearm(state);
 }
 
+/* Update the estimated frame rate with another frame interval time. */
+static void
+playback_rate_update(struct pipeline_state *state)
+{
+    struct timespec prev;
+    long usec;
+    
+    /* Calculate how much time elapsed from the last frame. */
+    memcpy(&prev, &state->frametime, sizeof(struct timespec));
+    clock_gettime(CLOCK_MONOTONIC, &state->frametime);
+    usec = (state->frametime.tv_sec - prev.tv_sec) * 1000000;
+    usec += (state->frametime.tv_nsec - prev.tv_nsec) / 1000;
+    if (usec < 0) usec = 0;
+
+    /* Update the framerate estimate. */
+    state->frameisum -= state->frameival[state->frameidx];
+    state->frameisum += usec;
+    state->frameival[state->frameidx] = usec;
+    state->frameidx = (state->frameidx + 1) % FRAMERATE_IVAL_BUCKETS;
+}
+
+/* Initialize the estimated frame rate. */
+static void
+playback_rate_init(struct pipeline_state *state)
+{
+    int i;
+    const unsigned long usec = 1000000 / LIVE_MAX_FRAMERATE;
+
+    clock_gettime(CLOCK_MONOTONIC, &state->frametime);
+    state->frameidx = 0;
+    state->frameisum = 0;
+    for (i = 0; i < FRAMERATE_IVAL_BUCKETS; i++) {
+        state->frameival[i] = usec;
+        state->frameisum += usec;
+    }
+}
+
 /* frame GPIO callback events. */
 static void
 playback_fsync_callback(struct pipeline_state *state)
@@ -349,29 +386,19 @@ playback_fsync_callback(struct pipeline_state *state)
         state->preroll--;
         if (!state->preroll) {
             state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
-            state->estrate = 0.0;
-            clock_gettime(CLOCK_MONOTONIC, &state->frametime);
+            playback_rate_init(state);
         }
     }
     else {
-        struct timespec ts;
-        long dt;
-
-        /* Update framerate estimates */
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        dt = (ts.tv_sec - state->frametime.tv_sec) * 1000000000 + ts.tv_nsec - state->frametime.tv_nsec;
-        if (dt > 0) {
-            state->estrate = ((state->estrate * 7.0) + (1000000000.0 / dt)) / 8.0;
-        }
-        memcpy(&state->frametime, &ts, sizeof(struct timespec));
-
+        /* Wait for flow control issues to clear. */
         while (state->source) {
-            /* Wait for flow control issues to clear. */
             gint level = 10;
             g_object_get(G_OBJECT(state->source), "buffer-level", &level, NULL);
             if (level > 1) break;
             usleep(10000);
         }
+
+        playback_rate_update(state);
         playback_frame_advance(state, 1);
     }
     return;

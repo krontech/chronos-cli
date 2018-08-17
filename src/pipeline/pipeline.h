@@ -60,6 +60,8 @@ struct pipeline_args {
     unsigned long   bitrate;
 };
 
+#define FRAMERATE_IVAL_BUCKETS  32
+
 struct pipeline_state {
     GMainLoop           *mainloop;
     GstElement          *source;
@@ -93,8 +95,12 @@ struct pipeline_state {
     unsigned int    phantom;        /* OMX buffering workaround */
     unsigned long   dngcount;       /* Frame number for DNG rendering. */
     unsigned int    preroll;        /* Preroll frame counter. */
-    double          estrate;
-    struct timespec frametime;
+
+    /* Framerate estimation */
+    struct timespec frametime;      /* Timestamp of last frame. */
+    unsigned int    frameidx;
+    unsigned long   frameival[FRAMERATE_IVAL_BUCKETS]; /* track microseconds between frames. */
+    unsigned long long frameisum;   /* Rolling sum of frameival */
 
     /* Pipeline args */
     struct pipeline_args args;
