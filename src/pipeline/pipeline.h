@@ -93,6 +93,7 @@ struct pipeline_state {
 
     /* Recording Mode */
     unsigned int    phantom;        /* OMX buffering workaround */
+    gint            buflevel;       /* OMX buffer level (for frame drop avoidance) */
     unsigned long   dngcount;       /* Frame number for DNG rendering. */
     unsigned int    preroll;        /* Preroll frame counter. */
 

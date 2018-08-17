@@ -385,19 +385,30 @@ playback_fsync_callback(struct pipeline_state *state)
         fprintf(stderr, "Prerolling... %d\n", state->preroll);
         state->preroll--;
         if (!state->preroll) {
+            state->buflevel = 10;
             state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
             playback_rate_init(state);
+            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
         }
     }
+    /* If the buffer level was high - play the next frame immediately. */
+    /* This tends to improve throughput by pipelining the OMX round trips. */
+    else if (state->buflevel > 2) {
+        playback_rate_update(state);
+        playback_frame_advance(state, 1);
+        if (state->source) {
+            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+        }
+    }
+    /* Otherwise, wait for more buffers to become available and then play the next frame. */
     else {
         /* Wait for flow control issues to clear. */
         while (state->source) {
-            gint level = 10;
-            g_object_get(G_OBJECT(state->source), "buffer-level", &level, NULL);
-            if (level > 1) break;
+            state->buflevel = 10;
+            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+            if (state->buflevel > 1) break;
             usleep(10000);
         }
-
         playback_rate_update(state);
         playback_frame_advance(state, 1);
     }
