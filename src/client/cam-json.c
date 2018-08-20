@@ -192,7 +192,7 @@ json_parse(FILE *fp, unsigned long flags)
                 char *e;
                 double x = strtod(value, &e);
                 if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
-                /* TODO: DBUS encoding for doubles? */
+                cam_dbus_dict_add_float(h, name, x);
             } else if (*value == '-') {
                 /* Use the type 'long long' for negative values. */
                 char *e;

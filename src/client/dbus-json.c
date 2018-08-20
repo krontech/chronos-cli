@@ -69,10 +69,14 @@ json_printf_gval(FILE *fp, gconstpointer val)
         fprintf(fp, "%lu", g_value_get_ulong(val));
     } else if (G_VALUE_HOLDS_BOOLEAN(val)) {
         fputs(g_value_get_boolean(val) ? "true" : "false", fp);
+    } else if (G_VALUE_HOLDS_FLOAT(val)) {
+        fprintf(fp, "%g", (double)g_value_get_float(val));
+    } else if (G_VALUE_HOLDS_DOUBLE(val)) {
+        fprintf(fp, "%g", g_value_get_double(val));
     } else {
         fputs("null", fp);
     }
-    /* TODO: Still need floating point and 64-bit support */
+    /* TODO: Still need 64-bit support */
     /* TODO: The magical wonderland of recursion awaits. */
 }
 
