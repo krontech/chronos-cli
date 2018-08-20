@@ -20,14 +20,12 @@ frame in memory, but the playback rate and position can be cahnged using the
 In record mode, the FPGA replays video in the same manner as playback mode, but
 video stream will instead be passed through an encoder element and will be written
 to a file rather than the output devices. When the recording is complete, the
-pipeline will send itself a SIGHUP to return to live display or playback mode.
+pipeline will generate an EOF signaland return to playback mode.
 
 The `cam-pipeline` program will respond to the following POSIX signals:
 
  * `SIGHUP`: Reboot the video pipeline and update its configuration.
  * `SIGINT`: Terminate the pipeline and shut down gracefully.
- * `SIGUSR1`: Reload recording segment data from the FPGA.
- * `SIGUSR2`: Disable the video scaler elements and output 1:1 pixel ratio to the output devices.
 
 The `cam-pipeline` program will create a named FIFO at `/tmp/cam-screencap.jpg`,
 and operates the write end of the FIFO. When this FIFO is opened, the pipeline will
@@ -43,10 +41,14 @@ implements the methods:
 * [`status`](#status): Return the status of the video pipeline.
 * [`addregion`](#addregion): Add a new video region to the playback mode.
 * [`playback`](#playback): Control the frame position and playback rate.
-* [`recordfile`](#recordfile): Encode and write vide to a file.
+* [`liveflags`](#liveflags): Configure video aids for live display mode.
+* [`livedisplay`](#livedisplay): Switch to live display mode.
+* [`recordfile`](#recordfile): Encode and write video to a file.
+* [`stop`](#stop): Terminate video encoding and return to playback mode.
 * `livestream`: Configure network video streams (TODO)
 
 And emits the DBus signal:
+ * [`sof`](#sof): Video recording has started and the pipeline has entered record mode.
  * [`eof`](#eof): Video recording is complete and the pipeline has exited record mode.
 
 status
@@ -62,7 +64,7 @@ arguments, and the returned hash map will contain the following members.
 | `"position"`      | `uint`    | The current frame number being display while in playback or record mode.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.
-| `"framerate"`     | `int`     | The target playback rate when in playback mode, or estimated frame rate when in record mode.
+| `"framerate"`     | `float`   | The target playback rate when in playback mode, or estimated frame rate when in record mode.
 
 addregion
 ---------
@@ -82,22 +84,23 @@ playback
 --------
 Sets the pipeline into playback mode and begins replaying frames from video memory out to the
 output devices. If the pipeline is already in playback mode, this call will adjust the playback
-rate and position. The framerate can be set to positive numbers to play the video foreward, or
-to negative values to play backwards. A value of zero will pause the video. The caller can
-also specify a frame number from which to begin playback. This method takes the following
-optional arguments.
+rate and position. The `framerate` can be set to positive numbers to play the video foreward,
+or negative to play backwards. A value of zero will pause the video. The caller can also specify
+a `position` from which to begin playback, and a `loopcount` to limit playback to a subset of
+the captured frames. This method takes the following optional arguments.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"framerate"`     | `int`     | The frame rate to use in playback mode.
 | `"position"`      | `uint`    | The frame number to start playback from.
+| `"loopcount"`     | `uint`    | The number of frames to loop over.
 
 This method will return the same values as the [`status`](#status) method.
 
-livedisplay
------------
-Sets the pipeline into live display mode, and enables can select focus and playback aids.
-The input parameters are optional, and will default to `false` if omitted.
+liveflags
+---------
+Configure the video aids to be enabled when the video system is in live display mode, all
+of the input parameters are optional, and will default to `false` if omitted.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
@@ -106,6 +109,11 @@ The input parameters are optional, and will default to `false` if omitted.
 
 This method will return the same values as the [`status`](#status) method.
 
+livedisplay
+-----------
+Switch the video system into live display mode. This method takes no input parameters, and
+returns the same values as the [`status`](#status) method.
+
 recordfile
 ----------
 Select a range of frames to be encoded, and provide optional recording parameters. Upon calling
@@ -113,49 +121,43 @@ this method, the pipeline will enter record mode to write those frames to a file
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
-| `"filename"`      | `string`  | The destination file to be written.
+| `"filename"`      | `string`  | The destination file or directory to be written.
+| `"format"`        | `string`  | The encoding format to select.
 | `"start"`         | `uint`    | The starting frame number of the recording region.
 | `"length"`        | `uint`    | The number of frames to be recorded.
-| `"format"`        | `string`  | The encoding format to select.
 | `"framerate"`     | `uint`    | The desired framerate of the encoded video file, in frames per second.
-| `"maxBitrate"`    | `uint`    | The maximum encoded bitrate for compressed formats, in bits per second.
-| `"bisPerPixel"`   | `float`   | The encoding quality for compressed formats.
+| `"bitrate"`       | `uint`    | The maximum encoded bitrate for compressed formats, in bits per second.
 
-The `"format"` argument can take one of the following values:
- * `"h264"`: H.264 compressed video saved in an MPEG-4 container.
- * `"raw"`: Raw video in the pixel format provided by the image sensor (see the `get_sensor_data` method for more details).
- * `"dng"`: Cinema-DNG uncompressed video (TODO).
- * `"png"`: Sequence of PNG images, for this format the `"filename"` argument should provide the destination directory.
+The `format` field accepts a FOURCC code defining the output video format, supported values include:
 
-When saving in the `"raw"` format, the `"bitsPerPixel"` parameter may optionally be used to pad
-or truncate the pixel encoding format. The default pixel format will match the encoding specified
-by the `get_sensor_data` API found in the camera control daemon. Padding and truncation will either
-add or remove the least significant bits of the pixel encoding. For example, if a 12-bit sensor
-returned the pixel value `0x800`, setting `"bitsPerPixel"` to 16 would encode the pixel as `0x8000`.
+| FOURCC Code           | File Suffix                    | Description
+|:----------------------|:-------------------------------|:---------------------
+| `"h264"` or `"x264"`  | `"filename.mp4"`               | H.264 compressed video saved in an MPEG-4 container.
+| `"dng"`               | `"filename/frame_xxxxxx.dng"`  | CinemaDNG files, containing the raw sensor data.
+| `"tiff"`              | `"filename/frame_xxxxxx.tiff"` | Adobe TIFF files, containing the processed RGB image.
+| `"byr2"` or `"y16"`   | `"filename.raw"`               | Raw sensor data padded to 16-bit little-endian encoding.
+| `"ba12"` or `"y12"`   | `"filename.raw"`               | Raw sensor data in packed 12-bit little-endian encoding.
 
-TODO: I would personally like to see the raw encoding specified using a FOURCC code and then expect
-the pipeline to figure out the padding and truncation necessary. But that gives the users a lot of
-rope to hang themselves with depending on the complexity of the translation. For example, BRY2 -> Y16
-makes sense, but BYR2 -> NV12 would be a pain in the butt to implement.
+The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
+for all other encoding formats.
 
-The `recordfile` function will immediately return a hash map containing the following
-members.
+The `recordfile` function will immediately return an empty hash map.
 
-| Output            | Type      | Description
-|:----------------- |:--------- |:--------------
-| `"status"`        | `string`  | `"success"` if the pipeline has entered record mode, or a descriptive error string otherwise.
-| `"filename"`      | `string`  | The full path of the file, or directory, being written to.
-| `"estimatedSize"` | `uint`    | The estimated file size, in bytes.
+stop
+----
+Terminate any active recording events, and return to playback mode. In any other state this should cause the
+video system to reboot and return to the same state. This method takes no parameters, and returns no values.
+
+sof
+---
+The `sof` DBus signal is emittted by the pipeline when video recording has started. Upon emitting the `sof`
+the pipeline will begin replaying the selected video frames and encoding them to disk. Recording will continue
+until the end of the selected video has been reached, or an error occurs. The `eof` signal will include a hash
+map containing the same values as the [`status`](#status) method..
 
 eof
 ---
 The `eof` DBus signal is emitted by the pipeline when video recording has finished, upon emitting the `eof`,
 the pipeline will send itself a `SIGHUP` to reconfigure the pipeline and return to either playback or live
-display mode. The `eof` signal will include a hash map containing the following members.
-
-| Output            | Type      | Description
-|:----------------- |:--------- |:--------------
-| `"status"`        | `string`  | `"success"` if the video file was successfully written, or a descriptive error string otherwise.
-| `"filename"`      | `string`  | The full path of the file, or directory, being written to.
-| `"filesize"`      | `uint`    | The total number of bytes written.
-
+display mode. The `eof` signal will include a hash map containing the same values as the [`status`](#status)
+method..

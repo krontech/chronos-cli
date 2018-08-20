@@ -240,7 +240,6 @@ cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
     g_main_loop_quit(state->mainloop);
 }
 
-
 #include "api/cam-dbus-video.h"
 
 /*-------------------------------------
