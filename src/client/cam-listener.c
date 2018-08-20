@@ -45,11 +45,11 @@ handler(DBusGProxy* proxy, GHashTable *args, gpointer user_data)
 static void
 usage(FILE *fp, int argc, char * const argv[])
 {
-    fprintf(fp, "usage : %s [options] METHOD [PARAMS]\n\n", argv[0]);
+    fprintf(fp, "Usage: %s [options]\n\n", argv[0]);
 
-    fprintf(fp, "Make a DBus call to the Chronos camera daemon, and translate\n");
-    fprintf(fp, "the result into JSON. Parameters passed to the RPC call will\n");
-    fprintf(fp, "be parsed from the PARAMS file, if provided.\n\n");
+    fprintf(fp, "Listen for DBus signals from the Chronos camera daemons, and\n");
+    fprintf(fp, "translate them into JSON. The resulting event stream can be\n");
+    fprintf(fp, "encoded as JSON, or wrapped as HTML5 Server-Sent-Events.\n\n");
 
     fprintf(fp, "options:\n");
     fprintf(fp, "\t-s, --sse     encode the signals as an HTML5 SSE stream\n");

@@ -385,7 +385,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 static void
 usage(FILE *fp, int argc, char *argv[])
 {
-    fprintf(fp, "usage : %s [options] [RES]\n\n", argv[0]);
+    fprintf(fp, "Usage: %s [options] [RES]\n\n", argv[0]);
 
     fprintf(fp, "Operate the video pipeline on the Chronos camera.\n\n");
     fprintf(fp, "The output resolution may be provided as a string with the\n");

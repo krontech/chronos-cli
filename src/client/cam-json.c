@@ -220,7 +220,7 @@ json_parse(FILE *fp, unsigned long flags)
 static void
 usage(FILE *fp, int argc, char * const argv[])
 {
-    fprintf(fp, "usage : %s [options] METHOD [PARAMS]\n\n", argv[0]);
+    fprintf(fp, "Usage: %s [options] METHOD [PARAMS]\n\n", argv[0]);
 
     fprintf(fp, "Make a DBus call to the Chronos camera daemon, and translate\n");
     fprintf(fp, "the result into JSON. Parameters passed to the RPC call will\n");
