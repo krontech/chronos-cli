@@ -73,7 +73,6 @@ will create a new segment and append it to the end of the list of known recordin
 segments. Any existing segments which would overlap the new one will be deleted.
 This function takes a hash map with the following members, and returns no values.
 
-
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"base"`          | `uint`    | The starting address, in words, of the new recording region.
@@ -130,13 +129,13 @@ this method, the pipeline will enter record mode to write those frames to a file
 
 The `format` field accepts a FOURCC code defining the output video format, supported values include:
 
-| FOURCC Code           | File Suffix                    | Description
-|:----------------------|:-------------------------------|:---------------------
-| `"h264"` or `"x264"`  | `"filename.mp4"`               | H.264 compressed video saved in an MPEG-4 container.
-| `"dng"`               | `"filename/frame_xxxxxx.dng"`  | CinemaDNG files, containing the raw sensor data.
-| `"tiff"`              | `"filename/frame_xxxxxx.tiff"` | Adobe TIFF files, containing the processed RGB image.
-| `"byr2"` or `"y16"`   | `"filename.raw"`               | Raw sensor data padded to 16-bit little-endian encoding.
-| `"ba12"` or `"y12"`   | `"filename.raw"`               | Raw sensor data in packed 12-bit little-endian encoding.
+| FOURCC Code           | Description
+|:----------------------|:---------------------
+| `"h264"` or `"x264"`  | H.264 compressed video saved in an MPEG-4 container.
+| `"dng"`               | Directory of CinemaDNG files, containing the raw sensor data.
+| `"tiff"`              | Directory of Adobe TIFF files, containing the processed RGB image.
+| `"byr2"` or `"y16"`   | Raw sensor data padded to 16-bit little-endian encoding.
+| `"ba12"` or `"y12"`   | Raw sensor data in packed 12-bit little-endian encoding.
 
 The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
 for all other encoding formats.
@@ -160,4 +159,4 @@ eof
 The `eof` DBus signal is emitted by the pipeline when video recording has finished, upon emitting the `eof`,
 the pipeline will send itself a `SIGHUP` to reconfigure the pipeline and return to either playback or live
 display mode. The `eof` signal will include a hash map containing the same values as the [`status`](#status)
-method..
+method.
