@@ -262,6 +262,18 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             break;
 
         case PIPELINE_MODE_RAW12:
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_12BPP;
+            state->mode = mode;
+            state->preroll = 3;
+
+            /* Enable the test pattern and begin prerolling */
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_TEST_PATTERN;
+            control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+            control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
+            state->fpga->display->control = control;
+            state->fpga->display->manual_sync = 1;
+            break;
+
         case PIPELINE_MODE_DNG:
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
         case PIPELINE_MODE_RAW16:

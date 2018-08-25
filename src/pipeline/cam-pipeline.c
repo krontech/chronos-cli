@@ -274,10 +274,39 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
      * Setup the Pipeline in 12/16-bit Raw Recording Mode
      *=====================================================
      */
-    else if ((args->mode == PIPELINE_MODE_RAW12) || (args->mode == PIPELINE_MODE_RAW16)) {
+    else if (args->mode == PIPELINE_MODE_RAW16) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
                     "width", G_TYPE_INT, state->hres,
+                    "height", G_TYPE_INT, state->vres,
+                    "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
+                    "buffer-count-requested", G_TYPE_INT, 4,
+                    NULL);
+        ret = gst_element_link_filtered(state->source, tee, caps);
+        if (!ret) {
+            gst_object_unref(GST_OBJECT(pipeline));
+            return NULL;
+        }
+        gst_caps_unref(caps);
+
+        /* Create the raw video sink */
+        sinkpad = cam_raw_sink(state, args, pipeline);
+        if (!sinkpad) {
+            gst_object_unref(GST_OBJECT(pipeline));
+            return NULL;
+        }
+        tpad = gst_element_get_request_pad(tee, "src%d");
+        gst_pad_link(tpad, sinkpad);
+        gst_object_unref(sinkpad);
+    }
+    /*=====================================================
+     * Setup the Pipeline in 12-bit Packed Recording Mode
+     *=====================================================
+     */
+    else if (args->mode == PIPELINE_MODE_RAW12) {
+        GstCaps *caps = gst_caps_new_simple ("video/x-raw-rgb",
+                    "bpp", G_TYPE_INT, 24,
+                    "width", G_TYPE_INT, state->hres / 2, /* 2x pixels packed per clock */
                     "height", G_TYPE_INT, state->vres,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,

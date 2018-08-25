@@ -135,7 +135,7 @@ The `format` field accepts a FOURCC code defining the output video format, suppo
 | `"dng"`               | Directory of CinemaDNG files, containing the raw sensor data.
 | `"tiff"`              | Directory of Adobe TIFF files, containing the processed RGB image.
 | `"byr2"` or `"y16"`   | Raw sensor data padded to 16-bit little-endian encoding.
-| `"ba12"` or `"y12"`   | Raw sensor data in packed 12-bit little-endian encoding.
+| `"y12b"`              | Raw sensor data in packed 12-bit little-endian encoding.
 
 The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
 for all other encoding formats.

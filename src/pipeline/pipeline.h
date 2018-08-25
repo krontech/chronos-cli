@@ -44,8 +44,8 @@ struct playback_region {
 #define PIPELINE_MODE_PLAY      1   /* Playing recoded frames back to the display device. */
 #define PIPELINE_MODE_PAUSE     2   /* Pause video output during transitions */
 #define PIPELINE_MODE_H264      3
-#define PIPELINE_MODE_RAW16     4
-#define PIPELINE_MODE_RAW12     5
+#define PIPELINE_MODE_RAW16     4   /* 16-bit raw data (padded with zeros LSB) */
+#define PIPELINE_MODE_RAW12     5   /* 12-bit packed data */
 #define PIPELINE_MODE_DNG       6
 #define PIPELINE_MODE_TIFF      7   /* TIFF/RGB format - for development use */
 

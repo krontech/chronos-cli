@@ -208,15 +208,15 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
                 (strcasecmp(format, "gr16") == 0) ||
                 (strcasecmp(format, "rg16") == 0) ||
                 (strcasecmp(format, "y16") == 0)) {
-        /* 12-bit samples padded with lsb to fit 16-bit encoding. */
+        /* 12-bit samples padded with lsb zeros to fit 16-bit data. */
         state->args.mode = PIPELINE_MODE_RAW16;
     }
-    else if ((strcasecmp(format, "ba12") == 0) || 
-                (strcasecmp(format, "gb12") == 0) ||
-                (strcasecmp(format, "bg12") == 0) ||
-                (strcasecmp(format, "rg12") == 0) ||
-                (strcasecmp(format, "y12") == 0)) {
-        /* 12-bit samples padded with msb to fit 16-bit encoding. */
+    else if ((strcasecmp(format, "pRAA") == 0) || 
+                (strcasecmp(format, "pgAA") == 0) ||
+                (strcasecmp(format, "pGAA") == 0) ||
+                (strcasecmp(format, "pBAA") == 0) ||
+                (strcasecmp(format, "y12b") == 0)) {
+        /* 12-bit samples packed (2 pixels stored in 3 bytes) */
         state->args.mode = PIPELINE_MODE_RAW12;
     }
     /* Otherwise, this encoding format is not supported. */
