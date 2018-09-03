@@ -24,10 +24,10 @@
 #include "pipeline.h"
 
 GstPad *
-cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct display_config *output)
+cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
 {
     gboolean ret;
-    GstElement *queue, *scaler, *ctrl, *sink;
+    GstElement *queue, *scaler, *ctrl, *filter, *sink;
     GstCaps *caps;
     unsigned int hout, vout;
     unsigned int hoff, voff;
@@ -36,6 +36,7 @@ cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct di
     queue =     gst_element_factory_make("queue",           "lcdqueue");
     scaler =    gst_element_factory_make("omx_mdeiscaler",  "lcdscaler");
     ctrl =      gst_element_factory_make("omx_ctrl",        "lcdctrl");
+    filter =    gst_element_factory_make("capsfilter",      "lcdcaps");
     sink =      gst_element_factory_make("omx_videosink",   "lcdsink");
     if (!queue || !scaler || !ctrl || !sink) {
         return NULL;
@@ -48,7 +49,7 @@ cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct di
 	g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
 	g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
 
-	gst_bin_add_many(GST_BIN(pipeline), queue, scaler, ctrl, sink, NULL);
+	gst_bin_add_many(GST_BIN(state->pipeline), queue, scaler, ctrl, filter, sink, NULL);
 
     if ((output->hres * state->vres) > (output->vres * state->hres)) {
         scale_mul = output->vres;
@@ -71,21 +72,65 @@ cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct di
 #endif
 	g_object_set(G_OBJECT(sink), "top", (guint)voff, NULL);
 	g_object_set(G_OBJECT(sink), "left", (guint)hoff, NULL);
+
     caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "width", G_TYPE_INT, hout,
                 "height", G_TYPE_INT, vout,
                 NULL);
+    g_object_set(G_OBJECT(filter), "caps", caps, NULL);
+    gst_caps_unref(caps);
 
     /* Link LCD Output capabilities. */
-    ret = gst_element_link_pads_filtered(scaler, "src_00", ctrl, "sink", caps);
+    ret = gst_element_link_pads(scaler, "src_00", ctrl, "sink");
     if (!ret) {
-        gst_object_unref(GST_OBJECT(pipeline));
+        gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
-    gst_caps_unref(caps);
 
     /* Return the first element of our segment to link with */
     gst_element_link_many(queue, scaler, NULL);
-    gst_element_link_many(ctrl, sink, NULL);
+    gst_element_link_many(ctrl, filter, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
+}
+
+void
+cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *output)
+{
+    GstElement *filter = gst_bin_get_by_name(GST_BIN(state->pipeline), "lcdcaps");
+    GstElement *sink = gst_bin_get_by_name(GST_BIN(state->pipeline), "lcdsink");
+    GstCaps *caps;
+    unsigned int hout, vout;
+    unsigned int hoff, voff;
+    unsigned int scale_mul = 1, scale_div = 1;
+
+    if (!filter || !sink) {
+        return;
+    }
+
+    /* Recompute the scaler parameters. */
+    if ((output->hres * state->vres) > (output->vres * state->hres)) {
+        scale_mul = output->vres;
+        scale_div = state->vres;
+    }
+    else {
+        scale_mul = output->hres;
+        scale_div = state->hres;
+    }
+    hout = ((state->hres * scale_mul) / scale_div) & ~0xF;
+    vout = ((state->vres * scale_mul) / scale_div) & ~0x1;
+    hoff = (output->xoff + (output->hres - hout) / 2) & ~0x1;
+    voff = (output->yoff + (output->vres - vout) / 2) & ~0x1;
+
+    /* Set the new configuration */
+	g_object_set(G_OBJECT(sink), "top", (guint)voff, NULL);
+	g_object_set(G_OBJECT(sink), "left", (guint)hoff, NULL);
+    caps = gst_caps_new_simple ("video/x-raw-yuv",
+                "width", G_TYPE_INT, hout,
+                "height", G_TYPE_INT, vout,
+                NULL);
+    g_object_set(G_OBJECT(filter), "caps", caps, NULL);
+    gst_caps_unref(caps);
+
+    /* Pause and restart the pipeline */
+    g_main_loop_quit(state->mainloop);
 }

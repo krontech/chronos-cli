@@ -60,7 +60,7 @@ raw_probe(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 }
 
 GstPad *
-cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline)
+cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
@@ -89,7 +89,7 @@ cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args, GstElemen
 	gst_object_unref(pad);
 
     /* Return the first element of our segment to link with */
-    gst_bin_add_many(GST_BIN(pipeline), queue, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 } /* cam_raw_sink */

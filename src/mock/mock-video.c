@@ -121,10 +121,12 @@ cam_video_playback(MockVideo *mock, GHashTable *args, GHashTable **data, GError 
 }
 
 gboolean
-cam_video_liveflags(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
+cam_video_configure(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
+    /* Return the updated playback status */
     return cam_video_status(mock, data, error);
 }
+
 
 gboolean
 cam_video_livedisplay(MockVideo *mock, GHashTable **data, GError **error)
@@ -136,6 +138,12 @@ cam_video_livedisplay(MockVideo *mock, GHashTable **data, GError **error)
     state->play_frame_rate = 0;
 
     /* Return the updated playback status */
+    return cam_video_status(mock, data, error);
+}
+
+gboolean
+cam_video_overlay(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
+{
     return cam_video_status(mock, data, error);
 }
 
@@ -156,4 +164,10 @@ cam_video_status(MockVideo *mock, GHashTable **data, GError **error)
     }
     *data = dict;
     return (dict != NULL);
+}
+
+gboolean
+cam_video_flush(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
+{
+    return cam_video_status(mock, data, error);
 }

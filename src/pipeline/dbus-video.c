@@ -33,11 +33,11 @@ cam_dbus_video_status(struct pipeline_state *state)
     if (!dict) return NULL;
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
     cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY));
-    cam_dbus_dict_add_boolean(dict, "recording", PIPELINE_IS_RECORDING(state->mode));
+    cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(state->mode));
     cam_dbus_dict_add_uint(dict, "segment", 0);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
     cam_dbus_dict_add_uint(dict, "position", state->position);
-    if (PIPELINE_IS_RECORDING(state->mode)) {
+    if (PIPELINE_IS_SAVING(state->mode)) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
         cam_dbus_dict_add_float(dict, "framerate", estrate);
     } else {
@@ -94,6 +94,18 @@ cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
 }
 
 static gboolean
+cam_video_flush(CamVideo *vobj, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    playback_region_flush(state);
+    if (state->mode != PIPELINE_MODE_LIVE) {
+        playback_goto(state, PIPELINE_MODE_LIVE);
+    }
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
+}
+
+static gboolean
 cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
@@ -115,17 +127,44 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
 }
 
 static gboolean
-cam_video_liveflags(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
+cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    gboolean zebra = cam_dbus_dict_get_boolean(args, "zebra");
-    gboolean peaking = cam_dbus_dict_get_boolean(args, "peaking");
-    if (zebra) {
+    unsigned long hres = cam_dbus_dict_get_uint(args, "hres", state->config.hres);
+    unsigned long vres = cam_dbus_dict_get_uint(args, "vres", state->config.vres);
+    unsigned long xoff = cam_dbus_dict_get_uint(args, "xoff", state->config.xoff);
+    unsigned long yoff = cam_dbus_dict_get_uint(args, "yoff", state->config.yoff);
+    unsigned long diff;
+
+    /* Sanity-check the new display configuration. */
+    if (((hres + xoff) > CAM_LCD_HRES) || ((vres + yoff) > CAM_LCD_VRES)) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid display resolution and offset");
+        return 0;
+    }
+
+    /* Update the display resolution */
+    diff = (state->config.hres ^ hres) | (state->config.vres ^ vres);
+    diff |= (state->config.xoff ^ xoff) | (state->config.yoff ^ yoff);
+    if (diff != 0) {
+        state->config.hres = hres;
+        state->config.vres = vres;
+        state->config.xoff = xoff;
+        state->config.yoff = yoff;
+        /* Reconfigure the display resolution dynamically in live display and playback modes. */
+        if ((state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_PLAY)) {
+            cam_lcd_reconfig(state, &state->config);
+        }
+    }
+
+    /* Update the live display flags. */
+    state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
+    state->config.peaking = cam_dbus_dict_get_boolean(args, "peaking", state->config.peaking);
+    if (state->config.zebra) {
         state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
     } else {
         state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
     }
-    if (peaking) {
+    if (state->config.peaking) {
         state->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
@@ -238,6 +277,14 @@ cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
     g_main_loop_quit(state->mainloop);
+}
+
+static gboolean
+cam_video_overlay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
 }
 
 #include "api/cam-dbus-video.h"

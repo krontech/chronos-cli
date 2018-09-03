@@ -28,9 +28,6 @@
 #include "fpga.h"
 #include "pipeline.h"
 
-#define CAM_LCD_HRES    800
-#define CAM_LCD_VRES    480
-
 /* How do we want to do scaling? */
 #define CAM_SCALE_FULL      0
 #define CAM_SCALE_ASPECT    1
@@ -59,7 +56,7 @@ static void
 handle_sighup(int sig)
 {
     struct pipeline_state *state = cam_pipeline_state();
-    if (!PIPELINE_IS_RECORDING(state->mode)) {
+    if (!PIPELINE_IS_SAVING(state->mode)) {
         scaler_mode = (sig == SIGHUP) ? CAM_SCALE_ASPECT : CAM_SCALE_CROP;
         g_main_loop_quit(state->mainloop);
     }
@@ -67,20 +64,19 @@ handle_sighup(int sig)
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
 static GstElement *
-cam_pipeline(struct pipeline_state *state, struct display_config *config, struct pipeline_args *args)
+cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
-    GstElement *pipeline;
     GstElement *tee;
     GstPad *sinkpad;
     GstPad *tpad;
     GstCaps *caps;
     
     /* Build the GStreamer Pipeline */
-    pipeline        = gst_pipeline_new ("pipeline");
+    state->pipeline = gst_pipeline_new ("pipeline");
     state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
     tee             = gst_element_factory_make("tee",         "tee");
-    if (!pipeline || !state->source || !tee) {
+    if (!state->pipeline || !state->source || !tee) {
         return NULL;
     }
     /* Configure elements. */
@@ -90,7 +86,7 @@ cam_pipeline(struct pipeline_state *state, struct display_config *config, struct
     g_object_set(G_OBJECT(state->source), "output-buffers", (guint)10, NULL);
     g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
 
-    gst_bin_add_many(GST_BIN(pipeline), state->source, tee, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), state->source, tee, NULL);
 
     /* Configure the input video resolution */
     state->hres = state->fpga->display->h_res;
@@ -105,15 +101,15 @@ cam_pipeline(struct pipeline_state *state, struct display_config *config, struct
                 NULL);
     ret = gst_element_link_filtered(state->source, tee, caps);
     if (!ret) {
-        gst_object_unref(GST_OBJECT(pipeline));
+        gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
     gst_caps_unref(caps);
 
     /* Create a framegrab sink and link it into the pipeline. */
-    sinkpad = cam_screencap(state, pipeline);
+    sinkpad = cam_screencap(state);
     if (!sinkpad) {
-        gst_object_unref(GST_OBJECT(pipeline));
+        gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
     tpad = gst_element_get_request_pad(tee, "src%d");
@@ -121,9 +117,9 @@ cam_pipeline(struct pipeline_state *state, struct display_config *config, struct
     gst_object_unref(sinkpad);
 
     /* Create the LCD sink and link it into the pipeline. */
-    sinkpad = cam_lcd_sink(state, pipeline, config);
+    sinkpad = cam_lcd_sink(state, &state->config);
     if (!sinkpad) {
-        gst_object_unref(GST_OBJECT(pipeline));
+        gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
     tpad = gst_element_get_request_pad(tee, "src%d");
@@ -131,13 +127,13 @@ cam_pipeline(struct pipeline_state *state, struct display_config *config, struct
     gst_object_unref(sinkpad);
 
     /* Attempt to create an HDMI sink, it may fail if there is no connected display. */
-    sinkpad = cam_hdmi_sink(state, pipeline);
+    sinkpad = cam_hdmi_sink(state);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
     }
-    return pipeline;
+    return state->pipeline;
 } /* cam_pipeline */
 
 /*
@@ -158,10 +154,9 @@ buffer_drop_phantom(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 
 /* Launch a gstreamer pipeline to perform video recording. */
 static GstElement *
-cam_recorder(struct pipeline_state *state, struct display_config *config, struct pipeline_args *args)
+cam_recorder(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
-    GstElement *pipeline;
     GstElement *tee;
     GstPad *sinkpad;
     GstPad *tpad;
@@ -169,10 +164,10 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
     GstCaps *caps;
 
     /* Build the GStreamer Pipeline */
-    pipeline        = gst_pipeline_new ("pipeline");
+    state->pipeline = gst_pipeline_new ("pipeline");
     state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
     tee             = gst_element_factory_make("tee",         "tee");
-    if (!pipeline || !state->source || !tee) {
+    if (!state->pipeline || !state->source || !tee) {
         return NULL;
     }
 
@@ -199,7 +194,7 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
     g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
     g_object_set(G_OBJECT(state->source), "num-buffers", (guint)(args->length + state->phantom), NULL);
 
-    gst_bin_add_many(GST_BIN(pipeline), state->source, tee, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), state->source, tee, NULL);
 
     /* Add a probe to drop the very first frame from the camera */
     pad = gst_element_get_static_pad(state->source, "src");
@@ -226,15 +221,15 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
                     NULL);
         ret = gst_element_link_filtered(state->source, tee, caps);
         if (!ret) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
 
         /* Create the H.264 sink */
-        sinkpad = cam_h264_sink(state, args, pipeline);
+        sinkpad = cam_h264_sink(state, args);
         if (!sinkpad) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         tpad = gst_element_get_request_pad(tee, "src%d");
@@ -255,15 +250,15 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
                     NULL);
         ret = gst_element_link_filtered(state->source, tee, caps);
         if (!ret) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
 
         /* Create the raw video sink */
-        sinkpad = cam_dng_sink(state, args, pipeline);
+        sinkpad = cam_dng_sink(state, args);
         if (!sinkpad) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         tpad = gst_element_get_request_pad(tee, "src%d");
@@ -284,15 +279,15 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
                     NULL);
         ret = gst_element_link_filtered(state->source, tee, caps);
         if (!ret) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
 
         /* Create the raw video sink */
-        sinkpad = cam_raw_sink(state, args, pipeline);
+        sinkpad = cam_raw_sink(state, args);
         if (!sinkpad) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         tpad = gst_element_get_request_pad(tee, "src%d");
@@ -313,15 +308,15 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
                     NULL);
         ret = gst_element_link_filtered(state->source, tee, caps);
         if (!ret) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
 
         /* Create the raw video sink */
-        sinkpad = cam_raw_sink(state, args, pipeline);
+        sinkpad = cam_raw_sink(state, args);
         if (!sinkpad) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         tpad = gst_element_get_request_pad(tee, "src%d");
@@ -342,15 +337,15 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
                     NULL);
         ret = gst_element_link_filtered(state->source, tee, caps);
         if (!ret) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
 
         /* Create the raw video sink */
-        sinkpad = cam_tiff_sink(state, args, pipeline);
+        sinkpad = cam_tiff_sink(state, args);
         if (!sinkpad) {
-            gst_object_unref(GST_OBJECT(pipeline));
+            gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         tpad = gst_element_get_request_pad(tee, "src%d");
@@ -361,7 +356,7 @@ cam_recorder(struct pipeline_state *state, struct display_config *config, struct
     else {
         return NULL;
     }
-    return pipeline;
+    return state->pipeline;
 } /* cam_recorder */
 
 static gboolean
@@ -446,12 +441,6 @@ main(int argc, char * argv[])
 {
     sigset_t sigset;
     struct pipeline_state *state = cam_pipeline_state();
-    struct display_config config = {
-        .hres = CAM_LCD_HRES,
-        .vres = CAM_LCD_VRES,
-        .xoff = 0,
-        .yoff = 0,
-    };
     /* Option Parsing */
     const char *short_options = "o:h";
     const struct option long_options[] = {
@@ -461,11 +450,18 @@ main(int argc, char * argv[])
     };
     char *e;
     int c;
+
+    /* Set default configuration. */
+    state->config.hres = CAM_LCD_HRES;
+    state->config.vres = CAM_LCD_VRES;
+    state->config.xoff = 0;
+    state->config.yoff = 0;
+
     optind = 0;
     while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {
         switch (c) {
             case 'o':
-                parse_resolution(optarg, "OFFS", &config.xoff, &config.yoff);
+                parse_resolution(optarg, "OFFS", &state->config.xoff, &state->config.yoff);
                 break;
 
             case 'h':
@@ -478,7 +474,7 @@ main(int argc, char * argv[])
     }
     /* If there is another argument, parse it as the display resolution. */
     if (optind < argc) {
-        parse_resolution(argv[optind], "RES", &config.hres, &config.vres);
+        parse_resolution(argv[optind], "RES", &state->config.hres, &state->config.vres);
     }
 
     /* Initialisation */
@@ -514,7 +510,6 @@ main(int argc, char * argv[])
     do {
         /* Launch the pipeline. */
         struct pipeline_args args;
-        GstElement *pipeline;
         GstEvent *event;
         GstBus *bus;
         guint watchid;
@@ -524,13 +519,12 @@ main(int argc, char * argv[])
         memcpy(&args, &state->args, sizeof(args));
         playback_goto(state, PIPELINE_MODE_PAUSE);
 
-        /* Recording modes should fail gracefully back to playback. */
-        if (PIPELINE_IS_RECORDING(args.mode)) {
-            /* Return to playback mode after recording. */
+        /* File saving modes should fail gracefully back to playback. */
+        if (PIPELINE_IS_SAVING(args.mode)) {
+            /* Return to playback mode after saving. */
             state->args.mode = PIPELINE_MODE_PLAY;
 
-            pipeline = cam_recorder(state, &config, &args);
-            if (!pipeline) {
+            if (!cam_recorder(state, &args)) {
                 /* Throw an EOF and revert to playback. */
                 dbus_signal_eof(state);
                 state->args.mode = PIPELINE_MODE_PLAY;
@@ -540,40 +534,39 @@ main(int argc, char * argv[])
         /* Live display and playback modes should only return fatal errors. */
         else {
             memset(&state->args, 0, sizeof(state->args));
-            pipeline = cam_pipeline(state, &config, &args);
-            if (!pipeline) {
+            if (!cam_pipeline(state, &args)) {
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
                 break;
             }
         }
 
         /* Install an pipeline error handler. */
-        bus = gst_pipeline_get_bus(GST_PIPELINE(pipeline));
+        bus = gst_pipeline_get_bus(GST_PIPELINE(state->pipeline));
         event = gst_event_new_flush_start();
-        gst_element_send_event(pipeline, event);
+        gst_element_send_event(state->pipeline, event);
         event = gst_event_new_flush_stop();
-        gst_element_send_event(pipeline, event);
+        gst_element_send_event(state->pipeline, event);
         watchid = gst_bus_add_watch(bus, cam_bus_watch, state);
         gst_object_unref(bus);
 
         playback_goto(state, args.mode);
-        gst_element_set_state(pipeline, GST_STATE_PLAYING);
+        gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         g_main_loop_run(state->mainloop);
 
         /* Stop the pipeline gracefully */
         dbus_signal_eof(state);
         event = gst_event_new_eos();
-        gst_element_send_event(pipeline, event);
-        gst_element_set_state(pipeline, GST_STATE_PAUSED);
+        gst_element_send_event(state->pipeline, event);
+        gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
         for (i = 0; i < 1000; i++) {
             if (!g_main_context_iteration (NULL, FALSE)) break;
         }
 
         /* Garbage collect the pipeline. */
         state->source = NULL;
-        gst_element_set_state(pipeline, GST_STATE_READY);
-        gst_element_set_state(pipeline, GST_STATE_NULL);
-        gst_object_unref(GST_OBJECT(pipeline));
+        gst_element_set_state(state->pipeline, GST_STATE_READY);
+        gst_element_set_state(state->pipeline, GST_STATE_NULL);
+        gst_object_unref(GST_OBJECT(state->pipeline));
         g_source_remove(watchid);
 
         /* Close any output files that might be in progress. */

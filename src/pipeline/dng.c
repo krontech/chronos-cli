@@ -361,7 +361,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 } /* dng_probe_bayer */
 
 GstPad *
-cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline)
+cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
@@ -406,7 +406,7 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElemen
     }
 	gst_object_unref(pad);
 
-    gst_bin_add_many(GST_BIN(pipeline), queue, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 } /* cam_dng_sink */
@@ -496,7 +496,7 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 
 
 GstPad *
-cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline)
+cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
@@ -529,7 +529,7 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args, GstEleme
 	gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
 	gst_object_unref(pad);
 
-    gst_bin_add_many(GST_BIN(pipeline), queue, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 } /* cam_tiff_sink */

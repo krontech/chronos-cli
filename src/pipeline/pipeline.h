@@ -28,6 +28,9 @@
 
 #define LIVE_MAX_FRAMERATE  60
 
+#define CAM_LCD_HRES    800
+#define CAM_LCD_VRES    480
+
 struct CamVideo;
 
 /* Playback regions are stored as a double-linked list. */
@@ -49,7 +52,7 @@ struct playback_region {
 #define PIPELINE_MODE_DNG       6
 #define PIPELINE_MODE_TIFF      7   /* TIFF/RGB format - for development use */
 
-#define PIPELINE_IS_RECORDING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
+#define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
 
 struct pipeline_args {
     unsigned int    mode;
@@ -60,10 +63,20 @@ struct pipeline_args {
     unsigned long   bitrate;
 };
 
+struct display_config {
+    unsigned long hres;
+    unsigned long vres;
+    unsigned long xoff;
+    unsigned long yoff;
+    unsigned char zebra;
+    unsigned char peaking;
+};
+
 #define FRAMERATE_IVAL_BUCKETS  32
 
 struct pipeline_state {
     GMainLoop           *mainloop;
+    GstElement          *pipeline;
     GstElement          *source;
     struct CamVideo     *video;
     struct fpga         *fpga;
@@ -105,25 +118,21 @@ struct pipeline_state {
 
     /* Pipeline args */
     struct pipeline_args args;
+    struct display_config config;
 };
 
-struct display_config {
-    unsigned long hres;
-    unsigned long vres;
-    unsigned long xoff;
-    unsigned long yoff;
-};
 
 struct pipeline_state *cam_pipeline_state(void);
 
 /* Allocate pipeline segments, returning the first pad to be linked. */
-GstPad *cam_screencap(struct pipeline_state *state, GstElement *pipeline);
-GstPad *cam_lcd_sink(struct pipeline_state *state, GstElement *pipeline, const struct display_config *config);
-GstPad *cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline);
-GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
-GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
-GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
-GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline);
+GstPad *cam_screencap(struct pipeline_state *state);
+GstPad *cam_lcd_sink(struct pipeline_state *state, const struct display_config *config);
+void    cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *config);
+GstPad *cam_hdmi_sink(struct pipeline_state *state);
+GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args);
+GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args);
+GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args);
+GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);
 
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);

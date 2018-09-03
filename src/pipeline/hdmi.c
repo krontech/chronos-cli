@@ -117,7 +117,7 @@ set_hdmi_mode(const char *modestr)
  */
 
 GstPad *
-cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline)
+cam_hdmi_sink(struct pipeline_state *state)
 {
     int pref, err;
     int fd = open("/dev/TI81XX_HDMI", O_RDWR);
@@ -194,7 +194,7 @@ cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline)
 	g_object_set(G_OBJECT(ctrl), "display-mode", omx_mode, NULL);
 	g_object_set(G_OBJECT(ctrl), "display-device", "HDMI", NULL);
 
-	gst_bin_add_many(GST_BIN(pipeline), queue, scaler, ctrl, sink, NULL);
+	gst_bin_add_many(GST_BIN(state->pipeline), queue, scaler, ctrl, sink, NULL);
 
     if ((panel_hres * state->vres) > (panel_vres * state->hres)) {
         scale_mul = panel_vres;
@@ -226,7 +226,7 @@ cam_hdmi_sink(struct pipeline_state *state, GstElement *pipeline)
     /* Link HDMI Output capabilities. */
     ret = gst_element_link_pads_filtered(scaler, "src_00", ctrl, "sink", caps);
     if (!ret) {
-        gst_object_unref(GST_OBJECT(pipeline));
+        gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
     gst_caps_unref(caps);

@@ -72,7 +72,9 @@ gboolean cam_video_recordfile(MockVideo *cam, GHashTable *args, GHashTable **dat
 gboolean cam_video_livestream(MockVideo *cam, GHashTable *args, GError **error);
 gboolean cam_video_addregion(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
 gboolean cam_video_playback(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
-gboolean cam_video_liveflags(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error);
+gboolean cam_video_configure(MockVideo *cam, GHashTable *args, GHashTable **data, GError **error);
+gboolean cam_video_flush(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error);
+gboolean cam_video_overlay(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error);
 gboolean cam_video_livedisplay(MockVideo *mock, GHashTable **data, GError **error);
 gboolean cam_video_status(MockVideo *cam, GHashTable **data, GError **error);
 

@@ -142,7 +142,7 @@ buffer_framegrab(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 }
 
 GstPad *
-cam_screencap(struct pipeline_state *state, GstElement *pipeline)
+cam_screencap(struct pipeline_state *state)
 {
     GstElement *queue, *sink;
     GstPad *pad;
@@ -153,13 +153,13 @@ cam_screencap(struct pipeline_state *state, GstElement *pipeline)
     if (!queue || !sink) {
         return NULL;
     }
-	gst_bin_add_many(GST_BIN(pipeline), queue, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);
 
     /* Grab frames from the queue */
-	pad = gst_element_get_static_pad(queue, "src");
-	gst_pad_add_buffer_probe(pad, G_CALLBACK(buffer_framegrab), NULL);
-	gst_object_unref(pad);
+    pad = gst_element_get_static_pad(queue, "src");
+    gst_pad_add_buffer_probe(pad, G_CALLBACK(buffer_framegrab), NULL);
+    gst_object_unref(pad);
 
     return gst_element_get_static_pad(queue, "sink");
 }

@@ -205,19 +205,21 @@ G_END_DECLS
 #include <dbus/dbus-glib.h>
 static const DBusGMethodInfo dbus_glib_cam_video_methods[] = {
   { (GCallback) cam_video_status, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 0 },
-  { (GCallback) cam_video_addregion, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 54 },
-  { (GCallback) cam_video_playback, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 124 },
-  { (GCallback) cam_video_livedisplay, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 193 },
-  { (GCallback) cam_video_liveflags, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 252 },
-  { (GCallback) cam_video_recordfile, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 322 },
-  { (GCallback) cam_video_stop, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 399 },
-  { (GCallback) cam_video_livestream, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 453 },
+  { (GCallback) cam_video_flush, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 54 },
+  { (GCallback) cam_video_addregion, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 109 },
+  { (GCallback) cam_video_configure, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 179 },
+  { (GCallback) cam_video_playback, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 251 },
+  { (GCallback) cam_video_livedisplay, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 320 },
+  { (GCallback) cam_video_recordfile, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 379 },
+  { (GCallback) cam_video_stop, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 456 },
+  { (GCallback) cam_video_overlay, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 510 },
+  { (GCallback) cam_video_livestream, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 584 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_video_object_info = {  1,
   dbus_glib_cam_video_methods,
-  8,
-"com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0addregion\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0liveflags\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0\0",
+  10,
+"com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0flush\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0addregion\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0configure\0S\0args\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0overlay\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0\0",
 "com.krontech.chronos.video\0sof\0com.krontech.chronos.video\0eof\0\0",
 "\0"
 };

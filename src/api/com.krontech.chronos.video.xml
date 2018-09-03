@@ -7,9 +7,16 @@
     <method name="status">
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
+    <method name="flush">
+      <arg name="status" direction="out" type="a{sv}"/>
+    </method>
     <method name="addregion">
       <arg name="args" direction="in" type="a{sv}"/>
       <arg name="data" direction="out" type="a{sv}"/>
+    </method>
+    <method name="configure">
+      <arg name="args" direction="in" type="a{sv}"/>
+      <arg name="status" direction="out" type="a{sv}"/>
     </method>
     <method name="playback">
       <arg name="args" direction="in" type="a{sv}"/>
@@ -18,15 +25,15 @@
     <method name="livedisplay">
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
-    <method name="liveflags">
-      <arg name="args" direction="in" type="a{sv}"/>
-      <arg name="data" direction="out" type="a{sv}"/>
-    </method>
     <method name="recordfile">
       <arg name="settings" direction="in" type="a{sv}"/>
       <arg name="status" direction="out" type="a{sv}"/>
     </method>
     <method name="stop">
+      <arg name="status" direction="out" type="a{sv}"/>
+    </method>
+    <method name="overlay">
+      <arg name="settings" direction="in" type="a{sv}"/>
       <arg name="status" direction="out" type="a{sv}"/>
     </method>
     <method name="livestream">

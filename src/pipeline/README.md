@@ -17,10 +17,10 @@ video stream. Upon entering playback mode, the video will be paused on the first
 frame in memory, but the playback rate and position can be cahnged using the
 `playback` function.
 
-In record mode, the FPGA replays video in the same manner as playback mode, but
+In filesave mode, the FPGA replays video in the same manner as playback mode, but
 video stream will instead be passed through an encoder element and will be written
-to a file rather than the output devices. When the recording is complete, the
-pipeline will generate an EOF signaland return to playback mode.
+to a file rather than the output devices. When the saving is complete, the pipeline
+will generate an EOF signaland return to playback mode.
 
 The `cam-pipeline` program will respond to the following POSIX signals:
 
@@ -39,9 +39,10 @@ The DBus interface to the video pipeline daemon is accessible at
 implements the methods:
 
 * [`status`](#status): Return the status of the video pipeline.
+* [`flush`](#flush): Clear recorded video and return to live display mode.
 * [`addregion`](#addregion): Add a new video region to the playback mode.
 * [`playback`](#playback): Control the frame position and playback rate.
-* [`liveflags`](#liveflags): Configure video aids for live display mode.
+* [`configure`](#configure): Configure video settings.
 * [`livedisplay`](#livedisplay): Switch to live display mode.
 * [`recordfile`](#recordfile): Encode and write video to a file.
 * [`stop`](#stop): Terminate video encoding and return to playback mode.
@@ -60,11 +61,17 @@ arguments, and the returned hash map will contain the following members.
 |:----------------- |:--------- |:--------------
 | `"apiVersion"`    | `string`  | `"1.0"` for all cameras implemeting this specification.
 | `"playback"`      | `boolean` | `true` if the video pipeline is in playback mode.
-| `"recording"`     | `boolean` | `true` if the video pipeline is in record mode.
+| `"filesave"`      | `boolean` | `true` if the video pipeline is in file saving mode.
 | `"position"`      | `uint`    | The current frame number being display while in playback or record mode.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.
 | `"framerate"`     | `float`   | The target playback rate when in playback mode, or estimated frame rate when in record mode.
+
+flush
+-----
+Clear all recording segments from video memory and return the video system back
+to live display mode. This method takes no arguments, and returns the same values
+as the [`status`](#status) method.
 
 addregion
 ---------
@@ -144,7 +151,7 @@ The `recordfile` function will immediately return an empty hash map.
 
 stop
 ----
-Terminate any active recording events, and return to playback mode. In any other state this should cause the
+Terminate any active filesave events, and return to playback mode. In any other state this should cause the
 video system to reboot and return to the same state. This method takes no parameters, and returns no values.
 
 sof

@@ -125,13 +125,13 @@ cam_pipeline_SOURCES += pipeline/pipeline.h
 EXTRA_DIST = api/com.krontech.chronos.control.xml
 BUILT_SOURCES = api/cam-dbus-client.h api/cam-dbus-server.h api/cam-dbus-video.h
 
-api/cam-dbus-client.h: api/com.krontech.chronos.control.xml
+$(srcdir)/api/cam-dbus-client.h: api/com.krontech.chronos.control.xml
 	dbus-binding-tool --prefix=cam_dbus --mode=glib-client $< > $@
 
-api/cam-dbus-server.h: api/com.krontech.chronos.control.xml
+$(srcdir)/api/cam-dbus-server.h: api/com.krontech.chronos.control.xml
 	dbus-binding-tool --prefix=cam_control --mode=glib-server $< > $@
 
-api/cam-dbus-video.h: api/com.krontech.chronos.video.xml
+$(srcdir)/api/cam-dbus-video.h: api/com.krontech.chronos.video.xml
 	dbus-binding-tool --prefix=cam_video --mode=glib-server $< > $@
 
 ##

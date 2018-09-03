@@ -68,7 +68,7 @@ enum
 };
 
 GstPad *
-cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args, GstElement *pipeline)
+cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *encoder, *queue, *parser, *mux, *sink;
     unsigned int minrate = (state->hres * state->vres * args->framerate / 4); /* Set a minimum quality of 0.25 bpp. */
@@ -121,7 +121,7 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args, GstEleme
     g_object_set(G_OBJECT(sink), "fd", (gint)state->write_fd, NULL);
 
     /* Return the first element of our segment to link with */
-    gst_bin_add_many(GST_BIN(pipeline), encoder, queue, parser, mux, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, parser, mux, sink, NULL);
     gst_element_link_many(encoder, queue, parser, mux, sink, NULL);
     return gst_element_get_static_pad(encoder, "sink");
 }

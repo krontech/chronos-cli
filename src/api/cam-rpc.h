@@ -125,10 +125,11 @@ cam_dbus_dict_exists(GHashTable *h, const char *name)
 }
 
 static inline gboolean
-cam_dbus_dict_get_boolean(GHashTable *h, const char *name)
+cam_dbus_dict_get_boolean(GHashTable *h, const char *name, gboolean defval)
 {
     gpointer x = g_hash_table_lookup(h, name);
-    return (x && G_VALUE_HOLDS_BOOLEAN(x) && g_value_get_boolean(x));
+    if (x && G_VALUE_HOLDS_BOOLEAN(x)) return g_value_get_boolean(x);
+    return defval;
 }
 
 static inline long

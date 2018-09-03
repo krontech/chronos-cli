@@ -90,7 +90,7 @@ cam_get_sensor_data(DBusGProxy *proxy, struct cam_sensor_data *data)
     }
     data->flags = 0;
     strncpy(data->name, cam_dbus_dict_get_string(h, "name", "Unknown"), sizeof(data->name));
-    if (cam_dbus_dict_get_boolean(h, "monochrome")) data->flags |= CAM_SENSOR_MONOCHROME;
+    if (cam_dbus_dict_get_boolean(h, "monochrome"), 0) data->flags |= CAM_SENSOR_MONOCHROME;
     data->hmax = cam_dbus_dict_get_uint(h, "hMax", 0);
     data->vmax = cam_dbus_dict_get_uint(h, "vMax", 0);
     data->hmin = cam_dbus_dict_get_uint(h, "hMin", 0);
