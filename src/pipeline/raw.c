@@ -65,8 +65,10 @@ cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args)
     GstElement *queue, *sink;
     GstPad *pad;
     int flags = O_RDWR | O_CREAT | O_TRUNC;
-#ifdef O_LARGEFILE
+#if defined(O_LARGEFILE)
     flags |= O_LARGEFILE;
+#elif defined(__O_LARGEFILE)
+    flags |= __O_LARGEFILE;
 #endif
 
     /* Open the file for writing. */
