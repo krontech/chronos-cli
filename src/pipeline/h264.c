@@ -100,8 +100,6 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     if (args->bitrate > 60000000UL) args->bitrate = 60000000UL;
     else if (args->bitrate < minrate) args->bitrate = minrate;
 
-    args->framerate = LIVE_MAX_FRAMERATE;
-
     /* Configure the H.264 Encoder */
     g_object_set(G_OBJECT(encoder), "force-idr-period", (guint)90, NULL);
     g_object_set(G_OBJECT(encoder), "i-period", (guint)90, NULL);
