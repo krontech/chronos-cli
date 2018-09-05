@@ -71,6 +71,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     GstPad *sinkpad;
     GstPad *tpad;
     GstCaps *caps;
+
     
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
@@ -79,6 +80,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     if (!state->pipeline || !state->source || !tee) {
         return NULL;
     }
+
     /* Configure elements. */
     g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
     g_object_set(G_OBJECT(state->source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
@@ -88,12 +90,10 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 
     gst_bin_add_many(GST_BIN(state->pipeline), state->source, tee, NULL);
 
-    /* Configure the input video resolution */
     state->hres = state->fpga->display->h_res;
     state->vres = state->fpga->display->v_res;
     caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "format", GST_TYPE_FOURCC,
-                GST_MAKE_FOURCC('N', 'V', '1', '2'),
+                "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC('N', 'V', '1', '2'),
                 "width", G_TYPE_INT, state->hres,
                 "height", G_TYPE_INT, state->vres,
                 "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
@@ -154,7 +154,7 @@ buffer_drop_phantom(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 
 /* Launch a gstreamer pipeline to perform video recording. */
 static GstElement *
-cam_recorder(struct pipeline_state *state, struct pipeline_args *args)
+cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
     GstElement *tee;
@@ -357,7 +357,7 @@ cam_recorder(struct pipeline_state *state, struct pipeline_args *args)
         return NULL;
     }
     return state->pipeline;
-} /* cam_recorder */
+} /* cam_filesave */
 
 static gboolean
 cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
@@ -520,14 +520,22 @@ main(int argc, char * argv[])
         playback_goto(state, PIPELINE_MODE_PAUSE);
 
         /* File saving modes should fail gracefully back to playback. */
-        if (PIPELINE_IS_SAVING(args.mode)) {
+        if (args.mode == PIPELINE_MODE_BLACKREF) {
+            /* Return to live display after taking a calibration reference image. */
+            memset(&state->args, 0, sizeof(state->args));
+            if (!cam_blackref(state, &args)) {
+                /* Throw an EOF and revert to livedisplay. */
+                dbus_signal_eof(state);
+                continue;
+            }
+        }
+        /* File saving modes should fail gracefully back to playback. */
+        else if (PIPELINE_IS_SAVING(args.mode)) {
             /* Return to playback mode after saving. */
             state->args.mode = PIPELINE_MODE_PLAY;
-
-            if (!cam_recorder(state, &args)) {
+            if (!cam_filesave(state, &args)) {
                 /* Throw an EOF and revert to playback. */
                 dbus_signal_eof(state);
-                state->args.mode = PIPELINE_MODE_PLAY;
                 continue;
             }
         }
@@ -554,6 +562,9 @@ main(int argc, char * argv[])
         g_main_loop_run(state->mainloop);
 
         /* Stop the pipeline gracefully */
+        if (args.mode == PIPELINE_MODE_BLACKREF) {
+            cam_blackref_done(state, &args);
+        }
         dbus_signal_eof(state);
         event = gst_event_new_eos();
         gst_element_send_event(state->pipeline, event);

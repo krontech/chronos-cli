@@ -50,7 +50,8 @@ struct playback_region {
 #define PIPELINE_MODE_RAW16     4   /* 16-bit raw data (padded with zeros LSB) */
 #define PIPELINE_MODE_RAW12     5   /* 12-bit packed data */
 #define PIPELINE_MODE_DNG       6
-#define PIPELINE_MODE_TIFF      7   /* TIFF/RGB format - for development use */
+#define PIPELINE_MODE_TIFF      7   /* TIFF/RGB format */
+#define PIPELINE_MODE_BLACKREF  8   /* Save a black reference image. */
 
 #define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
 
@@ -70,6 +71,7 @@ struct display_config {
     unsigned long yoff;
     unsigned char zebra;
     unsigned char peaking;
+    unsigned char filter;
 };
 
 #define FRAMERATE_IVAL_BUCKETS  32
@@ -83,6 +85,8 @@ struct pipeline_state {
     const struct ioport *iops;
     int                 fsync_fd;
     int                 write_fd;
+    void *              write_buf;
+    void *              (*write_eof)(struct pipeline_state *state);
 
     /* Display control config */
     int                 mode;
@@ -123,6 +127,10 @@ struct pipeline_state {
 
 
 struct pipeline_state *cam_pipeline_state(void);
+
+/* Pipeline for taking black reference images. */
+GstElement *cam_blackref(struct pipeline_state *state, struct pipeline_args *args);
+void        cam_blackref_done(struct pipeline_state *state, struct pipeline_args *args);
 
 /* Allocate pipeline segments, returning the first pad to be linked. */
 GstPad *cam_screencap(struct pipeline_state *state);

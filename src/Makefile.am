@@ -111,6 +111,7 @@ cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
 cam_pipeline_LDADD += -l:libjpeg.so.8 -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
 cam_pipeline_SOURCES += pipeline/dbus-video.c
+cam_pipeline_SOURCES += pipeline/blackref.c
 cam_pipeline_SOURCES += pipeline/dng.c
 cam_pipeline_SOURCES += pipeline/h264.c
 cam_pipeline_SOURCES += pipeline/hdmi.c

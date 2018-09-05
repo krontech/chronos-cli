@@ -134,7 +134,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     unsigned long vres = cam_dbus_dict_get_uint(args, "vres", state->config.vres);
     unsigned long xoff = cam_dbus_dict_get_uint(args, "xoff", state->config.xoff);
     unsigned long yoff = cam_dbus_dict_get_uint(args, "yoff", state->config.yoff);
-    unsigned long diff;
+    unsigned long diff = 0;
 
     /* Sanity-check the new display configuration. */
     if (((hres + xoff) > CAM_LCD_HRES) || ((vres + yoff) > CAM_LCD_VRES)) {
@@ -143,18 +143,12 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     }
 
     /* Update the display resolution */
-    diff = (state->config.hres ^ hres) | (state->config.vres ^ vres);
+    diff |= (state->config.hres ^ hres) | (state->config.vres ^ vres);
     diff |= (state->config.xoff ^ xoff) | (state->config.yoff ^ yoff);
-    if (diff != 0) {
-        state->config.hres = hres;
-        state->config.vres = vres;
-        state->config.xoff = xoff;
-        state->config.yoff = yoff;
-        /* Reconfigure the display resolution dynamically in live display and playback modes. */
-        if ((state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_PLAY)) {
-            cam_lcd_reconfig(state, &state->config);
-        }
-    }
+    state->config.hres = hres;
+    state->config.vres = vres;
+    state->config.xoff = xoff;
+    state->config.yoff = yoff;
 
     /* Update the live display flags. */
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
@@ -170,10 +164,15 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
 
-    /* If the pipeline happens to be in live display mode, update the FPGA registers directly. */
+    /* In live display mode apply FPGA register changes immediately. */
     if (state->mode == PIPELINE_MODE_LIVE) {
         state->fpga->display->control &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE);
         state->fpga->display->control |= (state->control & (DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE));
+    }
+
+    /* Apply invasive pipeline changes. */
+    if ((state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_PLAY)) {
+        if (diff) cam_lcd_reconfig(state, &state->config);
     }
 
     *data = cam_dbus_video_status(state);
@@ -257,6 +256,10 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
                 (strcasecmp(format, "y12b") == 0)) {
         /* 12-bit samples packed (2 pixels stored in 3 bytes) */
         state->args.mode = PIPELINE_MODE_RAW12;
+    }
+    else if (strcasecmp(format, "refimg") == 0) {
+        /* Take a reference image by averaging the next 16 frames. */
+        state->args.mode = PIPELINE_MODE_BLACKREF;
     }
     /* Otherwise, this encoding format is not supported. */
     else {

@@ -258,7 +258,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
             state->fpga->display->control = control;
-            state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES);
+            state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
             break;
 
         case PIPELINE_MODE_RAW12:
@@ -289,6 +289,18 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
             state->fpga->display->control = control;
             state->fpga->display->manual_sync = 1;
+            break;
+        
+        case PIPELINE_MODE_BLACKREF:
+            state->mode = PIPELINE_MODE_BLACKREF;
+            state->playrate = 0;
+            state->position = 0;
+            playback_timer_disarm(state);
+
+            /* Clear sync inhibit to enable automatic video output. */
+            /* Enable black cal mode to bybass calibration. */
+            state->fpga->display->control = DISPLAY_CTL_BLACK_CAL_MODE;
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_BYPASS_FPN | DISPLAY_PIPELINE_RAW_16BPP | DISPLAY_PIPELINE_RAW_16PAD;
             break;
     }
 } /* playback_goto */
@@ -382,7 +394,7 @@ playback_fsync_callback(struct pipeline_state *state)
     read(state->fsync_fd, buf, sizeof(buf));
 
     /* Paused and live display mode: do nothing. */
-    if ((state->mode == PIPELINE_MODE_PAUSE) || (state->mode == PIPELINE_MODE_LIVE)) {
+    if ((state->mode == PIPELINE_MODE_PAUSE) || (state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_BLACKREF)) {
         return;
     }
     /* Playback mode: unblock the timer to allow the next frame */

@@ -29,3 +29,37 @@ memcpy_bgr2rgb(void *dst, const void *src, size_t len)
         "   bgt memcpy_bgr2rgb_loop     \n"
         : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(len) :: "cc" );
 }
+
+void
+memcpy_sum16(void *dst, const void *src, size_t len)
+{
+    asm volatile (
+    	"memcpy_sum16_loop:             \n"
+        "   vldm %[d],{d0-d3}           \n"
+        "   vldm %[s]!,{d4-d7}          \n"
+        "   vadd.u16 d0, d4, d0         \n"
+        "   vadd.u16 d1, d5, d1         \n"
+        "   vadd.u16 d2, d6, d2         \n"
+        "   vadd.u16 d3, d7, d3         \n"
+        "   vstm %[d]!,{d0-d3}          \n"
+        "   subs %[count],%[count], #32 \n"
+        "   bgt memcpy_sum16_loop       \n"
+        : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(len) :: "cc" );
+}
+
+void
+neon_div16(void *framebuf, size_t len)
+{
+
+    asm volatile (
+    	"memcpy_div16_loop:             \n"
+        "   vldm %[ptr],{d0-d3}         \n"
+        "   vrshr.u16 d0, d0, #4        \n"
+        "   vrshr.u16 d1, d1, #4        \n"
+        "   vrshr.u16 d2, d2, #4        \n"
+        "   vrshr.u16 d3, d3, #4        \n"
+        "   vstm %[ptr]!,{d0-d3}        \n"
+        "   subs %[count],%[count], #32 \n"
+        "   bgt memcpy_div16_loop       \n"
+        : [ptr]"+r"(framebuf), [count]"+r"(len) :: "cc" );
+}
