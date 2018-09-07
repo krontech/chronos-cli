@@ -171,20 +171,24 @@ playback_unlock(sigset_t *prev)
     sigprocmask(SIG_BLOCK, prev, NULL);
 }
 
-int
-playback_region_add(struct pipeline_state *state, unsigned long base, unsigned long size, unsigned long offset)
+static int
+playback_region_add(struct pipeline_state *state)
 {
     sigset_t sigset;
+    /* Read the FIFO to extract the new region info. */
+    uint32_t start = state->fpga->seq->md_fifo_read;
+    uint32_t end = state->fpga->seq->md_fifo_read;
+    uint32_t last = state->fpga->seq->md_fifo_read;
 
     /* Prepare memory for the new region. */
     struct playback_region *region = malloc(sizeof(struct playback_region));
     if (!region) {
         return -1;
     }
-    region->base = base;
-    region->size = size;
-    region->offset = offset;
     region->framesz = state->fpga->seq->frame_size;
+    region->base = start;
+    region->size = (end - start) + region->framesz;
+    region->offset = (last >= end) ? 0 : (last - start + region->framesz);
 
     playback_lock(&sigset);
 
@@ -454,6 +458,7 @@ playback_thread(void *arg)
 {
     struct pipeline_state *state = (struct pipeline_state *)arg;
     struct pollfd pfd;
+    const int msec = 100;
     int err;
 
     pfd.fd = state->fsync_fd;
@@ -466,8 +471,16 @@ playback_thread(void *arg)
             break;
         }
 
+        /* Grab new regions from the recording sequencer. */
+        while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
+            fprintf(stderr, "DEBUG: new region from FIFO\n");
+            playback_region_add(state);
+        }
+
         /* Read the current state of the GPIO. */
-        playback_fsync_callback(state);
+        if (err > 0) {
+            playback_fsync_callback(state);
+        }
     } while(1);
 }
 

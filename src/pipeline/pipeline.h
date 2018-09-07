@@ -165,7 +165,6 @@ void playback_init(struct pipeline_state *state);
 void playback_goto(struct pipeline_state *state, unsigned int mode);
 void playback_set(struct pipeline_state *state, unsigned long frame, unsigned int rate, int delta);
 void playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int delta, unsigned long count);
-int playback_region_add(struct pipeline_state *state, unsigned long base, unsigned long size, unsigned long offset);
 void playback_region_flush(struct pipeline_state *state);
 
 /* Video overlay control. */

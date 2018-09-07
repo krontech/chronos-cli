@@ -10,10 +10,6 @@
     <method name="flush">
       <arg name="status" direction="out" type="a{sv}"/>
     </method>
-    <method name="addregion">
-      <arg name="args" direction="in" type="a{sv}"/>
-      <arg name="data" direction="out" type="a{sv}"/>
-    </method>
     <method name="configure">
       <arg name="args" direction="in" type="a{sv}"/>
       <arg name="status" direction="out" type="a{sv}"/>

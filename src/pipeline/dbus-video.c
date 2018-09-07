@@ -81,24 +81,6 @@ cam_video_livestream(CamVideo *vobj, GHashTable *args, GError **error)
 }
 
 static gboolean
-cam_video_addregion(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
-{
-    struct pipeline_state *state = vobj->state;
-    unsigned long base = cam_dbus_dict_get_uint(args, "base", 0);
-    unsigned long size = cam_dbus_dict_get_uint(args, "size", 0);
-    unsigned long offset = cam_dbus_dict_get_uint(args, "offset", 0);
-    GHashTable *dict = cam_dbus_dict_new();
-
-    if (playback_region_add(state, base, size, offset) != 0) {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "%s", strerror(errno));
-        return 0;
-    }
-
-    *data = cam_dbus_dict_new();
-    return (*data != NULL);
-}
-
-static gboolean
 cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;

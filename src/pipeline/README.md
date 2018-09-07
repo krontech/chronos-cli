@@ -40,7 +40,6 @@ implements the methods:
 
 * [`status`](#status): Return the status of the video pipeline.
 * [`flush`](#flush): Clear recorded video and return to live display mode.
-* [`addregion`](#addregion): Add a new video region to the playback mode.
 * [`playback`](#playback): Control the frame position and playback rate.
 * [`configure`](#configure): Configure video settings.
 * [`livedisplay`](#livedisplay): Switch to live display mode.
@@ -73,19 +72,6 @@ flush
 Clear all recording segments from video memory and return the video system back
 to live display mode. This method takes no arguments, and returns the same values
 as the [`status`](#status) method.
-
-addregion
----------
-Informs the pipeline about a new recording segment in video memory, this method
-will create a new segment and append it to the end of the list of known recording
-segments. Any existing segments which would overlap the new one will be deleted.
-This function takes a hash map with the following members, and returns no values.
-
-| Input             | Type      | Description
-|:----------------- |:--------- |:--------------
-| `"base"`          | `uint`    | The starting address, in words, of the new recording region.
-| `"size"`          | `uint`    | The size, in words, of the new recording region.
-| `"offset"`        | `uint`    | The offset from `base` of the first frame in the new region.
 
 playback
 --------
