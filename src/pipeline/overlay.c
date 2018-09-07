@@ -1,0 +1,205 @@
+/****************************************************************************
+ *  Copyright (C) 2017 Kron Technologies Inc <http://www.krontech.ca>.      *
+ *                                                                          *
+ *  This program is free software: you can redistribute it and/or modify    *
+ *  it under the terms of the GNU General Public License as published by    *
+ *  the Free Software Foundation, either version 3 of the License, or       *
+ *  (at your option) any later version.                                     *
+ *                                                                          *
+ *  This program is distributed in the hope that it will be useful,         *
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of          *
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the           *
+ *  GNU General Public License for more details.                            *
+ *                                                                          *
+ *  You should have received a copy of the GNU General Public License       *
+ *  along with this program.  If not, see <http://www.gnu.org/licenses/>.   *
+ ****************************************************************************/
+#include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <unistd.h>
+#include <poll.h>
+#include <pthread.h>
+#include <sys/types.h>
+
+#include "pipeline.h"
+
+void
+overlay_clear(struct pipeline_state *state)
+{
+    state->fpga->overlay->control = 0;
+    state->fpga->overlay->text0_xsize = 1; /* BUG: waiting for an FPGA fix. */
+    state->fpga->overlay->text1_xsize = 1; /* BUG: waiting for an FPGA fix. */
+}
+
+void
+overlay_setup(struct pipeline_state *state)
+{
+    if (state->overlay.format[0] == '\0') {
+        overlay_clear(state);
+    }
+    else {
+        /* Default font sizing. */
+        unsigned int fontsize = 25;
+        unsigned int margin = 8;
+
+        /* Set the overlay geometry. */
+        state->fpga->overlay->text0_xpos = state->overlay.xoff;
+        state->fpga->overlay->text0_ypos = state->overlay.yoff;
+        if (state->overlay.width) {
+            state->fpga->overlay->text0_xsize = state->overlay.width;
+        } else {
+            state->fpga->overlay->text0_xsize = (state->hres - state->overlay.xoff);
+        }
+        if (state->overlay.height) {
+            state->fpga->overlay->text0_ysize = state->overlay.height;
+        } else {
+            state->fpga->overlay->text0_ysize = fontsize + (margin * 2);
+        }
+
+        state->fpga->overlay->text0_xoffset = margin;
+        state->fpga->overlay->text0_yoffset = margin;
+
+        /* Enable the text box. */
+        state->fpga->overlay->control = OVERLAY_CONTROL_FONT_SIZE(fontsize) | OVERLAY_CONTROL_TEXTBOX0;
+    }
+}
+
+static const char *
+mkformat(char *output, const char *fmt, unsigned int fmtlen, const char *suffix)
+{
+    if ((fmtlen + strlen(suffix)) >= OVERLAY_TEXT_LENGTH) {
+        return strcpy(output, "");
+    } else {
+        memcpy(output, fmt, fmtlen);
+        return strcpy(output + fmtlen, suffix);
+    }
+}
+
+#define TRIGGER_TIME_FREQ   100000000
+
+static long long
+triggertime_counts(struct pipeline_state *state)
+{
+    long frames = (state->segsize - state->segframe - 1);
+    long delay = state->fpga->seq->trig_delay;
+    return (long long)(delay - frames) * state->fpga->sensor->frame_period;
+}
+
+static double
+triggertime_float(struct pipeline_state *state, char specifier)
+{
+    long long counts = triggertime_counts(state);
+    switch (specifier) {
+        case 'U':
+            return (double)counts / 100.0;
+        case 'M':
+            return (double)counts / 100000.0;
+        case 'S':
+        default:
+            return (double)counts / 100000000.0;
+    }
+}
+
+void
+overlay_update(struct pipeline_state *state)
+{
+    char textbox[OVERLAY_TEXT_LENGTH];
+    char tempfmt[OVERLAY_TEXT_LENGTH];
+    const char *format = state->overlay.format;
+    unsigned int len;
+
+    if (*format == '\0') {
+        return;
+    }
+    
+    len = 0;
+    while (len < sizeof(textbox)) {
+        /* Copy text until we encounter a format specifier. */
+        const char *fmtstart;
+        char specifier;
+        if (*format != '%') {
+            textbox[len++] = *format++;
+            continue;
+        }
+
+        /* Sum up the length of the printf format specifier */
+        fmtstart = format++;
+        while (strchr("-+ #0", *format)) format++;  /* Count the flags */
+        while (isdigit(*format)) format++;          /* Count the width */
+        if (*format == '.') {
+            format++;
+            while (isdigit(*format)) format++;      /* Count the precision */
+        }
+        specifier = *(format++);                    /* Parse the specifier */
+
+        /* Print out the format */
+        switch (specifier) {
+            /* Litteral percent */
+            case '%':
+                textbox[len++] = '%';
+                break;
+            
+            /* Frame number */
+            case 'f':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->position + 1);
+                break;
+            
+            /* Total frames */
+            case 't':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->totalframes);
+                break;
+            
+            /* Segment number */
+            case 'r':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segment);
+                break;
+            
+            /* Segment frame */
+            case 'g':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segframe + 1);
+                break;
+            
+            /* Segment size */
+            case 'z':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segsize);
+                break;
+
+            /* Frame time from trigger as an integer number of: */
+            case 'n':
+                /* nanoseconds */
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lld");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_counts(state) * 10LL);
+                break;
+            case 'u':
+                /* microseconds */
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "ld");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)(triggertime_counts(state) / 100L));
+                break;
+            case 'm':
+                /* milliseconds */
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "ld");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)(triggertime_counts(state) / 100000L));
+                break;
+
+            /* Frame time from trigger as a floating point number of: */
+            case 'U': /* microseconds */
+            case 'M': /* milliseconds */
+            case 'S': /* seconds */
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_float(state, specifier));
+                break;
+        }
+    }
+
+    /* Write the text and enable. */
+    if (len > sizeof(textbox)) len = sizeof(textbox);
+    strncpy((char *)state->fpga->overlay->text0_buffer, textbox, len);
+}
