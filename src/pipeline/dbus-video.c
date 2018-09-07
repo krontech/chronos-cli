@@ -26,6 +26,19 @@
 #include "pipeline.h"
 #include "api/cam-rpc.h"
 
+static gboolean
+cam_dbus_get_resolution(GHashTable *h, const char *name, const char *defval, unsigned int *x, unsigned int *y)
+{
+    const char *res = cam_dbus_dict_get_string(h, name, defval);
+    char *e;
+
+    *x = strtoul(res, &e, 10);
+    if (*e != 'x') return FALSE;
+    *y = strtoul(e+1, &e, 10);
+    if (*e != '\0') return FALSE;
+    return TRUE;
+}
+
 static GHashTable *
 cam_dbus_video_status(struct pipeline_state *state)
 {
@@ -286,6 +299,26 @@ static gboolean
 cam_video_overlay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
+    const char *format = cam_dbus_dict_get_string(args, "format", "");
+    if (!cam_dbus_get_resolution(args, "offset", "0x0", &state->overlay.xoff, &state->overlay.yoff)) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid overlay offset");
+        return 0;
+    }
+    if (strlen(format) >= sizeof(state->overlay.format)) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Overlay format string too long");
+        return 0;
+    }
+    strncpy(state->overlay.format, format, sizeof(state->overlay.format));
+
+    /* TODO: */
+    state->overlay.width = 0;
+    state->overlay.height = 0;
+
+    /* Update the overlay configuration in playback modes. */
+    if (state->mode == PIPELINE_MODE_PLAY) {
+        overlay_setup(state);
+    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }

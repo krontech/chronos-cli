@@ -72,6 +72,18 @@ blackref_probe(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     return TRUE;
 }
 
+static void
+cam_blackref_done(struct pipeline_state *state, const struct pipeline_args *args)
+{
+    int fd = open(args->filename, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd >= 0) {
+        neon_div16(state->write_buf, state->hres * state->vres * 2);
+        write(fd, state->write_buf, state->hres * state->vres * 2);
+        close(fd);
+    }
+    free(state->write_buf);
+}
+
 /* Launch a gstreamer pipeline to take a black reference image. */
 GstElement *
 cam_blackref(struct pipeline_state *state, struct pipeline_args *args)
@@ -127,22 +139,14 @@ cam_blackref(struct pipeline_state *state, struct pipeline_args *args)
     gst_caps_unref(caps);
 
     /* Configure the file sink */
-	pad = gst_element_get_static_pad(queue, "src");
-	gst_pad_add_buffer_probe(pad, G_CALLBACK(blackref_probe), state);
-	gst_object_unref(pad);
+    pad = gst_element_get_static_pad(queue, "src");
+    gst_pad_add_buffer_probe(pad, G_CALLBACK(blackref_probe), state);
+    gst_object_unref(pad);
+
+    /* Require a custom event on EOF to finalize the file. */
+    state->done = cam_blackref_done;
 
     gst_element_link_many(queue, sink, NULL);
     return state->pipeline;
 }
 
-void
-cam_blackref_done(struct pipeline_state *state, struct pipeline_args *args)
-{
-	int fd = open(args->filename, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-	if (fd >= 0) {
-        neon_div16(state->write_buf, state->hres * state->vres * 2);
-        write(fd, state->write_buf, state->hres * state->vres * 2);
-        close(fd);
-	}
-    free(state->write_buf);
-}

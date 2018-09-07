@@ -79,6 +79,55 @@ struct fpga_display {
     uint32_t manual_sync;
 };
 
+struct fpga_overlay {
+    /* Overlay control registers. */
+    uint16_t identifier;    /* Always reads 0x0055 */
+    uint16_t version;
+    uint16_t subver;
+    uint16_t control;
+    uint16_t status;
+    uint16_t text0_xpos;
+    uint16_t text0_ypos;
+    uint16_t text0_xsize;
+    uint16_t text0_ysize;
+    uint16_t text1_xpos;
+    uint16_t text1_ypos;
+    uint16_t text1_xsize;
+    uint16_t text1_ysize;
+    uint16_t wmark_xpos;
+    uint16_t wmark_ypos;
+    uint8_t  text0_xoffset;
+    uint8_t  text1_xoffset;
+    uint8_t  text0_yoffset;
+    uint8_t  text1_yoffset;
+    uint16_t logo_xpos;
+    uint16_t logo_ypos;
+    uint16_t logo_xsize;
+    uint16_t logo_ysize;
+    uint8_t  text0_abgr[4];
+    uint8_t  text1_abgr[4];
+    uint8_t  wmark_abgr[4];
+    uint8_t __reserved0[0x8100 - 0x8036]; /* Align to offset 0x100 */
+
+    /* Text buffer registers. */
+#define OVERLAY_TEXT_LENGTH     128
+    uint8_t text0_buffer[OVERLAY_TEXT_LENGTH];
+    uint8_t __reserved1[128];
+    uint8_t text1_buffer[OVERLAY_TEXT_LENGTH];
+    uint8_t __reserved2[128];
+    uint8_t logo_red_lut[256];
+    uint8_t logo_green_lut[256];
+    uint8_t logo_blue_lut[256];
+    uint8_t __reserved3[0x9000 - 0x8600]; /* Align to offset 0x1000 */
+
+    /* Bitmap display registers */
+    uint16_t text0_bitmap[4096];
+    uint16_t text0_reserved[2048];
+    uint16_t text1_bitmap[4096];
+    uint16_t text1_reserved[2048];
+    uint16_t logo[20480];
+};
+
 //Register definitions from control register verilog file (in 16 bit word addresses)
 #define SENSOR_CONTROL				0
 #define SENSOR_CLK_PHASE			2
@@ -161,6 +210,8 @@ struct fpga_display {
 #define FPGA_SUBVERSION             0x304
 #define	DCG_MEM_START				0x800
 
+#define OVERLAY_CONTROL             0x4000
+
 //Image sensor control register
 #define	IMAGE_SENSOR_CONTROL_ADDR		0
 
@@ -169,7 +220,6 @@ struct fpga_display {
 
 //Phase control register
 #define IMAGE_SENSOR_CLK_PHASE_OFFSET	0
-
 
 //Data Correct
 //Indicates data channels 11:0 and sync are correct
@@ -219,6 +269,13 @@ struct fpga_display {
 #define DISPLAY_PIPELINE_TEST_PATTERN       (1<<15)
 #define DISPLAY_PIPELINE_RAW_MODES          (0x7 << 5)
 
+#define OVERLAY_CONTROL_TEXTBOX0            (1 << 4)
+#define OVERLAY_CONTROL_TEXTBOX1            (1 << 5)
+#define OVERLAY_CONTROL_WATERMARK           (1 << 6)
+#define OVERLAY_CONTROL_LOGO_MARK           (1 << 7)
+#define OVERLAY_CONTROL_FONT_SIZE(_x_)      ((_x_) << 8)
+#define OVERLAY_CONTROL_FONT_SIZE_MASK      (0x3F << 8)
+#define OVERLAY_CONTROL_BANK_SELECT         (1 << 15)
 
 #define SENSOR_DATA_WIDTH		        12
 #define COLOR_MATRIX_INT_BITS	        3
@@ -272,6 +329,7 @@ struct fpga {
     volatile struct fpga_sensor *sensor;
     volatile struct fpga_seq    *seq;
     volatile struct fpga_display *display;
+    volatile struct fpga_overlay *overlay;
     volatile uint32_t           *cc_matrix;
 };
 

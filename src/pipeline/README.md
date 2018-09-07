@@ -46,6 +46,7 @@ implements the methods:
 * [`livedisplay`](#livedisplay): Switch to live display mode.
 * [`recordfile`](#recordfile): Encode and write video to a file.
 * [`stop`](#stop): Terminate video encoding and return to playback mode.
+* [`overlay`](#overlay): Configure an overlay text box for video and frame information.
 * `livestream`: Configure network video streams (TODO)
 
 And emits the DBus signal:
@@ -103,15 +104,19 @@ the captured frames. This method takes the following optional arguments.
 
 This method will return the same values as the [`status`](#status) method.
 
-liveflags
+configure
 ---------
-Configure the video aids to be enabled when the video system is in live display mode, all
-of the input parameters are optional, and will default to `false` if omitted.
+Configure the video size and position to be rendered to the LCD interface, or
+adjust video settings.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | `boolean` | Enable peaking for focus aid.
+| `"hres"`          | `uint`    | Horizontal resolution of the video display area.
+| `"vres"`          | `uint`    | Vertical resolution of the video display area.
+| `"xoff"`          | `uint`    | Horizontal position of the video display area.
+| `"yoff"`          | `uint`    | Vertical position of the video display area.
 
 This method will return the same values as the [`status`](#status) method.
 
@@ -143,6 +148,7 @@ The `format` field accepts a FOURCC code defining the output video format, suppo
 | `"tiff"`              | Directory of Adobe TIFF files, containing the processed RGB image.
 | `"byr2"` or `"y16"`   | Raw sensor data padded to 16-bit little-endian encoding.
 | `"y12b"`              | Raw sensor data in packed 12-bit little-endian encoding.
+| `"refimg"`            | Take the average of 16 frames and store the result in `"y16"` encoding.
 
 The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
 for all other encoding formats.
@@ -153,6 +159,49 @@ stop
 ----
 Terminate any active filesave events, and return to playback mode. In any other state this should cause the
 video system to reboot and return to the same state. This method takes no parameters, and returns no values.
+
+overlay
+-------
+Configure a text box to overlay ontop of the video in playback mode. The video overlay will also be coped
+into the processed video formats `"tiff"` and `"h264"`.
+
+| Input             | Type      | Description
+|:----------------- |:--------- |:--------------
+| `"format"`        | `string`  | The string to be written into the text box, including optional format specifiers.
+| `"offset"`        | `string`  | The horizontal and vertical offset where to draw the text box.
+| `"textbox"`       | `string`  | The width and height of the text box to draw onto the video.
+| `"justify"`       | `string`  | The alignment of text within the box.
+| `"color"`         | `uint`    | The RGBA coordinate of the font color.
+
+The string provided by the `"format"` parameter is written into the text box. If the `"format"` includes format
+specifiers (subsequences beginning with `"%"`), the sequence is replaced with datum describing the frame. The
+syntax of the format specifiers follows the `printf` function, and recognizes the following specifiers and their
+encodings. The `flags`, `width`, and `precision` from the `printf` function sytax are supported to further
+define the output string.
+
+| Specifier     | Format Type       | Description
+|:------------- |:----------------- |:--------------
+| `%f`          | `unsigned long`   | Current frame number.
+| `%t`          | `unsigned long`   | Total number of frames recorded.
+| `%r`          | `unsigned long`   | Recording segment number.
+| `%g`          | `unsigned long`   | Frame number within the recording segment.
+| `%z`          | `unsigned long`   | Size of the recording segment.
+| `%n`          | `long long`       | Nanoseconds since the trigger event.
+| `%u`          | `long`            | Microseconds since the trigger event.
+| `%m`          | `long`            | Milliseconds since the trigger event.
+| `%U`          | `double`          | Microseconds since the trigger event.
+| `%M`          | `double`          | Milliseconds since the trigger event.
+| `%S`          | `double`          | Seconds since the trigger event.
+| `%%`          | None              | Literal percent.
+
+The `"justify"` parameter determines whether the text written to the box should be aligned to the `"left"`,
+`"right"`, or `"center"` of the text box. If not otherwise defined, the default is to align the text to the
+`"left"` side of the text box.
+
+The `"textbox"` and `"offset"` parameters define the size and position of the text box to be drawn ontop of
+the video. These are decimal strings which denote a horizontal value followed by a vertical value separated
+by an `x` character. For example, the string `"640x480"` defines a horizontal value of 640 and a vertical
+value of 480.
 
 sof
 ---

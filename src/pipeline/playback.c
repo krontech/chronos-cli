@@ -66,6 +66,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
 {
     struct playback_region *r;
     unsigned long count = 0;
+    unsigned long segment;
 
     /* If no regions have been set, then just display the first address in memory. */
     if (!state->totalframes) {
@@ -77,7 +78,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
     /* Advance the logical frame number. */
     if (delta > 0) {
         state->position += delta;
-        if (state->position > state->loopend) state->position -= (state->loopend - state->loopstart);
+        if (state->position >= state->loopend) state->position -= (state->loopend - state->loopstart);
     }
     else if (delta < 0) {
         if (state->position < (state->loopstart - delta)) state->position += (state->loopend - state->loopstart);
@@ -86,16 +87,19 @@ playback_frame_advance(struct pipeline_state *state, int delta)
 
     /* Search the recording regions for the actual frame address. */
     count = 0;
+    state->segment = 0;
     for (r = state->region_head; r; r = r->next) {
-        unsigned long nframes = (r->size / r->framesz);
-        if ((count + nframes) > state->position) {
-            unsigned long frameoff = r->offset / r->framesz;
-            unsigned long relframe = (state->position - count + frameoff) % nframes;
+        state->segment++;
+        state->segframe = (state->position - count);
+        state->segsize = (r->size / r->framesz);
+        if (state->segframe < state->segsize) {
+            unsigned long relframe = (state->segframe + (r->offset / r->framesz)) % state->segsize;
             state->fpga->display->frame_address = r->base + (relframe * r->framesz);
             break;
         }
-        count += nframes;
+        count += state->segsize;
     }
+    overlay_update(state);
     state->fpga->display->manual_sync = 1;
 }
 
@@ -232,6 +236,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             state->mode = PIPELINE_MODE_LIVE;
             state->playrate = 0;
             state->position = 0;
+            overlay_clear(state);
             playback_timer_disarm(state);
 
             /* Clear sync inhibit to enable automatic video output. */
@@ -249,11 +254,13 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
             state->fpga->display->control = control;
+            overlay_setup(state);
             playback_timer_rearm(state);
             break;
         
         case PIPELINE_MODE_PAUSE:
             state->mode = PIPELINE_MODE_PAUSE;
+            overlay_setup(state);
             playback_timer_disarm(state);
             control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
@@ -322,6 +329,7 @@ playback_set(struct pipeline_state *state, unsigned long frame, unsigned int rat
     control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
     control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
     state->fpga->display->control = control;
+    overlay_setup(state);
     playback_timer_rearm(state);
 }
 

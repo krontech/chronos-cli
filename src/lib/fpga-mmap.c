@@ -84,6 +84,7 @@ fpga_open(void)
 	fpga->sensor = (struct fpga_sensor *)(fpga->reg + SENSOR_CONTROL);
 	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CONTROL);
 	fpga->display = (struct fpga_display *)(fpga->reg + DISPLAY_CTL);
+	fpga->overlay = (struct fpga_overlay *)(fpga->reg + OVERLAY_CONTROL);
 	fpga->cc_matrix = (uint32_t *)(fpga->reg + CCM_ADDR);
 	return fpga;
 } /* fpga_open */

@@ -516,6 +516,7 @@ main(int argc, char * argv[])
         unsigned int i;
 
         /* Pause playback while we get setup. */
+        state->done = NULL;
         memcpy(&args, &state->args, sizeof(args));
         playback_goto(state, PIPELINE_MODE_PAUSE);
 
@@ -562,8 +563,8 @@ main(int argc, char * argv[])
         g_main_loop_run(state->mainloop);
 
         /* Stop the pipeline gracefully */
-        if (args.mode == PIPELINE_MODE_BLACKREF) {
-            cam_blackref_done(state, &args);
+        if (state->done) {
+            state->done(state, &args);
         }
         dbus_signal_eof(state);
         event = gst_event_new_eos();
@@ -584,7 +585,6 @@ main(int argc, char * argv[])
         if (state->write_fd >= 0) {
             fsync(state->write_fd);
             close(state->write_fd);
-            sync();
             state->write_fd = -1;
         }
 

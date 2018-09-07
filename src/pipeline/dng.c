@@ -360,6 +360,13 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     return TRUE;
 } /* dng_probe_bayer */
 
+static void
+cam_dng_done(struct pipeline_state *state, const struct pipeline_args *args)
+{
+    /* Flush all files to disk. */
+    sync();
+}
+
 GstPad *
 cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
@@ -406,6 +413,8 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
     }
 	gst_object_unref(pad);
 
+    state->done = cam_dng_done;
+
     gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
@@ -415,7 +424,6 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 void
 tiff_rgb_write(int fd, const void *header, GstBuffer *buffer)
 {
-#if 1
     write(fd, header, TIFF_HEADER_SIZE);
     uint8_t *kpage = mmap(NULL, 3 * KPAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (kpage == MAP_FAILED) {
@@ -435,14 +443,7 @@ tiff_rgb_write(int fd, const void *header, GstBuffer *buffer)
         write(fd, kpage, size);
     }
     munmap(kpage, 3 * KPAGE_SIZE);
-#else
-    struct iovec iov[2] = {
-        { .iov_base = (void *)header, .iov_len = TIFF_HEADER_SIZE, },
-        { .iov_base = GST_BUFFER_DATA(buffer), .iov_len = GST_BUFFER_SIZE(buffer), },
-    };
-    writev(fd, iov, 2);
-#endif
-} /* dng_write */
+} /* tiff_rgb_write */
 
 static gboolean
 tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
@@ -494,7 +495,6 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     return TRUE;
 } /* tiff_probe_rgb */
 
-
 GstPad *
 cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
@@ -528,6 +528,8 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 	pad = gst_element_get_static_pad(queue, "src");
 	gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
 	gst_object_unref(pad);
+
+    state->done = cam_dng_done;
 
     gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);

@@ -74,6 +74,14 @@ struct display_config {
     unsigned char filter;
 };
 
+struct overlay_config {
+    unsigned int xoff;
+    unsigned int yoff;
+    unsigned int width;
+    unsigned int height;
+    char format[512];
+};
+
 #define FRAMERATE_IVAL_BUCKETS  32
 
 struct pipeline_state {
@@ -86,7 +94,6 @@ struct pipeline_state {
     int                 fsync_fd;
     int                 write_fd;
     void *              write_buf;
-    void *              (*write_eof)(struct pipeline_state *state);
 
     /* Display control config */
     int                 mode;
@@ -97,9 +104,14 @@ struct pipeline_state {
     unsigned long   hres;
     unsigned long   vres;
 
-    /* Playback Mode */
+    /* Frame information */
     unsigned long   totalframes;    /* Total number of frames when in playback mode. */
     unsigned long   position;       /* Last played frame number when in playback mode. */
+    unsigned long   segment;        /* Current segment number */
+    unsigned long   segframe;       /* Frame number within the current segment. */
+    unsigned long   segsize;        /* Segment size (in frames) */
+
+    /* Playback Mode */
     timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
     unsigned int    playrate;       /* Rate (in FPS) of the playback timer. */
     int             playdelta;      /* Change (in frames) to apply at each playback timer expiry. */
@@ -113,6 +125,7 @@ struct pipeline_state {
     gint            buflevel;       /* OMX buffer level (for frame drop avoidance) */
     unsigned long   dngcount;       /* Frame number for DNG rendering. */
     unsigned int    preroll;        /* Preroll frame counter. */
+    void            (*done)(struct pipeline_state *state, const struct pipeline_args *args);
 
     /* Framerate estimation */
     struct timespec frametime;      /* Timestamp of last frame. */
@@ -123,14 +136,13 @@ struct pipeline_state {
     /* Pipeline args */
     struct pipeline_args args;
     struct display_config config;
+    struct overlay_config overlay;
 };
-
 
 struct pipeline_state *cam_pipeline_state(void);
 
 /* Pipeline for taking black reference images. */
 GstElement *cam_blackref(struct pipeline_state *state, struct pipeline_args *args);
-void        cam_blackref_done(struct pipeline_state *state, struct pipeline_args *args);
 
 /* Allocate pipeline segments, returning the first pad to be linked. */
 GstPad *cam_screencap(struct pipeline_state *state);
@@ -155,5 +167,10 @@ void playback_set(struct pipeline_state *state, unsigned long frame, unsigned in
 void playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int delta, unsigned long count);
 int playback_region_add(struct pipeline_state *state, unsigned long base, unsigned long size, unsigned long offset);
 void playback_region_flush(struct pipeline_state *state);
+
+/* Video overlay control. */
+void overlay_clear(struct pipeline_state *state);
+void overlay_setup(struct pipeline_state *state);
+void overlay_update(struct pipeline_state *state);
 
 #endif /* __PIPELINE */
