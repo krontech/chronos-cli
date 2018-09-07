@@ -99,7 +99,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
         }
         count += state->segsize;
     }
-    overlay_update(state);
+    overlay_update(state, r);
     state->fpga->display->manual_sync = 1;
 }
 
@@ -189,6 +189,9 @@ playback_region_add(struct pipeline_state *state)
     region->base = start;
     region->size = (end - start) + region->framesz;
     region->offset = (last >= end) ? 0 : (last - start + region->framesz);
+    /* Capture some metadata too */
+    region->exposure = state->fpga->sensor->int_time;
+    region->interval = state->fpga->sensor->frame_period;
 
     playback_lock(&sigset);
 
@@ -473,7 +476,6 @@ playback_thread(void *arg)
 
         /* Grab new regions from the recording sequencer. */
         while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
-            fprintf(stderr, "DEBUG: new region from FIFO\n");
             playback_region_add(state);
         }
 

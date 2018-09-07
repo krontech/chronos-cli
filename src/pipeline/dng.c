@@ -269,6 +269,9 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TODO: Software */
         /* TODO: DateTIme */
 
+        /* TIFF-EP Tags */
+        //TIFF_TAG_RATIONAL(33434, region->exposure, 100000000), /* ExposureTime */
+
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
@@ -277,6 +280,8 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TODO: AsShortNeutral */
         /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
+        //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
+        //TIFF_TAG_SRATIONAL(51044, 100000000, region->interval), /* FrameRate */
     };
 
     /* Write the frame data. */
@@ -331,9 +336,10 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TODO: DateTIme */
     
         /* TIFF-EP Tags */
-        /* TODO: SubIFD */
+        /* TODO: SubIFD for preview images */
         TIFF_TAG(33421, TIFF_TYPE_SHORT, cfa_repeat),   /* CFARepeatPatternDim = 2x2 */
         TIFF_TAG(33422, TIFF_TYPE_BYTE, cfa_pattern),   /* CFAPattern = GRBG */
+        //TIFF_TAG_RATIONAL(33434, region->exposure, 100000000), /* ExposureTime */
     
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
@@ -344,6 +350,8 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TODO: AsShortNeutral */
         /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
+        //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
+        //TIFF_TAG_SRATIONAL(51044, 100000000, region->interval), /* FrameRate */
     };
 
     /* Write the frame data. */
@@ -480,6 +488,9 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
         /* TODO: Software */
         /* TODO: DateTIme */
+        
+        /* TIFF-EP Tags */
+        //TIFF_TAG_RATIONAL(33434, region->exposure, 100000000), /* ExposureTime */
     };
 
     /* Write the frame data. */

@@ -167,11 +167,13 @@ define the output string.
 
 | Specifier     | Format Type       | Description
 |:------------- |:----------------- |:--------------
-| `%f`          | `unsigned long`   | Current frame number.
 | `%t`          | `unsigned long`   | Total number of frames recorded.
-| `%r`          | `unsigned long`   | Recording segment number.
-| `%g`          | `unsigned long`   | Frame number within the recording segment.
+| `%e`          | `double`          | Frame exposure time in microseconds.
+| `%f`          | `unsigned long`   | Current frame number.
+| `%g`          | `unsigned long`   | Recording segment number.
+| `%h`          | `unsigned long`   | Frame number within the recording segment.
 | `%z`          | `unsigned long`   | Size of the recording segment.
+| `%r`          | `double`          | Framerate.
 | `%n`          | `long long`       | Nanoseconds since the trigger event.
 | `%u`          | `long`            | Microseconds since the trigger event.
 | `%m`          | `long`            | Milliseconds since the trigger event.

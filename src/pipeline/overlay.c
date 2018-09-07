@@ -104,7 +104,7 @@ triggertime_float(struct pipeline_state *state, char specifier)
 }
 
 void
-overlay_update(struct pipeline_state *state)
+overlay_update(struct pipeline_state *state, const struct playback_region *region)
 {
     char textbox[OVERLAY_TEXT_LENGTH];
     char tempfmt[OVERLAY_TEXT_LENGTH];
@@ -155,13 +155,13 @@ overlay_update(struct pipeline_state *state)
                 break;
             
             /* Segment number */
-            case 'r':
+            case 'g':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
                 len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segment);
                 break;
             
             /* Segment frame */
-            case 'g':
+            case 'h':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
                 len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segframe + 1);
                 break;
@@ -169,7 +169,7 @@ overlay_update(struct pipeline_state *state)
             /* Segment size */
             case 'z':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segsize);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, region->size / region->framesz);
                 break;
 
             /* Frame time from trigger as an integer number of: */
@@ -195,6 +195,17 @@ overlay_update(struct pipeline_state *state)
             case 'S': /* seconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
                 len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_float(state, specifier));
+                break;
+
+            /* Exposure time (floating point) */
+            case 'e':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (double)region->exposure / 100.0);
+                break;
+            /* Framerate (floating point) */
+            case 'r':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, 100000000.0 / region->interval);
                 break;
         }
     }

@@ -37,10 +37,14 @@ struct CamVideo;
 struct playback_region {
     struct playback_region *next;
     struct playback_region *prev;
+    /* Size and starting address of the recorded frames. */
     unsigned long   size;
     unsigned long   base;
     unsigned long   offset;
     unsigned long   framesz;
+    /* Some frame metadata captured along with the frames. */
+    unsigned long   exposure;
+    unsigned long   interval;
 };
 
 #define PIPELINE_MODE_LIVE      0   /* Displaying live frame data to the display device. */
@@ -170,6 +174,6 @@ void playback_region_flush(struct pipeline_state *state);
 /* Video overlay control. */
 void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
-void overlay_update(struct pipeline_state *state);
+void overlay_update(struct pipeline_state *state, const struct playback_region *region);
 
 #endif /* __PIPELINE */
