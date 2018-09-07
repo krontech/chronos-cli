@@ -39,7 +39,15 @@ struct regtab {
 static unsigned long
 fpga_reg_read(const struct regtab *r, struct fpga *fpga)
 {
-    return *((volatile uint32_t *)(fpga->reg) + (r->offset / sizeof(uint32_t)));
+    switch (r->size) {
+        case 1:
+            return *((volatile uint8_t *)(fpga->reg) + (r->offset / sizeof(uint8_t)));
+        case 2:
+            return *((volatile uint16_t *)(fpga->reg) + (r->offset / sizeof(uint16_t)));
+        case 4:
+        default:
+            return *((volatile uint32_t *)(fpga->reg) + (r->offset / sizeof(uint32_t)));
+    }
 } /* fpga_reg_read */
 
 static unsigned long
@@ -120,12 +128,12 @@ static const struct regtab sensor_registers[] = {
  *-------------------------------------
  */
 static const struct regtab seq_registers[] = {
-    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "swtrig", SEQ_CTL_SW_TRIG_MASK),
-    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "start", SEQ_CTL_START_REC_MASK),
-    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "stop", SEQ_CTL_STOP_REC_MASK),
-    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "delay", SEQ_CTL_TRIG_DELAY_MODE_MASK),
-    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, status, "record", SEQ_STATUS_RECORDING_MASK),
-    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, status, "mdfifo", SEQ_STATUS_MD_FIFO_EMPTY_MASK),
+    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "swtrig", SEQ_CTL_SOFTWARE_TRIG),
+    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "start", SEQ_CTL_START_RECORDING),
+    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "stop", SEQ_CTL_STOP_RECORDING),
+    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, control, "delay", SEQ_CTL_TRIG_DELAY_MODE),
+    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, status, "record", SEQ_STATUS_RECORDING),
+    REG_STRUCT_BIT(struct fpga_seq, SEQ_CONTROL*2, status, "mdfifo", SEQ_STATUS_FIFO_EMPTY),
     REG_STRUCT(struct fpga_seq, SEQ_CONTROL*2, frame_size),
     REG_STRUCT(struct fpga_seq, SEQ_CONTROL*2, region_start),
     REG_STRUCT(struct fpga_seq, SEQ_CONTROL*2, region_stop),
@@ -175,6 +183,55 @@ static const struct regtab display_registers[] = {
     REG_STRUCT_BIT(struct fpga_display, DISPLAY_CTL*2, pipeline, "raw_16pad", DISPLAY_PIPELINE_RAW_16PAD),
     REG_STRUCT_BIT(struct fpga_display, DISPLAY_CTL*2, pipeline, "test_pat", DISPLAY_PIPELINE_TEST_PATTERN),
     REG_STRUCT(struct fpga_display, DISPLAY_CTL*2, manual_sync),
+    {NULL, 0, 0, 0}
+};
+
+/*-------------------------------------
+ * Overlay Control Registers
+ *-------------------------------------
+ */
+static const struct regtab overlay_registers[] = {
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, identifier),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, version),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, subver),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, control),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, status),
+    REG_STRUCT_BIT(struct fpga_overlay, OVERLAY_CONTROL*2, status, "textbox0", OVERLAY_CONTROL_TEXTBOX0),
+    REG_STRUCT_BIT(struct fpga_overlay, OVERLAY_CONTROL*2, status, "textbox1", OVERLAY_CONTROL_TEXTBOX1),
+    REG_STRUCT_BIT(struct fpga_overlay, OVERLAY_CONTROL*2, status, "watermark", OVERLAY_CONTROL_WATERMARK),
+    REG_STRUCT_BIT(struct fpga_overlay, OVERLAY_CONTROL*2, status, "logomark", OVERLAY_CONTROL_LOGO_MARK),
+    REG_STRUCT_BIT(struct fpga_overlay, OVERLAY_CONTROL*2, status, "fontsize", OVERLAY_CONTROL_FONT_SIZE_MASK),
+    REG_STRUCT_BIT(struct fpga_overlay, OVERLAY_CONTROL*2, status, "banksel", OVERLAY_CONTROL_BANK_SELECT),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_xpos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_ypos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_xsize),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_ysize),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_xpos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_ypos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_xsize),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_ysize),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, wmark_xpos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, wmark_ypos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_xoffset),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_xoffset),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_yoffset),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_yoffset),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, logo_xpos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, logo_ypos),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, logo_xsize),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, logo_ysize),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_abgr[0]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_abgr[1]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_abgr[2]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text0_abgr[3]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_abgr[0]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_abgr[1]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_abgr[2]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, text1_abgr[3]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, wmark_abgr[0]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, wmark_abgr[1]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, wmark_abgr[2]),
+    REG_STRUCT(struct fpga_overlay, OVERLAY_CONTROL*2, wmark_abgr[3]),
     {NULL, 0, 0, 0}
 };
 
@@ -308,6 +365,7 @@ main(int argc, char *const argv[])
     print_reg_group(stdout, sensor_registers, fpga, "Sensor");
     print_reg_group(stdout, seq_registers, fpga, "Sequencer");
     print_reg_group(stdout, display_registers, fpga, "Display");
+    print_reg_group(stdout, overlay_registers, fpga, "Overlay");
     print_reg_group(stdout, lux1310_registers, fpga, "LUX1310");
 
     fpga_close(fpga);

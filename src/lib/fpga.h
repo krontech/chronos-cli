@@ -233,14 +233,6 @@ struct fpga_overlay {
 #define SENSOR_SCI_CONTROL_RW_MASK		0x2						//Read == 1, Write == 0
 #define SENSOR_SCI_CONTROL_FIFO_FULL_MASK	0x4					//1 indicates FIFO is full
 
-#define	SEQ_CTL_SW_TRIG_MASK			0x1
-#define SEQ_CTL_START_REC_MASK			0x2
-#define	SEQ_CTL_STOP_REC_MASK			0x4
-#define	SEQ_CTL_TRIG_DELAY_MODE_MASK	0x8
-
-#define	SEQ_STATUS_RECORDING_MASK		0x1
-#define	SEQ_STATUS_MD_FIFO_EMPTY_MASK	0x2
-
 #define	EXT_SH_TRIGD_EXP_EN_MASK		0x1
 #define	EXT_SH_TRIGD_EXP_EN_OFFSET		0
 #define	EXT_SH_GATING_EN_MASK			0x2
@@ -268,6 +260,14 @@ struct fpga_overlay {
 #define DISPLAY_PIPELINE_RAW_16PAD          (1<<7)
 #define DISPLAY_PIPELINE_TEST_PATTERN       (1<<15)
 #define DISPLAY_PIPELINE_RAW_MODES          (0x7 << 5)
+
+#define SEQ_CTL_SOFTWARE_TRIG               (1 << 0)
+#define SEQ_CTL_START_RECORDING             (1 << 1)
+#define SEQ_CTL_STOP_RECORDING              (1 << 2)
+#define SEQ_CTL_TRIG_DELAY_MODE             (1 << 3) /* an undocumented mystery! */
+
+#define SEQ_STATUS_RECORDING                (1 << 0)
+#define SEQ_STATUS_FIFO_EMPTY               (1 << 1)
 
 #define OVERLAY_CONTROL_TEXTBOX0            (1 << 4)
 #define OVERLAY_CONTROL_TEXTBOX1            (1 << 5)
