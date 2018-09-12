@@ -27,12 +27,10 @@
 #include "api/cam-rpc.h"
 
 static gboolean
-cam_dbus_get_resolution(GHashTable *h, const char *name, const char *defval, unsigned int *x, unsigned int *y)
+parse_resolution(const char *resxy, unsigned int *x, unsigned int *y)
 {
-    const char *res = cam_dbus_dict_get_string(h, name, defval);
     char *e;
-
-    *x = strtoul(res, &e, 10);
+    *x = strtoul(resxy, &e, 10);
     if (*e != 'x') return FALSE;
     *y = strtoul(e+1, &e, 10);
     if (*e != '\0') return FALSE;
@@ -282,19 +280,37 @@ cam_video_overlay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **
 {
     struct pipeline_state *state = vobj->state;
     const char *format = cam_dbus_dict_get_string(args, "format", "");
-    if (!cam_dbus_get_resolution(args, "offset", "0x0", &state->overlay.xoff, &state->overlay.yoff)) {
+    const char *position = cam_dbus_dict_get_string(args, "position", "top");
+    const char *size = cam_dbus_dict_get_string(args, "textbox", "0x0");
+
+    /* Parse the position of the textbox. */
+    if (strcasecmp(position, "top") == 0) {
+        state->overlay.xoff = 0;
+        state->overlay.yoff = 0;
+    }
+    else if (strcasecmp(position, "bottom") == 0) {
+        state->overlay.xoff = 0;
+        state->overlay.yoff = UINT_MAX;
+    }
+    else if (!parse_resolution(position, &state->overlay.xoff, &state->overlay.yoff)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid overlay offset");
         return 0;
     }
+
+    /* Format string. */
     if (strlen(format) >= sizeof(state->overlay.format)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Overlay format string too long");
         return 0;
     }
     strncpy(state->overlay.format, format, sizeof(state->overlay.format));
 
-    /* TODO: */
+    /* Textbox size, or 0x0 for the full width. */
     state->overlay.width = 0;
     state->overlay.height = 0;
+    if (!parse_resolution(size, &state->overlay.width, &state->overlay.height)) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid overlay size");
+        return 0;
+    }
 
     /* Update the overlay configuration in playback modes. */
     if (state->mode == PIPELINE_MODE_PLAY) {

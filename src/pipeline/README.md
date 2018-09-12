@@ -154,8 +154,8 @@ into the processed video formats `"tiff"` and `"h264"`.
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"format"`        | `string`  | The string to be written into the text box, including optional format specifiers.
-| `"offset"`        | `string`  | The horizontal and vertical offset where to draw the text box.
-| `"textbox"`       | `string`  | The width and height of the text box to draw onto the video.
+| `"position"`      | `string`  | Where to position the text box within the video frame.
+| `"textbox"`       | `string`  | The width and height of the text box to draw ontop of the video.
 | `"justify"`       | `string`  | The alignment of text within the box.
 | `"color"`         | `uint`    | The RGBA coordinate of the font color.
 
@@ -182,14 +182,20 @@ define the output string.
 | `%S`          | `double`          | Seconds since the trigger event.
 | `%%`          | None              | Literal percent.
 
-The `"justify"` parameter determines whether the text written to the box should be aligned to the `"left"`,
-`"right"`, or `"center"` of the text box. If not otherwise defined, the default is to align the text to the
-`"left"` side of the text box.
+TODO: The `"justify"` parameter determines whether the text written to the box should be aligned to the
+`"left"`, `"right"`, or `"center"` of the text box. If not otherwise defined, the default is to align
+the text to the `"left"` side of the text box.
 
-The `"textbox"` and `"offset"` parameters define the size and position of the text box to be drawn ontop of
-the video. These are decimal strings which denote a horizontal value followed by a vertical value separated
-by an `x` character. For example, the string `"640x480"` defines a horizontal value of 640 and a vertical
-value of 480.
+The `"position"` parameter defines the location of the textbox on the video. It can take the enumerated
+vales of `"top"` and `"bottom"` to place the text box at either the top or bottom of the video with a
+horizontal position of zero. Or it can be set to a string of the form `"HRESxVRES"` where `HRES` and `VRES`
+are decimal integers containing the horizontal and vertical positions accordingly.
+
+The `"textbox"` parameter defines the size the text box to be drawn ontop of the video. The string is of
+the form `"WIDTHxHEIGHT"` where `WIDTH` defines the horizontal size of the box in pixels and `HEIGHT` is
+the vertical size. A vertical height of zero will default to the minimum height to draw a single line of
+text without clipping. A horizontal width of zero will extend the text box to use the maximum width of the
+video frame.
 
 sof
 ---

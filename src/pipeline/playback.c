@@ -145,15 +145,18 @@ playback_region_delete(struct pipeline_state *state, struct playback_region *r)
     free(r);
 }
 
-static unsigned long
-playback_region_total(struct pipeline_state *state)
+static void
+playback_region_totals(struct pipeline_state *state)
 {
     struct playback_region *r;
+    unsigned long nsegs = 0;
     unsigned long nframes = 0;
     for (r = state->region_head; r; r = r->next) {
+        nsegs++;
         nframes += (r->size / r->framesz);
     }
-    return nframes;
+    state->totalframes = nframes;
+    state->totalsegs = nsegs;
 }
 
 void
@@ -215,7 +218,7 @@ playback_region_add(struct pipeline_state *state)
 
     /* Update the total recording region size and reset back to the start. */
     state->position = 0;
-    state->totalframes = playback_region_total(state);
+    playback_region_totals(state);
     playback_unlock(&sigset);
     return 0;
 }

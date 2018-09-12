@@ -110,6 +110,7 @@ struct pipeline_state {
 
     /* Frame information */
     unsigned long   totalframes;    /* Total number of frames when in playback mode. */
+    unsigned long   totalsegs;      /* Total number of recording segments captured. */
     unsigned long   position;       /* Last played frame number when in playback mode. */
     unsigned long   segment;        /* Current segment number */
     unsigned long   segframe;       /* Frame number within the current segment. */

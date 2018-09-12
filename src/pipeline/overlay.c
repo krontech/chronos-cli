@@ -44,21 +44,26 @@ overlay_setup(struct pipeline_state *state)
         /* Default font sizing. */
         unsigned int fontsize = 25;
         unsigned int margin = 8;
+        unsigned int height = state->overlay.height;
+        if (!height) height = fontsize + (margin * 2);
 
-        /* Set the overlay geometry. */
+        /* Compute the vertical size and offset. */
+        state->fpga->overlay->text0_ysize = height;
+        if (state->overlay.yoff > (state->vres - height)) {
+            state->fpga->overlay->text0_ypos = (state->vres - height);
+        } else {
+            state->fpga->overlay->text0_ypos = state->overlay.yoff;
+        }
+
+        /* Compute the horizontal size and offset. */
         state->fpga->overlay->text0_xpos = state->overlay.xoff;
-        state->fpga->overlay->text0_ypos = state->overlay.yoff;
         if (state->overlay.width) {
             state->fpga->overlay->text0_xsize = state->overlay.width;
         } else {
             state->fpga->overlay->text0_xsize = (state->hres - state->overlay.xoff);
         }
-        if (state->overlay.height) {
-            state->fpga->overlay->text0_ysize = state->overlay.height;
-        } else {
-            state->fpga->overlay->text0_ysize = fontsize + (margin * 2);
-        }
 
+        /* Text size, margin and colour. */
         state->fpga->overlay->text0_xoffset = margin;
         state->fpga->overlay->text0_yoffset = margin;
 
@@ -164,6 +169,12 @@ overlay_update(struct pipeline_state *state, const struct playback_region *regio
             case 'h':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
                 len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segframe + 1);
+                break;
+            
+            /* Total segments */
+            case 'i':
+                mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->totalsegs);
                 break;
             
             /* Segment size */
