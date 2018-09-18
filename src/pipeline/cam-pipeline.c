@@ -37,7 +37,6 @@
 
 /* Signal handlering */
 static struct pipeline_state cam_global_state = {0};
-static sig_atomic_t scaler_mode = CAM_SCALE_ASPECT;
 static sig_atomic_t catch_sigint = 0;
 
 struct pipeline_state *
@@ -57,7 +56,6 @@ handle_sighup(int sig)
 {
     struct pipeline_state *state = cam_pipeline_state();
     if (!PIPELINE_IS_SAVING(state->mode)) {
-        scaler_mode = (sig == SIGHUP) ? CAM_SCALE_ASPECT : CAM_SCALE_CROP;
         g_main_loop_quit(state->mainloop);
     }
 }
@@ -502,10 +500,8 @@ main(int argc, char * argv[])
     signal(SIGTERM, handle_sigint);
     signal(SIGINT, handle_sigint);
 
-    /* Reconfigure the pipeline on SIGHUP and SIGUSR */
+    /* Reconfigure the pipeline on SIGHUP */
     signal(SIGHUP, handle_sighup);
-    signal(SIGUSR1, handle_sighup);
-    signal(SIGUSR2, handle_sighup);
     signal(SIGPIPE, SIG_IGN);
     do {
         /* Launch the pipeline. */

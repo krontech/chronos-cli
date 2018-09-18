@@ -26,6 +26,8 @@ The `cam-pipeline` program will respond to the following POSIX signals:
 
  * `SIGHUP`: Reboot the video pipeline and update its configuration.
  * `SIGINT`: Terminate the pipeline and shut down gracefully.
+ * `SIGUSR1`: Seek one frame forward when in playback mode.
+ * `SIGUSR2`: Seek one frame backward when in playback mode.
 
 The `cam-pipeline` program will create a named FIFO at `/tmp/cam-screencap.jpg`,
 and operates the write end of the FIFO. When this FIFO is opened, the pipeline will

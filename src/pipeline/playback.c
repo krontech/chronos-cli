@@ -114,7 +114,18 @@ playback_signal(int signo)
         return;
     }
     playback_timer_rearm(state);
-    playback_frame_advance(state, state->playdelta);
+    switch (signo) {
+        case SIGUSR1:
+            playback_frame_advance(state, 1);
+            break;
+        case SIGUSR2:
+            playback_frame_advance(state, -1);
+            break;
+        default:
+            playback_frame_advance(state, state->playdelta);
+            break;
+    }
+    
 
     /* If the frame sync GPIO is available, block delivery of our signal until the
      * frame has been delivered. */
@@ -165,6 +176,8 @@ playback_lock(sigset_t *prev)
     sigset_t block;
     sigemptyset(&block);
     sigaddset(&block, SIGALRM);
+    sigaddset(&block, SIGUSR1);
+    sigaddset(&block, SIGUSR2);
     sigprocmask(SIG_BLOCK, &block, prev);
 }
 
@@ -509,6 +522,8 @@ playback_init(struct pipeline_state *state)
 
     /* Seek to the next frame in playback mode on SIGALRM */
     signal(SIGALRM, playback_signal);
+    signal(SIGUSR1, playback_signal);
+    signal(SIGUSR2, playback_signal);
 
     /* Create the timer used for driving the playback state machine. */
     memset(&sigev, 0, sizeof(sigev));
