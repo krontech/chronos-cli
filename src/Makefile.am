@@ -106,7 +106,7 @@ cam_loader_SOURCES = cam-loader.c
 ## GStreamer Daemon for running the video system.
 cam_pipeline_LDADD = libcamera.a libcam-neon.a ${DBUS_LIBS} ${GLIB_LIBS}
 cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
-cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -L ${prefix}/usr/lib/gstreamer-0.10
+cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -L ${prefix}/usr/lib/gstreamer-0.10 -pthread
 cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
 cam_pipeline_LDADD += -l:libjpeg.so.8 -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c

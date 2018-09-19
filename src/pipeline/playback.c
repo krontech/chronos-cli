@@ -22,6 +22,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <sys/types.h>
+#include <sys/signalfd.h>
 
 #include "pipeline.h"
 
@@ -108,6 +109,7 @@ static void
 playback_signal(int signo)
 {
     struct pipeline_state *state = cam_pipeline_state();
+    sigset_t sigset;
 
     /* no-op unless we're in playback mode. */
     if (state->mode != PIPELINE_MODE_PLAY) {
@@ -126,19 +128,14 @@ playback_signal(int signo)
             break;
     }
     
-
-    /* If the frame sync GPIO is available, block delivery of our signal until the
-     * frame has been delivered. */
-    if (state->fsync_fd >= 0) {
-        sigset_t sigset;
-        sigemptyset(&sigset);
-        sigaddset(&sigset, SIGALRM);
-        sigprocmask(SIG_BLOCK, &sigset, NULL);
-    }
+    /* Block delivery of our signal until the frame has been delivered. */
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGALRM);
+    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
 }
 
 /* Test if two regions overlap each other.  */
-int
+static int
 playback_region_overlap(struct playback_region *a, struct playback_region *b)
 {
     /* Sort a and b. */
@@ -170,23 +167,6 @@ playback_region_totals(struct pipeline_state *state)
     state->totalsegs = nsegs;
 }
 
-void
-playback_lock(sigset_t *prev)
-{
-    sigset_t block;
-    sigemptyset(&block);
-    sigaddset(&block, SIGALRM);
-    sigaddset(&block, SIGUSR1);
-    sigaddset(&block, SIGUSR2);
-    sigprocmask(SIG_BLOCK, &block, prev);
-}
-
-void
-playback_unlock(sigset_t *prev)
-{
-    sigprocmask(SIG_BLOCK, prev, NULL);
-}
-
 static int
 playback_region_add(struct pipeline_state *state)
 {
@@ -209,8 +189,6 @@ playback_region_add(struct pipeline_state *state)
     region->exposure = state->fpga->sensor->int_time;
     region->interval = state->fpga->sensor->frame_period;
 
-    playback_lock(&sigset);
-
     /* Free any regions that would overlap. */
     while (state->region_head) {
         if (!playback_region_overlap(region, state->region_head)) break;
@@ -232,23 +210,22 @@ playback_region_add(struct pipeline_state *state)
     /* Update the total recording region size and reset back to the start. */
     state->position = 0;
     playback_region_totals(state);
-    playback_unlock(&sigset);
     return 0;
 }
 
+/* TODO: Possible race condition here since this is called from outside
+ * the playback thread. */
 void
 playback_region_flush(struct pipeline_state *state)
 {
-    sigset_t sigset;
-    playback_lock(&sigset);
     while (state->region_head) {
         playback_region_delete(state, state->region_head);
     }
     state->totalframes = 0;
     playback_set(state, 0, LIVE_MAX_FRAMERATE, 0);
-    playback_unlock(&sigset);
 }
 
+/* This would typically be called from outside the playback thread to change operation. */
 void
 playback_goto(struct pipeline_state *state, unsigned int mode)
 {
@@ -413,16 +390,16 @@ playback_rate_init(struct pipeline_state *state)
     }
 }
 
-/* frame GPIO callback events. */
+/* Frame GPIO callback events. */
 static void
-playback_fsync_callback(struct pipeline_state *state)
+playback_fsync(struct pipeline_state *state, int fd)
 {
     sigset_t sigset;
     char buf[2];
 
     /* Read the current state of the GPIO. */
-    lseek(state->fsync_fd, 0, SEEK_SET);
-    read(state->fsync_fd, buf, sizeof(buf));
+    lseek(fd, 0, SEEK_SET);
+    read(fd, buf, sizeof(buf));
 
     /* Paused and live display mode: do nothing. */
     if ((state->mode == PIPELINE_MODE_PAUSE) || (state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_BLACKREF)) {
@@ -432,7 +409,7 @@ playback_fsync_callback(struct pipeline_state *state)
     else if (state->mode == PIPELINE_MODE_PLAY) {
         sigemptyset(&sigset);
         sigaddset(&sigset, SIGALRM);
-        sigprocmask(SIG_UNBLOCK, &sigset, NULL);
+        pthread_sigmask(SIG_UNBLOCK, &sigset, NULL);
     }
     /* Recording Modes: Preroll and then begin playback. */
     else if (state->preroll) {
@@ -477,10 +454,23 @@ playback_thread(void *arg)
 {
     struct pipeline_state *state = (struct pipeline_state *)arg;
     struct pollfd pfd;
+    sigset_t mask;
     const int msec = 100;
+    int fsync_fd;
     int err;
 
-    pfd.fd = state->fsync_fd;
+    /* Open the frame sync GPIO. */
+    /* TODO: Handle errors? */
+    fsync_fd = ioport_open(state->iops, "frame-irq", O_RDONLY | O_NONBLOCK);
+
+    /* Unblock our desired signals. */
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGALRM);
+    sigaddset(&mask, SIGUSR1);
+    sigaddset(&mask, SIGUSR2);
+    pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
+
+    pfd.fd = fsync_fd;
     pfd.events = POLLPRI | POLLERR;
     pfd.revents = 0;
     while (1) {
@@ -496,34 +486,48 @@ playback_thread(void *arg)
         }
 
         /* Read the current state of the GPIO. */
-        if (err > 0) {
-            playback_fsync_callback(state);
+        if (pfd.revents) {
+            playback_fsync(state, fsync_fd);
         }
-    } while(1);
+    }
 }
 
 void
 playback_init(struct pipeline_state *state)
 {
     struct sigevent sigev;
+    struct sigaction sigact;
+    pthread_t playback_handle;
+
+    /*
+     * TODO: Should be made private to the playback thread
+     * or we risk pointer dereferencing bugs when updating
+     * the playback regions.
+     */
     state->region_head = NULL;
     state->region_tail = NULL;
 
-    /* Open the frame sync GPIO. */
-    state->fsync_fd = ioport_open(state->iops, "frame-irq", O_RDONLY | O_NONBLOCK);
-    if (state->fsync_fd >= 0) {
-        pthread_t playback_handle;
-        pthread_create(&playback_handle, NULL, playback_thread, state);
-    }
+    /* Install the desired signal handlers. */
+    sigemptyset(&sigact.sa_mask);
+    sigact.sa_flags = 0;
+    sigact.sa_handler = playback_signal;
+    sigaction(SIGALRM, &sigact, NULL);
+    sigaction(SIGUSR1, &sigact, NULL);
+    sigaction(SIGUSR2, &sigact, NULL);
+
+    /* Mask off the signals so that only the playback thread will receive them. */
+    sigemptyset(&sigact.sa_mask);
+    sigaddset(&sigact.sa_mask, SIGALRM);
+    sigaddset(&sigact.sa_mask, SIGUSR1);
+    sigaddset(&sigact.sa_mask, SIGUSR2);
+    sigprocmask(SIG_BLOCK, &sigact.sa_mask, NULL);
+
+    /* Start the playback thread. */
+    pthread_create(&playback_handle, NULL, playback_thread, state);
 
     /* Start off in live display mode */
     state->mode = PIPELINE_MODE_LIVE;
     state->control = state->fpga->display->control & (DISPLAY_CTL_COLOR_MODE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
-
-    /* Seek to the next frame in playback mode on SIGALRM */
-    signal(SIGALRM, playback_signal);
-    signal(SIGUSR1, playback_signal);
-    signal(SIGUSR2, playback_signal);
 
     /* Create the timer used for driving the playback state machine. */
     memset(&sigev, 0, sizeof(sigev));
