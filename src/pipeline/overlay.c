@@ -99,12 +99,12 @@ triggertime_float(struct pipeline_state *state, char specifier)
     long long counts = triggertime_counts(state);
     switch (specifier) {
         case 'U':
-            return (double)counts / 100.0;
+            return (double)counts / (double)(FPGA_TIMEBASE_HZ / 1000000);
         case 'M':
-            return (double)counts / 100000.0;
+            return (double)counts / (double)(FPGA_TIMEBASE_HZ / 1000);
         case 'S':
         default:
-            return (double)counts / 100000000.0;
+            return (double)counts / (double)FPGA_TIMEBASE_HZ;
     }
 }
 
@@ -187,17 +187,17 @@ overlay_update(struct pipeline_state *state, const struct playback_region *regio
             case 'n':
                 /* nanoseconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lld");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_counts(state) * 10LL);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_counts(state) * 1000000000LL / FPGA_TIMEBASE_HZ);
                 break;
             case 'u':
                 /* microseconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "ld");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)(triggertime_counts(state) / 100L));
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)((triggertime_counts(state) * 1000000) / FPGA_TIMEBASE_HZ));
                 break;
             case 'm':
                 /* milliseconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "ld");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)(triggertime_counts(state) / 100000L));
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)((triggertime_counts(state) * 1000) / FPGA_TIMEBASE_HZ));
                 break;
 
             /* Frame time from trigger as a floating point number of: */
@@ -216,7 +216,7 @@ overlay_update(struct pipeline_state *state, const struct playback_region *regio
             /* Framerate (floating point) */
             case 'r':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, 100000000.0 / region->interval);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (double)FPGA_TIMEBASE_HZ / region->interval);
                 break;
         }
     }

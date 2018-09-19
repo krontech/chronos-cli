@@ -37,10 +37,16 @@ struct tiff_ifh {
     uint32_t offset;    /* Byte offset into the file where the IFD exists. */
 };
 
+/* TIFF Image File Directory */
+struct tiff_ifd {
+    const struct tiff_tag *tags;
+    uint16_t    count;
+};
+
 /* TIFF Image File Directory Entry */
-struct tiff_tag_data {
+struct tiff_tag {
     uint16_t    tag;
-    uint16_t    type;
+    uint32_t    type;
     uint32_t    count;
     const void  *data;
 };
@@ -54,7 +60,7 @@ struct tiff_srational {
     int32_t d;
 };
 
-/* TIFF Types */
+/* Real TIFF Types */
 #define TIFF_TYPE_BYTE      1
 #define TIFF_TYPE_ASCII     2
 #define TIFF_TYPE_SHORT     3
@@ -67,6 +73,10 @@ struct tiff_srational {
 #define TIFF_TYPE_SRATIONAL 10
 #define TIFF_TYPE_FLOAT     11
 #define TIFF_TYPE_DOUBLE    12
+
+/* Internal TIFF Types */
+#define TIFF_TYPE_REAL_MASK 0xffff
+#define TIFF_TYPE_SUBIFD    ((1 << 16) | TIFF_TYPE_LONG)
 
 /* General TIFF tag - points to an array of the given type. */
 #define TIFF_TAG(_tag_, _type_, _array_) \
@@ -82,12 +92,16 @@ struct tiff_srational {
 #define TIFF_TAG_SBYTE(_tag_, _val_)        TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SBYTE,    (int8_t[]){_val_})
 #define TIFF_TAG_SSHORT(_tag_, _val_)       TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SSHORT,   (int16_t[]){_val_})
 #define TIFF_TAG_SLONG(_tag_, _val_)        TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SLONG,    (int32_t[]){_val_})
+#define TIFF_TAG_SRATIONAL(_tag_, _n_, _d_) TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SRATIONAL,((struct tiff_srational[]){{_n_, _d_}}))
 #define TIFF_TAG_FLOAT(_tag_, _val_)        TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_FLOAT,    (float[]){_val_})
 #define TIFF_TAG_DOUBLE(_tag_, _val_)       TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_DOUBLE,   (double[]){_val_})
+#define TIFF_TAG_SUBIFD(_tag_, _ifd_ptr_)   TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SUBIFD,   _ifd_ptr_)
 
 /* Specail case for null-terminated strings. */
 #define TIFF_TAG_STRING(_tag_, _val_) \
     { .tag = (_tag_), .type = TIFF_TYPE_ASCII, .count = strlen(_val_) + 1, .data = _val_ }
+
+#define ROUND4(_x_) (((_x_) + 3) & ~0x3)
 
 /* Length of data allocated for the Image file directory */
 #define TIFF_HEADER_SIZE    4096
@@ -95,9 +109,11 @@ struct tiff_srational {
 /* Typical kernel page size. */
 #define KPAGE_SIZE          4096
 
-/* Returns the number of bytes that a tag overflows by, or zero if it fits in the value. */
+int tiff_sizeof_ifd(const struct tiff_ifd *ifd);
+
+/* Return the number of bytes to represent the data element of a tag. */
 static unsigned int
-tiff_tag_datalen(const struct tiff_tag_data *t)
+tiff_tag_datalen(const struct tiff_tag *t)
 {
     switch (t->type) {
         case TIFF_TYPE_BYTE:
@@ -119,24 +135,27 @@ tiff_tag_datalen(const struct tiff_tag_data *t)
         case TIFF_TYPE_SRATIONAL:
         case TIFF_TYPE_DOUBLE:
             return (t->count * 8);
+        
+        case TIFF_TYPE_SUBIFD:
+            /* HACK: Assuming a count of 1. */
+            return tiff_sizeof_ifd(t->data);
     }
     return 0;
 }
 
-/* Count the number of bytes required for the extra TIFF values. */
+/* Count the size, in bytes, of an IFD. */
 int
-tiff_count_bytes(const struct tiff_tag_data *tags, uint16_t count)
+tiff_sizeof_ifd(const struct tiff_ifd *ifd)
 {
-    int extra = 0;
-    int i;
-    for (i = 0; i < count; i++) {
-        unsigned int x = tiff_tag_datalen(&tags[i]);
-        if (x > 4) extra += x;
+    size_t length = 6;
+    uint16_t i;
+    for (i = 0; i < ifd->count; i++) {
+        unsigned int dlen = tiff_tag_datalen(&ifd->tags[i]);
+        length += 12;
+        if (dlen > 4) length += ROUND4(dlen);
     }
-    return extra;
-} /* tiff_count_bytes */
-
-#define ROUND4(_x_) (((_x_) + 3) & ~0x3)
+    return length;
+}
 
 static inline unsigned int tiff_put_short(void *p, uint16_t val)
 {
@@ -151,8 +170,50 @@ tiff_put_long(void *p, uint32_t val)
     return sizeof(uint32_t);
 }
 
+size_t
+tiff_write_ifd(void *dest, size_t offset, size_t maxlen, const struct tiff_ifd *ifd)
+{
+    uint8_t *start = dest;
+    uint8_t *entry = start + offset;
+    uint8_t *extdata;
+    unsigned int i;
+
+    /* Write the Image File Directory */
+    extdata = entry + ROUND4((12 * ifd->count) + 6);
+    if ((extdata - start) >= maxlen) {
+        return 0;   /* IFD tags would overflow. */
+    }
+    entry += tiff_put_short(entry, ifd->count);
+    for (i = 0; i < ifd->count; i++) {
+        const struct tiff_tag *t = &ifd->tags[i];
+        unsigned int datalen = tiff_tag_datalen(t);
+        entry += tiff_put_short(entry, t->tag);
+        entry += tiff_put_short(entry, t->type & TIFF_TYPE_REAL_MASK);
+        entry += tiff_put_long(entry, t->count);
+
+        if (datalen > 4) {
+            if (((extdata - start) + datalen) > maxlen) {
+                return 0;    /* IFD extended values would overflow.  */
+            }
+            entry += tiff_put_long(entry, extdata - start);
+            if (t->type == TIFF_TYPE_SUBIFD) {
+                tiff_write_ifd(dest, (extdata - start), maxlen, t->data);
+            }
+            else {
+                memcpy(extdata, t->data, datalen);
+            }
+            extdata += ROUND4(datalen);
+        } else {
+            memcpy(entry, t->data, datalen);
+            entry += sizeof(uint32_t);
+        }
+    }
+    entry += tiff_put_long(entry, 0);
+    return (extdata - start);
+}
+
 void *
-tiff_build_header(const struct tiff_tag_data *tags, uint16_t count)
+tiff_build_header(const struct tiff_ifd *ifd)
 {
     /* Static memory buffer for the TIFF header and IFD. */
     static uint8_t header[TIFF_HEADER_SIZE];
@@ -166,37 +227,14 @@ tiff_build_header(const struct tiff_tag_data *tags, uint16_t count)
     uint8_t *extdata;
     unsigned int i, offset;
 
-    /* Write the Image File Header */
+    /* Write the Image File Header. */
     memcpy(header, &ifh, sizeof(ifh));
     offset = sizeof(ifh);
 
-    /* Write the Image File Directory */
-    extdata = header + ROUND4(offset + (12 * count) + 6);
-    if ((extdata - header) >= TIFF_HEADER_SIZE) {
-        return NULL;    /* IFD tags would overflow. */
+    /* Write the Image File Directory. */
+    if (!tiff_write_ifd(header, offset, sizeof(header), ifd)) {
+        return NULL;
     }
-    offset += tiff_put_short(header + offset, count);
-    for (i = 0; i < count; i++) {
-        const struct tiff_tag_data *t = &tags[i];
-        unsigned int datalen = tiff_tag_datalen(t);
-        offset += tiff_put_short(header + offset, t->tag);
-        offset += tiff_put_short(header + offset, t->type);
-        offset += tiff_put_long(header + offset, t->count);
-
-        if (datalen > 4) {
-            if (((extdata - header) + datalen) > TIFF_HEADER_SIZE) {
-                return NULL;    /* IFD extended values would overflow.  */
-            }
-            offset += tiff_put_long(header + offset, extdata - header);
-            memcpy(extdata, t->data, datalen);
-            extdata += ROUND4(datalen);
-        } else {
-            memcpy(header + offset, t->data, datalen);
-            offset += sizeof(uint32_t);
-        }
-    }
-    offset += tiff_put_long(header + offset, 0);
-
     return header;
 }
 
@@ -243,11 +281,23 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     unsigned long yres = g_value_get_int(gst_structure_get_value(gstruct, "height"));
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
+    const uint8_t exif_version[] = {'0', '2', '2', '0'};
     char fname[64];
     int fd;
+    /* HACK! May not actually correlate to the current frame. */
+    struct playback_region *region = state->region_head;
     
+    /* The list of EXIF tags. */
+    const struct tiff_tag exif[] = {
+        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        //TIFF_TAG_STRING(36868, ???),      /* DateTimeDigitized = YYYY:MM:DD HH:MM:SS */
+    };
+    struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
+
     /* The list of tags we want. */
-    const struct tiff_tag_data tags[] = {
+    const struct tiff_tag tags[] = {
         /* TIFF Baseline Tags */
         TIFF_TAG_LONG(254, 0),              /* SubFieldType = DNG Highest quality */
         TIFF_TAG_LONG(256, xres),           /* ImageWidth */
@@ -268,9 +318,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
         /* TODO: Software */
         /* TODO: DateTIme */
-
-        /* TIFF-EP Tags */
-        //TIFF_TAG_RATIONAL(33434, region->exposure, 100000000), /* ExposureTime */
+        TIFF_TAG_SUBIFD(34665, &exif_ifd),              /* Exif IFD Pointer */
 
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
@@ -281,8 +329,8 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
         //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
-        //TIFF_TAG_SRATIONAL(51044, 100000000, region->interval), /* FrameRate */
     };
+    struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
     /* Write the frame data. */
     state->dngcount++;
@@ -292,7 +340,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
+    dng_write(fd, tiff_build_header(&image_ifd), buffer);
     close(fd);
     return TRUE;
 } /* dng_probe_grayscale */
@@ -309,11 +357,23 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
     const uint16_t cfa_repeat[] = {2, 2};       /* 2x2 Bayer Pattern */
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
+    const uint8_t exif_version[] = {'0', '2', '2', '0'};
     char fname[64];
     int fd;
+    /* HACK! May not actually correlate to the current frame. */
+    struct playback_region *region = state->region_head;
+
+    /* The list of EXIF tags. */
+    const struct tiff_tag exif[] = {
+        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        //TIFF_TAG_STRING(36868, ???),      /* DateTimeDigitized = YYYY:MM:DD HH:MM:SS */
+    };
+    struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
     /* The list of tags we want. */
-    const struct tiff_tag_data tags[] = {
+    const struct tiff_tag tags[] = {
         /* TIFF Baseline Tags */
         TIFF_TAG_LONG(254, 0),              /* SubFieldType = DNG Highest quality */
         TIFF_TAG_LONG(256, xres),           /* ImageWidth */
@@ -339,7 +399,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TODO: SubIFD for preview images */
         TIFF_TAG(33421, TIFF_TYPE_SHORT, cfa_repeat),   /* CFARepeatPatternDim = 2x2 */
         TIFF_TAG(33422, TIFF_TYPE_BYTE, cfa_pattern),   /* CFAPattern = GRBG */
-        //TIFF_TAG_RATIONAL(33434, region->exposure, 100000000), /* ExposureTime */
+        TIFF_TAG_SUBIFD(34665, &exif_ifd),              /* Exif IFD Pointer */
     
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
@@ -351,8 +411,8 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
         //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
-        //TIFF_TAG_SRATIONAL(51044, 100000000, region->interval), /* FrameRate */
     };
+    struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
     /* Write the frame data. */
     state->dngcount++;
@@ -362,8 +422,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    dng_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
-    //dng_write_deflate(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer, xres);
+    dng_write(fd, tiff_build_header(&image_ifd), buffer);
     close(fd);
     return TRUE;
 } /* dng_probe_bayer */
@@ -456,18 +515,29 @@ tiff_rgb_write(int fd, const void *header, GstBuffer *buffer)
 static gboolean
 tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
-
     struct pipeline_state *state = cbdata;
     GstCaps *caps = GST_BUFFER_CAPS(buffer);
     GstStructure *gstruct = gst_caps_get_structure(caps, 0);
     unsigned long xres = g_value_get_int(gst_structure_get_value(gstruct, "width"));
     unsigned long yres = g_value_get_int(gst_structure_get_value(gstruct, "height"));
     const uint16_t bpp[] = {8,8,8};
+    const uint8_t exif_version[] = {'0', '2', '2', '0'};
     char fname[64];
     int fd;
+    /* HACK! May not actually correlate to the current frame. */
+    struct playback_region *region = state->region_head;
+
+    /* The list of EXIF tags. */
+    const struct tiff_tag exif[] = {
+        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        //TIFF_TAG_STRING(36868, ???),      /* DateTimeDigitized = YYYY:MM:DD HH:MM:SS */
+    };
+    struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
     /* The list of tags we want. */
-    const struct tiff_tag_data tags[] = {
+    const struct tiff_tag tags[] = {
         /* TIFF Baseline Tags */
         TIFF_TAG_LONG(254, 0),              /* SubFieldType = DNG Highest quality */
         TIFF_TAG_LONG(256, xres),           /* ImageWidth */
@@ -488,10 +558,9 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
         /* TODO: Software */
         /* TODO: DateTIme */
-        
-        /* TIFF-EP Tags */
-        //TIFF_TAG_RATIONAL(33434, region->exposure, 100000000), /* ExposureTime */
+        TIFF_TAG_SUBIFD(34665, &exif_ifd),                  /* Exif IFD Pointer */
     };
+    struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
     /* Write the frame data. */
     state->dngcount++;
@@ -501,7 +570,7 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         fprintf(stderr, "Failed to create TIFF frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    tiff_rgb_write(fd, tiff_build_header(tags, sizeof(tags)/sizeof(struct tiff_tag_data)), buffer);
+    tiff_rgb_write(fd, tiff_build_header(&image_ifd), buffer);
     close(fd);
     return TRUE;
 } /* tiff_probe_rgb */

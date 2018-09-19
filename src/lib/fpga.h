@@ -28,6 +28,9 @@
 #define GPMC_RAM_OFFSET             0x1000000
 #define GPMC_RAM_LEN                0x1000000
 
+/* FPGA Timing clock runs at 100MHz */
+#define FPGA_TIMEBASE_HZ            100000000
+
 /* TODO: Make this private to the LUX1310 driver. */
 struct fpga_sensor {
     uint32_t control;
