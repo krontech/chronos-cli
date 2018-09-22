@@ -106,7 +106,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
 
 /* Signal handler for the playback timer. */
 static void
-playback_signal(int signo)
+playback_signal(int signo, siginfo_t *info, void *ucontext)
 {
     struct pipeline_state *state = cam_pipeline_state();
     sigset_t sigset;
@@ -118,7 +118,11 @@ playback_signal(int signo)
     playback_timer_rearm(state);
     switch (signo) {
         case SIGUSR1:
-            playback_frame_advance(state, 1);
+            if (info->si_code == SI_QUEUE) {
+                playback_frame_advance(state, info->si_int);
+            } else {
+                playback_frame_advance(state, 1);
+            }
             break;
         case SIGUSR2:
             playback_frame_advance(state, -1);
@@ -509,8 +513,8 @@ playback_init(struct pipeline_state *state)
 
     /* Install the desired signal handlers. */
     sigemptyset(&sigact.sa_mask);
-    sigact.sa_flags = 0;
-    sigact.sa_handler = playback_signal;
+    sigact.sa_flags = SA_SIGINFO;
+    sigact.sa_sigaction = playback_signal;
     sigaction(SIGALRM, &sigact, NULL);
     sigaction(SIGUSR1, &sigact, NULL);
     sigaction(SIGUSR2, &sigact, NULL);
