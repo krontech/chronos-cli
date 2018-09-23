@@ -2,25 +2,25 @@ Video Pipeline Interface
 ========================
 
 The `cam-pipeline` program is responsible for managing the multimedia pipeline
-of the camera. This program connects the video stream from the FPGA to the output
-output devices on the camera. This pipeline can operate in one of three modes
-at any given time: live display, video playback, and video recording.
+of the camera. This program connects the video stream from the FPGA to the
+output output devices on the camera. This pipeline can operate in one of three
+modes at any given time: live display, video playback, and video recording.
 
 In live display mode, the FPGA is capturing data off the image sensor, and will
 stream frames out to the camera at 60fps. When in this mode, the pipeline will
 split the incoming video and scale each stream to fit their respective output
 device (LCD, HDMI and RTSP streams).
 
-In playback mode, the FPGA is replaying video from its internal memory buffer and
-the pipeline daemon is given control of the playback position and framerate of the
-video stream. Upon entering playback mode, the video will be paused on the first
-frame in memory, but the playback rate and position can be cahnged using the
-`playback` function.
+In playback mode, the FPGA is replaying video from its internal memory buffer
+and the pipeline daemon is given control of the playback position and framerate
+of the video stream. Upon entering playback mode, the video will be paused on
+the first frame in memory, but the playback rate and position can be cahnged
+using the `playback` function.
 
-In filesave mode, the FPGA replays video in the same manner as playback mode, but
-video stream will instead be passed through an encoder element and will be written
-to a file rather than the output devices. When the saving is complete, the pipeline
-will generate an EOF signaland return to playback mode.
+In filesave mode, the FPGA replays video in the same manner as playback mode,
+but video stream will instead be passed through an encoder element and will be
+written to a file rather than the output devices. When the saving is complete,
+the pipeline will generate an EOF signaland return to playback mode.
 
 The `cam-pipeline` program will respond to the following POSIX signals:
 
@@ -29,16 +29,20 @@ The `cam-pipeline` program will respond to the following POSIX signals:
  * `SIGUSR1`: Seek one frame forward when in playback mode.
  * `SIGUSR2`: Seek one frame backward when in playback mode.
 
+`SIGUSR1` can also be sent as a POSIX.1b signal via sigqueue(), in which case
+the `sigval.si_int` parameter specifies the number of frames to seek when in
+playback mode.
+
 The `cam-pipeline` program will create a named FIFO at `/tmp/cam-screencap.jpg`,
-and operates the write end of the FIFO. When this FIFO is opened, the pipeline will
-encode the current frame as a JPEG and write it into the FIFO. Thus the command
-`cat /tmp/cam-screencap.jpg > somefile.jpg` can be used to take a live screenshot
-from the pipeline.
+and operates the write end of the FIFO. When this FIFO is opened, the pipeline
+will encode the current frame as a JPEG and write it into the FIFO. Thus the
+command `cat /tmp/cam-screencap.jpg > somefile.jpg` can be used to take a live
+screenshot from the pipeline.
 
 The DBus interface to the video pipeline daemon is accessible at
 `/com/krontech/chronos/video` and conforms to the interface given by
-[com.krontech.chronos.video.xml](../../src/api/com.krontech.chronos.video.xml), which
-implements the methods:
+[com.krontech.chronos.video.xml](../../src/api/com.krontech.chronos.video.xml),
+which implements the methods:
 
 * [`status`](#status): Return the status of the video pipeline.
 * [`flush`](#flush): Clear recorded video and return to live display mode.
