@@ -39,10 +39,17 @@
 #define CAM_DBUS_HASH_MAP \
     dbus_g_type_get_map("GHashTable", G_TYPE_STRING, G_TYPE_VALUE)
 
-#define cam_dbus_dict_new() g_hash_table_new(g_str_hash, g_str_equal)
+#define cam_dbus_dict_new() g_hash_table_new_full(g_str_hash, g_str_equal, g_free, cam_dbus_dict_cleanup)
 #define cam_dbus_dict_free(_dict_) g_hash_table_destroy(_dict_)
 #define cam_dbus_dict_add(_dict_, _name_, _gvalue_) \
     g_hash_table_insert(_dict_, g_strdup(_name_), _gvalue_);
+
+static inline void
+cam_dbus_dict_cleanup(gpointer ptr)
+{
+    g_value_unset(ptr);
+    g_free(ptr);
+}
 
 static inline void
 cam_dbus_dict_add_boolean(GHashTable *h, const char *name, gboolean value)
