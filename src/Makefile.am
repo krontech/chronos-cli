@@ -1,7 +1,7 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a
 bin_PROGRAMS = cam-daemon cam-loader cam-json cam-listener
-bin_PROGRAMS += cam-regdump cam-mock
+bin_PROGRAMS += cam-regdump cam-recover cam-mock
 AM_CFLAGS = -I ${srcdir}/lib ${GLIB_CFLAGS}
 AM_CFLAGS += -Wno-deprecated-declarations
 AM_LDFLAGS =
@@ -32,6 +32,7 @@ libcamera_a_SOURCES += lib/i2c-eeprom.c
 libcamera_a_SOURCES += lib/i2c-spd.c
 libcamera_a_SOURCES += lib/lux1310-sensor.c
 libcamera_a_SOURCES += lib/lux1310-wavetab.c
+libcamera_a_SOURCES += lib/tiff.c
 libcamera_a_SOURCES += lib/sensor.c
 ## Header files too.
 libcamera_a_SOURCES += lib/fpga.h
@@ -55,6 +56,12 @@ cam_regdump_LDADD = libcamera.a
 cam_regdump_CFLAGS = ${AM_CFLAGS}
 cam_regdump_LDFLAGS = ${AM_LDFLAGS}
 cam_regdump_SOURCES = cam-regdump.c
+
+## FPGA Video memory recovery.
+cam_recover_LDADD = libcamera.a libcam-neon.a
+cam_recover_CFLAGS = ${AM_CFLAGS}
+cam_recover_LDFLAGS = ${AM_LDFLAGS}
+cam_recover_SOURCES = cam-recover.c
 
 ## Camera Daemon
 cam_daemon_LDADD = libcamera.a ${DBUS_LIBS} ${GLIB_LIBS}

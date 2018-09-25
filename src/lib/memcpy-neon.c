@@ -50,7 +50,6 @@ memcpy_sum16(void *dst, const void *src, size_t len)
 void
 neon_div16(void *framebuf, size_t len)
 {
-
     asm volatile (
     	"memcpy_div16_loop:             \n"
         "   vldm %[ptr],{d0-d3}         \n"
@@ -62,4 +61,24 @@ neon_div16(void *framebuf, size_t len)
         "   subs %[count],%[count], #32 \n"
         "   bgt memcpy_div16_loop       \n"
         : [ptr]"+r"(framebuf), [count]"+r"(len) :: "cc" );
+}
+
+void
+neon_be12_unpack(void *dst, void *src)
+{
+    asm volatile (
+        "   vld3.8 {d0,d1,d2}, [%[s]]   \n"
+        "   vshll.u8  q2, d0, #4        \n" /* q2 = first pixel 8-lsb. */
+        "   vshll.u8  q3, d2, #4        \n" /* q3 = second pixel 8-msb. */
+        /* low nibble of split byte to high nibble of first pixel. */
+        "   vmovl.u8  q4, d1            \n"
+        "   vshl.u16  q4, q4, #12       \n"
+        "   vadd.u16  q2, q4, q2        \n" /* q2 = first pixel */
+        /* high nibble of split byte to low nibble of second pixel. */
+        "   vshr.u8   d1, d1, #4        \n"
+        "   vaddw.u8  q3, q3, d1        \n" /* q3 = second pixel/16 */
+        "   vshl.u16  q3, q3, #4        \n" /* q3 = second pixel */
+        /* write out */
+        "   vst2.16 {q2,q3}, [%[d]]     \n"
+        : [d]"+r"(dst), [s]"+r"(src) : [pattern]"r"(0xf0) : "cc" );
 }

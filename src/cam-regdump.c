@@ -187,6 +187,22 @@ static const struct regtab display_registers[] = {
 };
 
 /*-------------------------------------
+ * Video RAM Readout Registers
+ *-------------------------------------
+ */
+
+static const struct regtab vram_registers[] = {
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, identifier),
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, version),
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, subver),
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, control),
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, status),
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, address),
+    REG_STRUCT(struct fpga_vram, VRAM_OFFSET, burst),
+    {NULL, 0, 0, 0}
+};
+
+/*-------------------------------------
  * Overlay Control Registers
  *-------------------------------------
  */
@@ -365,6 +381,7 @@ main(int argc, char *const argv[])
     print_reg_group(stdout, sensor_registers, fpga, "Sensor");
     print_reg_group(stdout, seq_registers, fpga, "Sequencer");
     print_reg_group(stdout, display_registers, fpga, "Display");
+    print_reg_group(stdout, vram_registers, fpga, "Video RAM");
     print_reg_group(stdout, overlay_registers, fpga, "Overlay");
     print_reg_group(stdout, lux1310_registers, fpga, "LUX1310");
 
