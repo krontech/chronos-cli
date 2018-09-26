@@ -190,7 +190,6 @@ static const struct regtab display_registers[] = {
  * Video RAM Readout Registers
  *-------------------------------------
  */
-
 static const struct regtab vram_registers[] = {
     REG_STRUCT(struct fpga_vram, VRAM_OFFSET, identifier),
     REG_STRUCT(struct fpga_vram, VRAM_OFFSET, version),

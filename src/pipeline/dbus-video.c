@@ -230,8 +230,12 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
         state->args.mode = PIPELINE_MODE_DNG;
     }
     else if (strcasecmp(format, "tiff") == 0) {
-        /* 8-bit RGB samples */
-        state->args.mode = PIPELINE_MODE_TIFF;
+        /* 8-bit RGB samples or 16-bit greyscale samples. */
+        if (state->control & DISPLAY_CTL_COLOR_MODE) {
+            state->args.mode = PIPELINE_MODE_TIFF_RGB;
+        } else {
+            state->args.mode = PIPELINE_MODE_TIFF_GREY;
+        }
     }
     /* Handle Bayer and monochrome formats interchangeably */
     else if ((strcasecmp(format, "byr2") == 0) || 

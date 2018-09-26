@@ -26,6 +26,7 @@
 #include <gst/gst.h>
 
 #include "fpga.h"
+#include "i2c.h"
 #include "pipeline.h"
 
 /* How do we want to do scaling? */
@@ -238,7 +239,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
      * Setup the Pipeline for saving CinemaDNG
      *=====================================================
      */
-    else if (args->mode == PIPELINE_MODE_DNG) {
+    else if ((args->mode == PIPELINE_MODE_DNG) || (args->mode == PIPELINE_MODE_TIFF_GREY)) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
                     "width", G_TYPE_INT, state->hres,
@@ -296,7 +297,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
      * Setup the Pipeline for saving raw RGB pixel data.
      *=====================================================
      */
-    else if (args->mode == PIPELINE_MODE_TIFF) {
+    else if (args->mode == PIPELINE_MODE_TIFF_RGB) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-rgb",
                     "bpp", G_TYPE_INT, 24,
                     "width", G_TYPE_INT, state->hres,
@@ -418,7 +419,7 @@ main(int argc, char * argv[])
         {0, 0, 0, 0}
     };
     char *e;
-    int c;
+    int c, fd;
 
     /* Set default configuration. */
     state->config.hres = CAM_LCD_HRES;
@@ -455,6 +456,16 @@ main(int argc, char * argv[])
     if (!state->fpga) {
         fprintf(stderr, "Failed to open FPGA: %s\n", strerror(errno));
         return -1;
+    }
+
+    /* Attempt to get the camera serial number. */
+    fd = open(ioport_find_by_name(state->iops, "eeprom-i2c"), O_RDWR);
+    if (fd >= 0) {
+        if (i2c_eeprom_read16(fd, CAMERA_SERIAL_I2CADDR, CAMERA_SERIAL_OFFSET, state->serial, sizeof(state->serial)-1) < 0) {
+            memset(state->serial, 0, sizeof(state->serial));
+        }
+        state->serial[sizeof(state->serial)-1] = '\0';
+        close(fd);
     }
     
     /* Attempt to create the frame-grabber FIFO */

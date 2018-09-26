@@ -72,9 +72,12 @@ struct tiff_srational {
 #define TIFF_TAG(_tag_, _type_, _array_) \
     { .tag = (_tag_), .type = (_type_), .count = sizeof(_array_)/sizeof((_array_)[0]), .data = (_array_) }
 
-/* Scalar TIFF tags - contains a single instance of the given type. */
 #define TIFF_TAG_SCALAR(_tag_, _type_, _array_) \
     { .tag = (_tag_), .type = (_type_), .count = 1, .data = (_array_) }
+#define TIFF_TAG_VECTOR(_tag_, _type_, _ptr_, _count_) \
+    { .tag = (_tag_), .type = (_type_), .count = (_count_), .data = (_ptr_) }
+
+/* Scalar TIFF tags - contains a single instance of the given type. */
 #define TIFF_TAG_BYTE(_tag_, _val_)         TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_BYTE,     (uint8_t[]){_val_})
 #define TIFF_TAG_SHORT(_tag_, _val_)        TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SHORT,    (uint16_t[]){_val_})
 #define TIFF_TAG_LONG(_tag_, _val_)         TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_LONG,     (uint32_t[]){_val_})
@@ -88,8 +91,7 @@ struct tiff_srational {
 #define TIFF_TAG_SUBIFD(_tag_, _ifd_ptr_)   TIFF_TAG_SCALAR(_tag_, TIFF_TYPE_SUBIFD,   _ifd_ptr_)
 
 /* Specail case for null-terminated strings. */
-#define TIFF_TAG_STRING(_tag_, _val_) \
-    { .tag = (_tag_), .type = TIFF_TYPE_ASCII, .count = strlen(_val_) + 1, .data = _val_ }
+#define TIFF_TAG_STRING(_tag_, _val_)       TIFF_TAG_VECTOR(_tag_, TIFF_TYPE_ASCII, _val_, strlen(_val_) + 1)
 
 void *tiff_build_header(void *dest, size_t size, const struct tiff_ifd *ifd);
 

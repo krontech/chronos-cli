@@ -54,8 +54,9 @@ struct playback_region {
 #define PIPELINE_MODE_RAW16     4   /* 16-bit raw data (padded with zeros LSB) */
 #define PIPELINE_MODE_RAW12     5   /* 12-bit packed data */
 #define PIPELINE_MODE_DNG       6
-#define PIPELINE_MODE_TIFF      7   /* TIFF/RGB format */
-#define PIPELINE_MODE_BLACKREF  8   /* Save a black reference image. */
+#define PIPELINE_MODE_TIFF_GREY 7   /* TIFF/Y16 format */
+#define PIPELINE_MODE_TIFF_RGB  8   /* TIFF/RGB888 format */
+#define PIPELINE_MODE_BLACKREF  9   /* Save a black reference image. */
 
 #define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
 
@@ -88,6 +89,10 @@ struct overlay_config {
 
 #define FRAMERATE_IVAL_BUCKETS  32
 
+#define CAMERA_SERIAL_I2CADDR   0x54
+#define CAMERA_SERIAL_LENGTH    32
+#define CAMERA_SERIAL_OFFSET    0
+
 struct pipeline_state {
     GMainLoop           *mainloop;
     GstElement          *pipeline;
@@ -98,6 +103,9 @@ struct pipeline_state {
     int                 fsync_fd;
     int                 write_fd;
     void *              write_buf;
+    
+    /* Camera information */
+    char                serial[CAMERA_SERIAL_LENGTH+1];
 
     /* Display control config */
     int                 mode;

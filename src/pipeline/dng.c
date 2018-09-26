@@ -84,11 +84,15 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     struct playback_region *region = state->region_head;
     
     /* The list of EXIF tags. */
+    time_t now = time(0);
+    char timestr[64];
+    struct tm timebuf;
     const struct tiff_tag exif[] = {
         TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
         TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
+        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
         TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
-        //TIFF_TAG_STRING(36868, ???),      /* DateTimeDigitized = YYYY:MM:DD HH:MM:SS */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 
@@ -130,7 +134,11 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
 
     /* Write the frame data. */
     state->dngcount++;
-    sprintf(fname, "frame_%06lu.dng", state->dngcount);
+    if (state->mode == PIPELINE_MODE_TIFF_GREY) {
+        sprintf(fname, "frame_%06lu.tiff", state->dngcount);
+    } else {
+        sprintf(fname, "frame_%06lu.dng", state->dngcount);
+    }
     fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd < 0) {
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
@@ -156,15 +164,20 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     const uint8_t exif_version[] = {'0', '2', '2', '0'};
     char fname[64];
     int fd;
+
     /* HACK! May not actually correlate to the current frame. */
     struct playback_region *region = state->region_head;
 
     /* The list of EXIF tags. */
+    time_t now = time(0);
+    char timestr[64];
+    struct tm timebuf;
     const struct tiff_tag exif[] = {
         TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
         TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
+        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
         TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
-        //TIFF_TAG_STRING(36868, ???),      /* DateTimeDigitized = YYYY:MM:DD HH:MM:SS */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
@@ -206,7 +219,6 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         /* TODO: AsShortNeutral */
         /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
-        //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
@@ -235,7 +247,6 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
-    int color;
     int flags = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     int ret;
 
@@ -260,19 +271,12 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
         return NULL;
     }
 
-    /* Read the color detection pin. */
+    /* Install the pad callback to generate DNG frames. */
 	pad = gst_element_get_static_pad(queue, "src");
-    color = ioport_open(state->iops, "lux1310-color", O_RDONLY);
-    if (color < 0) {
-	    gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_greyscale), state);
-    }
-    else if (gpio_read(color)) {
+    if (state->control & DISPLAY_CTL_COLOR_MODE) {
 	    gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_bayer), state);
-        close(color);
-    }
-    else {
+    } else {
 	    gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_greyscale), state);
-        close(color);
     }
 	gst_object_unref(pad);
 
@@ -331,11 +335,15 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     struct playback_region *region = state->region_head;
 
     /* The list of EXIF tags. */
+    time_t now = time(0);
+    char timestr[64];
+    struct tm timebuf;
     const struct tiff_tag exif[] = {
         TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
         TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
+        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
         TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
-        //TIFF_TAG_STRING(36868, ???),      /* DateTimeDigitized = YYYY:MM:DD HH:MM:SS */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
