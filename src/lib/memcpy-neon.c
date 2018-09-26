@@ -82,3 +82,23 @@ neon_be12_unpack(void *dst, void *src)
         "   vst2.16 {q2,q3}, [%[d]]     \n"
         : [d]"+r"(dst), [s]"+r"(src) : [pattern]"r"(0xf0) : "cc" );
 }
+
+void
+memcpy_le12_pack(void *dst, const void *src, size_t len)
+{
+    asm volatile (
+    	"memcpy_pack12bpp_loop:         \n"
+        /* Read pairs of first/second pixel pairs */
+        "   vld2.16 {q0,q1}, [%[s]]!    \n" /* q0 = first pixel, q1 = second pixel */
+        "   vshrn.u16 d4, q0, #4        \n" /* d4 = low 8-lsb of first pixel */
+        "   vshrn.u16 d6, q1, #8        \n" /* d6 = high 8-msb of second pixel */
+        /* Combine the split byte */
+        "   vshl.u16  q1, q1, #8        \n"
+        "   vsri.16   q0, q1, #4        \n"
+        "   vshrn.u16 d5, q0, #8        \n"
+        /* Write two pixels into three bytes */
+        "   vst3.8 {d4,d5,d6}, [%[d]]!  \n"
+        "   subs %[count],%[count], #32 \n"
+        "   bgt memcpy_pack12bpp_loop   \n"
+        : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(len) : [pattern]"r"(0x0f00) : "cc" );
+}
