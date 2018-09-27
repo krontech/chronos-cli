@@ -17,5 +17,5 @@ shift 1
 
 ${CFGDIR}/configure --host=arm-linux-gnueabi \
 	--prefix=${SYSROOT} SYSROOT=${SYSROOT} \
-	PKG_CONFIG_LIBDIR=${SYSROOT}/usr/lib/pkgconfig \
+	PKG_CONFIG_LIBDIR=${SYSROOT}/usr/lib/pkgconfig:${SYSROOT}/usr/lib/arm-linux-gnueabi/pkgconfig \
 	PKG_CONFIG_SYSROOT_DIR=${SYSROOT} "$@"

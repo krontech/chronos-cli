@@ -4,8 +4,8 @@ bin_PROGRAMS = cam-daemon cam-loader cam-json cam-listener
 bin_PROGRAMS += cam-regdump cam-recover cam-mock
 AM_CFLAGS = -I ${srcdir}/lib ${GLIB_CFLAGS}
 AM_CFLAGS += -Wno-deprecated-declarations
-AM_LDFLAGS =
-GLIB_LIBS=-lgmodule-2.0 -lgobject-2.0 -lgthread-2.0 -lglib-2.0
+AM_LDFLAGS = -pthread
+GLIB_LIBS=-lglib-2.0 -lgobject-2.0
 DBUS_LIBS=-l:libdbus-glib-1.so.2 -l:libdbus-1.so.3
 
 ## Build the pipeline and FPGA daemons only for ARM targets.
