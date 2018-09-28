@@ -172,6 +172,12 @@ write_frame(struct fpga *fpga, const char *filename, uint32_t addr,
     const uint16_t cfa_repeat[] = {2, 2};       /* 2x2 Bayer Pattern */
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
+    const struct tiff_srational cmatrix[9] = {
+        /* CIE XYZ to LUX1310 color space conversion matrix. */
+        {17716, 10000}, {-5404, 10000}, {-1674, 10000},
+        {-2845, 10000}, {12494, 10000}, {247,   10000},
+        {-2300, 10000}, {6236,  10000}, {6471,  10000}
+    };
 
     /* TIFF Baseline Tags */
     const struct tiff_tag tags[] = {
@@ -201,6 +207,8 @@ write_frame(struct fpga *fpga, const char *filename, uint32_t addr,
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
         TIFF_TAG_SHORT(50711, 1),                       /* CFALayout = square */
+        TIFF_TAG_VECTOR(50721, TIFF_TYPE_SRATIONAL, cmatrix, sizeof(cmatrix)/sizeof(struct tiff_srational)),
+        TIFF_TAG_SHORT(50778, 20),                      /* CalibrationIlluminant1 = D55 */
     };
     struct tiff_ifd image_ifd = {
         .tags = tags,
@@ -214,7 +222,7 @@ write_frame(struct fpga *fpga, const char *filename, uint32_t addr,
     }
 
     if (!is_color) {
-        image_ifd.count -= 5; /* Drop the last 5 tags for monochrome sensors. */
+        image_ifd.count -= 7; /* Drop the last 5 tags for monochrome sensors. */
     }
     tiff_build_header(tiffbuf, sizeof(tiffbuf), &image_ifd);
     if (write(fd, tiffbuf, sizeof(tiffbuf)) < 0) {

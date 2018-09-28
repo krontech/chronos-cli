@@ -110,23 +110,16 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),             /* Orientation = Zero/zero is Top Left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
-        TIFF_TAG_LONG(278, xres),           /* RowsPerStrip */
+        TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
-        TIFF_TAG_RATIONAL(282, xres, 1),    /* XResolution */
-        TIFF_TAG_RATIONAL(283, yres, 1),    /* YResolution */
         TIFF_TAG_SHORT(284, 1),             /* PlanarConfiguration = Chunky */
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
-        /* TODO: Software */
-        /* TODO: DateTIme */
         TIFF_TAG_SUBIFD(34665, &exif_ifd),              /* Exif IFD Pointer */
 
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
         TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
-        /* TODO: ColorMatrix1 */
-        /* TODO: AsShortNeutral */
-        /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
         //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
     };
@@ -162,6 +155,12 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
     const uint8_t exif_version[] = {'0', '2', '2', '0'};
+    const struct tiff_srational cmatrix[9] = {
+        /* CIE XYZ to LUX1310 color space conversion matrix. */
+        {17716, 10000}, {-5404, 10000}, {-1674, 10000},
+        {-2845, 10000}, {12494, 10000}, {247,   10000},
+        {-2300, 10000}, {6236,  10000}, {6471,  10000}
+    };
     char fname[64];
     int fd;
 
@@ -195,14 +194,10 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),             /* Orientation = Zero/zero is Top Left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
-        TIFF_TAG_LONG(278, xres),           /* RowsPerStrip */
+        TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
-        TIFF_TAG_RATIONAL(282, xres, 1),    /* XResolution */
-        TIFF_TAG_RATIONAL(283, yres, 1),    /* YResolution */
         TIFF_TAG_SHORT(284, 1),             /* PlanarConfiguration = Chunky */
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
-        /* TODO: Software */
-        /* TODO: DateTIme */
     
         /* TIFF-EP Tags */
         /* TODO: SubIFD for preview images */
@@ -215,10 +210,10 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
         TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
         TIFF_TAG_SHORT(50711, 1),                       /* CFALayout = square */
-        /* TODO: ColorMatrix1 */
-        /* TODO: AsShortNeutral */
-        /* TOOD: CalibrationIlluminant */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
+        TIFF_TAG_VECTOR(50721, TIFF_TYPE_SRATIONAL, cmatrix, sizeof(cmatrix)/sizeof(struct tiff_srational)),
+        TIFF_TAG_SHORT(50778, 20),                      /* CalibrationIlluminant1 = D55 */
+        /* TODO: AsShortNeutral for white balance information. */
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
@@ -361,15 +356,11 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),             /* Orientation = Zero/zero is Top Left */
         TIFF_TAG_SHORT(277, 3),             /* SamplesPerPixel */
-        TIFF_TAG_LONG(278, xres),           /* RowsPerStrip */
+        TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
-        TIFF_TAG_RATIONAL(282, xres, 1),    /* XResolution */
-        TIFF_TAG_RATIONAL(283, yres, 1),    /* YResolution */
         TIFF_TAG_SHORT(284, 1),             /* PlanarConfiguration = Chunky */
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
-        /* TODO: Software */
-        /* TODO: DateTIme */
-        TIFF_TAG_SUBIFD(34665, &exif_ifd),                  /* Exif IFD Pointer */
+        TIFF_TAG_SUBIFD(34665, &exif_ifd),  /* Exif IFD Pointer */
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
