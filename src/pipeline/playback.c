@@ -273,8 +273,8 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             break;
 
         case PIPELINE_MODE_DNG:
-        case PIPELINE_MODE_TIFF_GREY:
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
+        case PIPELINE_MODE_TIFF_GREY:
         case PIPELINE_MODE_RAW16:
         case PIPELINE_MODE_RAW12:
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;

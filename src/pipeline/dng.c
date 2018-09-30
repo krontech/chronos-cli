@@ -128,6 +128,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     /* Write the frame data. */
     state->dngcount++;
     if (state->mode == PIPELINE_MODE_TIFF_GREY) {
+        image_ifd.count--; /* Remove the WhiteLevel tag when saving greyscale TIFF. */
         sprintf(fname, "frame_%06lu.tiff", state->dngcount);
     } else {
         sprintf(fname, "frame_%06lu.dng", state->dngcount);
