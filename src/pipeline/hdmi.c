@@ -189,6 +189,7 @@ cam_hdmi_sink(struct pipeline_state *state)
     }
 
 	g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
+	g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
 	g_object_set(G_OBJECT(sink), "display-mode", omx_mode, NULL);
 	g_object_set(G_OBJECT(sink), "display-device", "HDMI", NULL);
 	g_object_set(G_OBJECT(ctrl), "display-mode", omx_mode, NULL);
