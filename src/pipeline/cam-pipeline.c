@@ -71,7 +71,6 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     GstPad *tpad;
     GstCaps *caps;
 
-    
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
     state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
@@ -357,7 +356,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 #if 0
             gchar  *debug;
             GError *error;
-
+            
             gst_message_parse_error (msg, &error, &debug);
 
             g_printerr ("Error: %s\n", error->message);
@@ -495,6 +494,8 @@ main(int argc, char * argv[])
 
         /* Pause playback while we get setup. */
         state->done = NULL;
+        state->next = state->args.mode;
+        memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
         playback_goto(state, PIPELINE_MODE_PAUSE);
 
@@ -504,7 +505,7 @@ main(int argc, char * argv[])
             memset(&state->args, 0, sizeof(state->args));
             if (!cam_blackref(state, &args)) {
                 /* Throw an EOF and revert to livedisplay. */
-                dbus_signal_eof(state);
+                dbus_signal_eof(state, state->error);
                 continue;
             }
         }
@@ -514,7 +515,7 @@ main(int argc, char * argv[])
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
                 /* Throw an EOF and revert to playback. */
-                dbus_signal_eof(state);
+                dbus_signal_eof(state, state->error);
                 continue;
             }
         }
@@ -522,6 +523,7 @@ main(int argc, char * argv[])
         else {
             memset(&state->args, 0, sizeof(state->args));
             if (!cam_pipeline(state, &args)) {
+                dbus_signal_eof(state, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
                 break;
             }
@@ -536,7 +538,7 @@ main(int argc, char * argv[])
         watchid = gst_bus_add_watch(bus, cam_bus_watch, state);
         gst_object_unref(bus);
 
-        playback_goto(state, args.mode);
+        playback_goto(state, state->next);
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         g_main_loop_run(state->mainloop);
 
@@ -544,7 +546,7 @@ main(int argc, char * argv[])
         if (state->done) {
             state->done(state, &args);
         }
-        dbus_signal_eof(state);
+        dbus_signal_eof(state, state->error);
         event = gst_event_new_eos();
         gst_element_send_event(state->pipeline, event);
         gst_element_set_state(state->pipeline, GST_STATE_PAUSED);

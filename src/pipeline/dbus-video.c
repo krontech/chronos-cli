@@ -41,16 +41,20 @@ static GHashTable *
 cam_dbus_video_status(struct pipeline_state *state)
 {
     GHashTable *dict = cam_dbus_dict_new();
+    int mode = state->mode;
     if (!dict) return NULL;
+    if (mode == PIPELINE_MODE_PAUSE) mode = state->next; /* Transition in progress. */
+
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
     cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY));
-    cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(state->mode));
+    cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(mode));
     cam_dbus_dict_add_uint(dict, "segment", 0);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
     cam_dbus_dict_add_uint(dict, "position", state->position);
-    if (PIPELINE_IS_SAVING(state->mode)) {
+    if (PIPELINE_IS_SAVING(mode)) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
         cam_dbus_dict_add_float(dict, "framerate", estrate);
+        cam_dbus_dict_add_string(dict, "filename", state->args.filename);
     } else {
         cam_dbus_dict_add_float(dict, "framerate", (double)state->playrate);
     }
@@ -423,8 +427,12 @@ dbus_signal_sof(struct pipeline_state *state)
 }
 
 void
-dbus_signal_eof(struct pipeline_state *state)
+dbus_signal_eof(struct pipeline_state *state, const char *err)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->eof_signalid, 0, cam_dbus_video_status(state));
+    GHashTable *status = cam_dbus_video_status(state);
+    if (err && strlen(err)) {
+        cam_dbus_dict_add_string(status, "error", err);
+    }
+    g_signal_emit(state->video, vclass->eof_signalid, 0, status);
 }

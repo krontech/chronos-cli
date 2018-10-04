@@ -103,6 +103,7 @@ struct pipeline_state {
     int                 fsync_fd;
     int                 write_fd;
     void *              write_buf;
+    char                error[80];
     
     /* Camera information */
     char                serial[CAMERA_SERIAL_LENGTH+1];
@@ -171,7 +172,7 @@ GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);
 void hdmi_hotplug_launch(struct pipeline_state *state);
 void dbus_service_launch(struct pipeline_state *state);
 void dbus_signal_sof(struct pipeline_state *state);
-void dbus_signal_eof(struct pipeline_state *state);
+void dbus_signal_eof(struct pipeline_state *state, const char *err);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);

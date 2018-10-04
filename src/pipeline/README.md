@@ -27,11 +27,15 @@ The `cam-pipeline` program will respond to the following POSIX signals:
  * `SIGHUP`: Reboot the video pipeline and update its configuration.
  * `SIGINT`: Terminate the pipeline and shut down gracefully.
  * `SIGUSR1`: Seek one frame forward when in playback mode.
- * `SIGUSR2`: Seek one frame backward when in playback mode.
+ * `SIGUSR2`: Seek to the first frame when in playback mode.
 
-`SIGUSR1` can also be sent as a POSIX.1b signal via sigqueue(), in which case
-the `sigval.si_int` parameter specifies the number of frames to seek when in
-playback mode.
+When sent as a POSIX.1b signal via sigqueue(), `SIGUSR1` is interpreted as a
+seek relative to the current frame. In this case, the `sigval.si_int` can be
+positive to seek forwards, or negative to seek backwards.
+
+When sent as a POSIX.1b signal via sigqueue(), `SIGUSR2` is interpreted as a
+seek to an abolute frame number. In this case, the `sigval.si_int` gives the
+desired frame number.
 
 The `cam-pipeline` program will create a named FIFO at `/tmp/cam-screencap.jpg`,
 and operates the write end of the FIFO. When this FIFO is opened, the pipeline
@@ -72,6 +76,8 @@ arguments, and the returned hash map will contain the following members.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.
 | `"framerate"`     | `float`   | The target playback rate when in playback mode, or estimated frame rate when in record mode.
+| `"error"`         | `string`  | A description of the error (only present when generated in response to an error).
+| `"filename"`      | `string`  | The name of the file being saved (only present if `"filesave"` is `true`).
 
 flush
 -----

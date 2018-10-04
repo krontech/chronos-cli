@@ -84,9 +84,21 @@ struct fpga_display {
     uint32_t manual_sync;
 };
 
+/* Color Correction and White Balance */
+struct fpga_color {
+    uint32_t ccm_red[3];
+    uint32_t __reserved0[1];
+    uint32_t ccm_green[3];
+    uint32_t ccm_blue[3];
+    uint32_t __reserved1[2];
+    uint32_t wbal_red;
+    uint32_t wbal_green;
+    uint32_t wbal_blue;
+};
+
 /* Video RAM readout */
 struct fpga_vram {
-    uint32_t identifier;
+    uint32_t identifier;    /* Should always read 0x0040 */
     uint32_t version;
     uint32_t subver;
     uint32_t control;
@@ -151,6 +163,33 @@ struct fpga_overlay {
     uint16_t logo[20480];
 };
 
+/* Recording Segment Data Entry */
+struct fpga_segment_entry {
+    uint32_t start;
+    uint32_t end;
+    uint32_t last;
+    uint32_t data;
+};
+
+/* Recording Segment Readout */
+struct fpga_segments {
+    uint32_t identifier;    /* Should always read 0x0040 */
+    uint32_t version;
+    uint32_t subver;
+    uint32_t control;
+    uint32_t status;
+    uint32_t __reserved0[3];
+    uint32_t blockno;
+    uint32_t __reserved1[504];
+    /* Aligned to offset 0x800 */
+    struct fpga_segment_entry data[128];
+};
+
+#define SEGMENT_CONTROL_RESET   (1 << 0)    /* Erase the segment data. */
+
+#define SEGMENT_DATA_PC         0xf0000000  /* Sequencer program counter */
+#define SEGMENT_DATA_BLOCKNO    0x00ffffff  /* Segment block number. */
+
 //Register definitions from control register verilog file (in 16 bit word addresses)
 #define SENSOR_CONTROL				0
 #define SENSOR_CLK_PHASE			2
@@ -212,19 +251,26 @@ struct fpga_overlay {
 #define DISPLAY_MANUAL_SYNC         0x228
 
 #define CCM_ADDR                    0x260
+
 #define CCM_11						0x260
 #define CCM_12						0x262
 #define CCM_13						0x264
+
 #define CCM_21						0x268
 #define CCM_22						0x26A
 #define CCM_23						0x26C
 #define CCM_31						0x26E
 #define CCM_32						0x270
 #define CCM_33						0x272
-#define WL_DYNDLY_0					0x274
-#define WL_DYNDLY_1					0x276
-#define WL_DYNDLY_2					0x278
-#define WL_DYNDLY_3					0x27A
+
+#define WBAL_RED                    0x278
+#define WBAL_GREEN                  0x27A
+#define WBAL_BLUE                   0x27C
+
+#define WL_DYNDLY_0					0x280
+#define WL_DYNDLY_1					0x282
+#define WL_DYNDLY_2					0x284
+#define WL_DYNDLY_3					0x286
 
 #define MMU_CONFIG                  0x290
 

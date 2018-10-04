@@ -248,33 +248,36 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     ret = mkdir(args->filename, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (ret < 0) {
-        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, strerror(errno));
+        strcpy(state->error, strerror(errno));
+        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
         return NULL;
     }
 
     state->write_fd = open(args->filename, O_RDONLY | O_DIRECTORY);
     if (state->write_fd < 0) {
-        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, strerror(errno));
+        strcpy(state->error, strerror(errno));
+        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
         return NULL;
     }
     state->dngcount = 0;
 
     /* Allocate our segment of the video pipeline. */
-    queue =		gst_element_factory_make("queue",		    "dng-queue");
-    sink =		gst_element_factory_make("fakesink",		"file-sink");
+    queue = gst_element_factory_make("queue",    "dng-queue");
+    sink =  gst_element_factory_make("fakesink", "file-sink");
     if (!queue || !sink) {
         close(state->write_fd);
+        strcpy(state->error, "DNG element allocation failure");
         return NULL;
     }
 
     /* Install the pad callback to generate DNG frames. */
-	pad = gst_element_get_static_pad(queue, "src");
+    pad = gst_element_get_static_pad(queue, "src");
     if (state->control & DISPLAY_CTL_COLOR_MODE) {
-	    gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_bayer), state);
+        gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_bayer), state);
     } else {
-	    gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_greyscale), state);
+        gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_greyscale), state);
     }
-	gst_object_unref(pad);
+    gst_object_unref(pad);
 
     state->done = cam_dng_done;
 
@@ -388,29 +391,31 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     ret = mkdir(args->filename, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (ret < 0) {
-        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, strerror(errno));
+        strcpy(state->error, strerror(errno));
+        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
         return NULL;
     }
 
     state->write_fd = open(args->filename, O_RDONLY | O_DIRECTORY);
     if (state->write_fd < 0) {
-        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, strerror(errno));
+        fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
         return NULL;
     }
     state->dngcount = 0;
 
     /* Allocate our segment of the video pipeline. */
-    queue =		gst_element_factory_make("queue",		    "dng-queue");
-    sink =		gst_element_factory_make("fakesink",		"file-sink");
+    queue = gst_element_factory_make("queue",    "dng-queue");
+    sink =  gst_element_factory_make("fakesink", "file-sink");
     if (!queue || !sink) {
         close(state->write_fd);
+        strcpy(state->error, "TIFF element allocation failure");
         return NULL;
     }
 
     /* Read the color detection pin. */
-	pad = gst_element_get_static_pad(queue, "src");
-	gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
-	gst_object_unref(pad);
+    pad = gst_element_get_static_pad(queue, "src");
+    gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
+    gst_object_unref(pad);
 
     state->done = cam_dng_done;
 

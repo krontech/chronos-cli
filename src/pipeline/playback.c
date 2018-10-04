@@ -104,40 +104,6 @@ playback_frame_advance(struct pipeline_state *state, int delta)
     state->fpga->display->manual_sync = 1;
 }
 
-/* Signal handler for the playback timer. */
-static void
-playback_signal(int signo, siginfo_t *info, void *ucontext)
-{
-    struct pipeline_state *state = cam_pipeline_state();
-    sigset_t sigset;
-
-    /* no-op unless we're in playback mode. */
-    if (state->mode != PIPELINE_MODE_PLAY) {
-        return;
-    }
-    playback_timer_rearm(state);
-    switch (signo) {
-        case SIGUSR1:
-            if (info->si_code == SI_QUEUE) {
-                playback_frame_advance(state, info->si_int);
-            } else {
-                playback_frame_advance(state, 1);
-            }
-            break;
-        case SIGUSR2:
-            playback_frame_advance(state, -1);
-            break;
-        default:
-            playback_frame_advance(state, state->playdelta);
-            break;
-    }
-    
-    /* Block delivery of our signal until the frame has been delivered. */
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGALRM);
-    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
-}
-
 /* Test if two regions overlap each other.  */
 static int
 playback_region_overlap(struct playback_region *a, struct playback_region *b)
@@ -217,8 +183,7 @@ playback_region_add(struct pipeline_state *state)
     return 0;
 }
 
-/* TODO: Possible race condition here since this is called from outside
- * the playback thread. */
+/* Flush recording segment data. */
 void
 playback_region_flush(struct pipeline_state *state)
 {
@@ -227,6 +192,50 @@ playback_region_flush(struct pipeline_state *state)
     }
     state->totalframes = 0;
     playback_set(state, 0, LIVE_MAX_FRAMERATE, 0);
+}
+
+/* Signal handler for the playback timer. */
+static void
+playback_signal(int signo, siginfo_t *info, void *ucontext)
+{
+    struct pipeline_state *state = cam_pipeline_state();
+    sigset_t sigset;
+
+    /* no-op unless we're in playback mode. */
+    if (state->mode != PIPELINE_MODE_PLAY) {
+        return;
+    }
+    playback_timer_rearm(state);
+    switch (signo) {
+        case SIGUSR1:
+            if (info->si_code == SI_QUEUE) {
+                playback_frame_advance(state, info->si_int);
+            } else {
+                playback_frame_advance(state, 1);
+            }
+            break;
+
+        case SIGUSR2:
+            if (info->si_code != SI_QUEUE) {
+                state->position = 0;
+            } else if (info->si_int >= 0) {
+                state->position = info->si_int;
+            } else {
+                /* TODO: Handle special commands via negative numbers. */
+                state->position = 0;
+            }
+            playback_frame_advance(state, 0);
+            break;
+
+        default:
+            playback_frame_advance(state, state->playdelta);
+            break;
+    }
+    
+    /* Block delivery of our signal until the frame has been delivered. */
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGALRM);
+    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
 }
 
 /* This would typically be called from outside the playback thread to change operation. */
