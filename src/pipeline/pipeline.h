@@ -154,6 +154,7 @@ struct pipeline_state {
 };
 
 struct pipeline_state *cam_pipeline_state(void);
+void cam_pipeline_restart(struct pipeline_state *state);
 
 /* Pipeline for taking black reference images. */
 GstElement *cam_blackref(struct pipeline_state *state, struct pipeline_args *args);

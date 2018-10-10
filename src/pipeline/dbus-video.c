@@ -119,6 +119,7 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
     } else {
         playback_set(state, position, timer_rate, delta);
     }
+    state->args.mode = PIPELINE_MODE_PLAY;
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -180,6 +181,7 @@ static gboolean
 cam_video_livedisplay(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
+    state->args.mode = PIPELINE_MODE_LIVE;
     playback_goto(state, PIPELINE_MODE_LIVE);
     *data = cam_dbus_video_status(state);
     return (data != NULL);
@@ -272,7 +274,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     *data = cam_dbus_dict_new();
 
     /* Restart the video pipeline to enter recording mode. */
-    g_main_loop_quit(state->mainloop);
+    cam_pipeline_restart(state);
     return 1;
 }
 
@@ -280,7 +282,7 @@ static gboolean
 cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    g_main_loop_quit(state->mainloop);
+    cam_pipeline_restart(state);
 }
 
 static gboolean

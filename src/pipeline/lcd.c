@@ -122,8 +122,8 @@ cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *outp
     voff = (output->yoff + (output->vres - vout) / 2) & ~0x1;
 
     /* Set the new configuration */
-	g_object_set(G_OBJECT(sink), "top", (guint)voff, NULL);
-	g_object_set(G_OBJECT(sink), "left", (guint)hoff, NULL);
+    g_object_set(G_OBJECT(sink), "top", (guint)voff, NULL);
+    g_object_set(G_OBJECT(sink), "left", (guint)hoff, NULL);
     caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "width", G_TYPE_INT, hout,
                 "height", G_TYPE_INT, vout,
@@ -132,5 +132,5 @@ cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *outp
     gst_caps_unref(caps);
 
     /* Pause and restart the pipeline */
-    g_main_loop_quit(state->mainloop);
+    cam_pipeline_restart(state);
 }

@@ -29,11 +29,6 @@
 #include "i2c.h"
 #include "pipeline.h"
 
-/* How do we want to do scaling? */
-#define CAM_SCALE_FULL      0
-#define CAM_SCALE_ASPECT    1
-#define CAM_SCALE_CROP      2
-
 #define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
 
 /* Signal handlering */
@@ -46,10 +41,16 @@ cam_pipeline_state(void)
     return &cam_global_state;
 }
 
+void
+cam_pipeline_restart(struct pipeline_state *state)
+{
+    g_main_loop_quit(state->mainloop);
+}
+
 static void handle_sigint(int sig)
 {
     catch_sigint = 1;
-    g_main_loop_quit(cam_pipeline_state()->mainloop);
+    cam_pipeline_restart(cam_pipeline_state());
 }
 
 static void
@@ -57,7 +58,7 @@ handle_sighup(int sig)
 {
     struct pipeline_state *state = cam_pipeline_state();
     if (!PIPELINE_IS_SAVING(state->mode)) {
-        g_main_loop_quit(state->mainloop);
+        cam_pipeline_restart(state);
     }
 }
 
@@ -356,7 +357,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 #if 0
             gchar  *debug;
             GError *error;
-            
+
             gst_message_parse_error (msg, &error, &debug);
 
             g_printerr ("Error: %s\n", error->message);
@@ -370,6 +371,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
         case GST_MESSAGE_ASYNC_DONE:
             dbus_signal_sof(state);
             break;
+
         default:
             break;
     }
@@ -521,7 +523,6 @@ main(int argc, char * argv[])
         }
         /* Live display and playback modes should only return fatal errors. */
         else {
-            memset(&state->args, 0, sizeof(state->args));
             if (!cam_pipeline(state, &args)) {
                 dbus_signal_eof(state, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
