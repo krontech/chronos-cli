@@ -10,6 +10,7 @@ DBUS_LIBS=-l:libdbus-glib-1.so.2 -l:libdbus-1.so.3
 
 ## Build the pipeline and FPGA daemons only for ARM targets.
 if CAMBUILD
+AM_CFLAGS += -mfloat-abi=softfp -mcpu=cortex-a8 -mfpu=neon
 bin_PROGRAMS += cam-daemon
 bin_PROGRAMS += cam-pipeline
 bin_PROGRAMS += cam-upower
@@ -20,7 +21,6 @@ if SYSROOT
 AM_CFLAGS += -U_FORTIFY_SOURCE
 AM_CFLAGS += --sysroot=${SYSROOT}
 AM_LDFLAGS += --sysroot=${SYSROOT}
-noinst_LIBRARIES += libcam-neon.a
 endif
 
 ## Bundle the common FPGA and image sensor tools into a library.
@@ -32,6 +32,7 @@ libcamera_a_SOURCES += lib/i2c-eeprom.c
 libcamera_a_SOURCES += lib/i2c-spd.c
 libcamera_a_SOURCES += lib/lux1310-sensor.c
 libcamera_a_SOURCES += lib/lux1310-wavetab.c
+libcamera_a_SOURCES += lib/memcpy-neon.c
 libcamera_a_SOURCES += lib/tiff.c
 libcamera_a_SOURCES += lib/sensor.c
 ## Header files too.
@@ -45,10 +46,6 @@ libcamera_a_CFLAGS = ${AM_CFLAGS}
 ## ARM-Only sources
 if SYSROOT
 libcamera_a_SOURCES += lib/glibc-hacks.c
-
-## NEON acceleration library.
-libcam_neon_a_SOURCES = lib/memcpy-neon.c
-libcam_neon_a_CFLAGS = -mfloat-abi=softfp -mcpu=cortex-a8 -mfpu=neon
 endif
 
 ## FPGA and Image Sensor register dump tool
@@ -58,7 +55,7 @@ cam_regdump_LDFLAGS = ${AM_LDFLAGS}
 cam_regdump_SOURCES = cam-regdump.c
 
 ## FPGA Video memory recovery.
-cam_recover_LDADD = libcamera.a libcam-neon.a
+cam_recover_LDADD = libcamera.a
 cam_recover_CFLAGS = ${AM_CFLAGS}
 cam_recover_LDFLAGS = ${AM_LDFLAGS}
 cam_recover_SOURCES = cam-recover.c
@@ -111,10 +108,10 @@ cam_loader_LDFLAGS = ${AM_LDFLAGS}
 cam_loader_SOURCES = cam-loader.c
 
 ## GStreamer Daemon for running the video system.
-cam_pipeline_LDADD = libcamera.a libcam-neon.a ${DBUS_LIBS} ${GLIB_LIBS}
+cam_pipeline_LDADD = libcamera.a
+cam_pipeline_LDADD += ${DBUS_LIBS} ${GLIB_LIBS} ${GST_LIBS}
 cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
-cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -L ${prefix}/usr/lib/gstreamer-0.10 -pthread
-cam_pipeline_LDADD += -lgstbase-0.10 -lgstreamer-0.10
+cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -pthread
 cam_pipeline_LDADD += -l:libjpeg.so.8 -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
 cam_pipeline_SOURCES += pipeline/dbus-video.c
@@ -122,6 +119,8 @@ cam_pipeline_SOURCES += pipeline/blackref.c
 cam_pipeline_SOURCES += pipeline/dng.c
 cam_pipeline_SOURCES += pipeline/h264.c
 cam_pipeline_SOURCES += pipeline/hdmi.c
+cam_pipeline_SOURCES += pipeline/gstneon.c
+cam_pipeline_SOURCES += pipeline/gstneon.h
 cam_pipeline_SOURCES += pipeline/lcd.c
 cam_pipeline_SOURCES += pipeline/overlay.c
 cam_pipeline_SOURCES += pipeline/playback.c
@@ -129,6 +128,7 @@ cam_pipeline_SOURCES += pipeline/raw.c
 cam_pipeline_SOURCES += pipeline/screencap.c
 cam_pipeline_SOURCES += pipeline/pipeline.h
 
+## Power control daemon.
 cam_upower_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_upower_LDFLAGS = ${AM_LDFLAGS}
 cam_upower_SOURCES = upower/cam-upower.c

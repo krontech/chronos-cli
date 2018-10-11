@@ -16,9 +16,26 @@ AS_CASE([$host],
 	[XCOMPILE="host"])
 AM_CONDITIONAL(CAMBUILD, [test "$XCOMPILE" = "camera"])
 
+GST_REQUIRED=0.10.32
+
 PKG_CHECK_MODULES(GLIB, [glib-2.0])
 PKG_CHECK_MODULES(DBUS, [dbus-glib-1])
-PKG_CHECK_MODULES(GST, [gstreamer-0.10])
+PKG_CHECK_MODULES(GST, [
+  gstreamer-0.10 >= $GST_REQUIRED
+  gstreamer-base-0.10 >= $GST_REQUIRED
+  gstreamer-controller-0.10 >= $GST_REQUIRED
+], [
+  AC_SUBST(GST_CFLAGS)
+  AC_SUBST(GST_LIBS)
+], [
+  AC_MSG_ERROR([
+      You need to install or upgrade the GStreamer development
+      packages on your system. On debian-based systems these are
+      libgstreamer0.10-dev and libgstreamer-plugins-base0.10-dev.
+      on RPM-based systems gstreamer0.10-devel, libgstreamer0.10-devel
+      or similar. The minimum version required is $GST_REQUIRED.
+  ])
+])
 
 AC_SYS_LARGEFILE
 

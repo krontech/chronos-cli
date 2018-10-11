@@ -24,10 +24,14 @@
 #include <sys/types.h>
 #include <sys/signalfd.h>
 #include <gst/gst.h>
+#include <gst/controller/gstcontroller.h>
 
 #include "fpga.h"
 #include "i2c.h"
 #include "pipeline.h"
+
+/* Private GStreamer elements. */
+#include "gstneon.h"
 
 #define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
 
@@ -134,6 +138,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
     }
+
     return state->pipeline;
 } /* cam_pipeline */
 
@@ -442,6 +447,10 @@ main(int argc, char * argv[])
 
     /* Initialisation */
     gst_init(&argc, &argv);
+    gst_controller_init(NULL, NULL);
+    if (!gst_element_register(NULL, "neon", GST_RANK_NONE, GST_TYPE_NEON)) {
+        fprintf(stderr, "Failed to register Gstreamer NEON acceleration element.\n");
+    }
     state->mainloop = g_main_loop_new(NULL, FALSE);
     state->eos = gst_event_new_eos();
     state->fpga = fpga_open();
