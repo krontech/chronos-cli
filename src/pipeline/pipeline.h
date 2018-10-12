@@ -97,6 +97,7 @@ struct pipeline_state {
     GMainLoop           *mainloop;
     GstElement          *pipeline;
     GstElement          *source;
+    GstEvent            *eos;
     struct CamVideo     *video;
     struct fpga         *fpga;
     const struct ioport *iops;

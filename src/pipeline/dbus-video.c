@@ -283,6 +283,8 @@ cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
     cam_pipeline_restart(state);
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
 }
 
 static gboolean

@@ -44,10 +44,12 @@ cam_pipeline_state(void)
 void
 cam_pipeline_restart(struct pipeline_state *state)
 {
-    g_main_loop_quit(state->mainloop);
+    gst_event_ref(state->eos);
+    gst_element_send_event(state->pipeline, state->eos);
 }
 
-static void handle_sigint(int sig)
+static void
+handle_sigint(int sig)
 {
     catch_sigint = 1;
     cam_pipeline_restart(cam_pipeline_state());
@@ -451,6 +453,7 @@ main(int argc, char * argv[])
     /* Initialisation */
     gst_init(&argc, &argv);
     state->mainloop = g_main_loop_new(NULL, FALSE);
+    state->eos = gst_event_new_eos();
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
     state->write_fd = -1;
@@ -548,8 +551,6 @@ main(int argc, char * argv[])
             state->done(state, &args);
         }
         dbus_signal_eof(state, state->error);
-        event = gst_event_new_eos();
-        gst_element_send_event(state->pipeline, event);
         gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
         for (i = 0; i < 1000; i++) {
             if (!g_main_context_iteration (NULL, FALSE)) break;
@@ -568,12 +569,14 @@ main(int argc, char * argv[])
             close(state->write_fd);
             state->write_fd = -1;
         }
-
+    
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");
     } while(catch_sigint == 0);
 
     unlink(SCREENCAP_PATH);
+    g_main_loop_unref(state->mainloop);
+    gst_event_unref(state->eos);
     fpga_close(state->fpga);
     return 0;
 } /* main */
