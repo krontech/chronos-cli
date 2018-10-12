@@ -335,46 +335,36 @@ static gboolean
 cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 {
     struct pipeline_state *state = (struct pipeline_state *)data;
-
-    if (GST_MESSAGE_TYPE(msg) == GST_MESSAGE_STATE_CHANGED) {
-        GstState newstate;
-        gst_message_parse_state_changed(msg, NULL, &newstate, NULL);
-        if (!strcmp(GST_OBJECT_NAME(msg->src), "pipeline")) {
-            fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name (newstate));
-        }
-    }
-    else {
-        fprintf(stderr, "GST message received: %s\n", GST_MESSAGE_TYPE_NAME(msg));
-    }
+    GstState newstate;
+    GError *error;
 
     switch (GST_MESSAGE_TYPE (msg)) {
+        case GST_MESSAGE_STATE_CHANGED:
+            gst_message_parse_state_changed(msg, NULL, &newstate, NULL);
+            if (msg->src != GST_OBJECT_CAST(state->pipeline)) {
+                break;
+            }
+            if (newstate == GST_STATE_PLAYING) {
+                dbus_signal_sof(state);
+            }
+            fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name (newstate));
+            break;
+
         case GST_MESSAGE_EOS:
             g_main_loop_quit(state->mainloop);
             break;
 
         case GST_MESSAGE_ERROR:
+            gst_message_parse_error(msg, &error, NULL);
+            fprintf(stderr, "GST error received from %s: %s\n", GST_OBJECT_NAME(msg->src), error->message);
+            strncpy(state->error, error->message, sizeof(state->error));
+            state->error[sizeof(state->error)-1] = '\0';
+            g_error_free(error);
             g_main_loop_quit(state->mainloop);
             break;
 
-#if 0
-            gchar  *debug;
-            GError *error;
-
-            gst_message_parse_error (msg, &error, &debug);
-
-            g_printerr ("Error: %s\n", error->message);
-            gstDia->error = true;
-            if(gstDia->errorCallback)
-                (*gstDia->errorCallback)(gstDia->errorCallbackArg, error->message);
-            g_error_free (error);
-            break;
-#endif
-
-        case GST_MESSAGE_ASYNC_DONE:
-            dbus_signal_sof(state);
-            break;
-
         default:
+            fprintf(stderr, "GST message received: %s\n", GST_MESSAGE_TYPE_NAME(msg));
             break;
     }
 } /* cam_bus_watch */
