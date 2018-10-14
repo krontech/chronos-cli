@@ -156,6 +156,9 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
     const uint8_t exif_version[] = {'0', '2', '2', '0'};
+    const struct tiff_rational wbneutral[3] = {
+        {4096, state->fpga->reg[WBAL_RED]}, {4096, state->fpga->reg[WBAL_GREEN]}, {4096, state->fpga->reg[WBAL_BLUE]}
+    };
     const struct tiff_srational cmatrix[9] = {
         /* CIE XYZ to LUX1310 color space conversion matrix. */
         {17716, 10000}, {-5404, 10000}, {-1674, 10000},
@@ -213,6 +216,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(50711, 1),                       /* CFALayout = square */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
         TIFF_TAG_VECTOR(50721, TIFF_TYPE_SRATIONAL, cmatrix, sizeof(cmatrix)/sizeof(struct tiff_srational)),
+        TIFF_TAG_VECTOR(50728, TIFF_TYPE_RATIONAL, wbneutral, sizeof(wbneutral)/sizeof(struct tiff_rational)),
         TIFF_TAG_SHORT(50778, 20),                      /* CalibrationIlluminant1 = D55 */
         /* TODO: AsShortNeutral for white balance information. */
     };
