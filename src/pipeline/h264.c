@@ -70,7 +70,7 @@ enum
 GstPad *
 cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
-    GstElement *encoder, *queue, *parser, *mux, *sink;
+    GstElement *encoder, *queue, *neon, *parser, *mux, *sink;
     unsigned int minrate = (state->hres * state->vres * args->framerate / 4); /* Set a minimum quality of 0.25 bpp. */
     int flags = O_RDWR | O_CREAT | O_TRUNC;
 
@@ -79,19 +79,20 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 #endif
 
     /* Open the file for writing. */
-	state->write_fd = open(args->filename, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-	if (state->write_fd < 0) {
+    state->write_fd = open(args->filename, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (state->write_fd < 0) {
         fprintf(stderr, "Unable to open %s for writing (%s)\n", args->filename, strerror(errno));
         return NULL;
-	}
+    }
 
     /* Allocate our segment of the video pipeline. */
-    encoder =	gst_element_factory_make("omx_h264enc",	    "h264-encoder");
-    queue =		gst_element_factory_make("queue",		    "h264-queue");
-    parser =	gst_element_factory_make("rr_h264parser",   "h264-parser");
-    mux =		gst_element_factory_make("mp4mux",			"mp4-mux");
-    sink =		gst_element_factory_make("fdsink",			"file-sink");
-    if (!encoder || !queue || !parser || !mux || !sink) {
+    encoder = gst_element_factory_make("omx_h264enc", "h264-encoder");
+    queue =   gst_element_factory_make("queue",       "h264-queue");
+    neon =    gst_element_factory_make("neon",        "h264-neon");
+    parser =  gst_element_factory_make("h264parse",   "h264-parser");
+    mux =     gst_element_factory_make("mp4mux",      "mp4-mux");
+    sink =    gst_element_factory_make("fdsink",      "file-sink");
+    if (!encoder || !queue || !neon || !parser || !mux || !sink) {
         close(state->write_fd);
         return NULL;
     }
@@ -110,7 +111,9 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(encoder), "framerate", (guint)args->framerate, NULL);
 
     /* Configure the H.264 Parser. */
-	g_object_set(G_OBJECT(parser), "singleNalu", (gboolean)TRUE, NULL);
+    g_object_set(G_OBJECT(parser), "split-packetized", (gboolean)FALSE, NULL);
+    g_object_set(G_OBJECT(parser), "access-unit", (gboolean)TRUE, NULL);
+    g_object_set(G_OBJECT(parser), "output-format", (guint)0, NULL);
 
     /* Configure the MPEG-4 Multiplexer */
     g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
@@ -119,7 +122,7 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(sink), "fd", (gint)state->write_fd, NULL);
 
     /* Return the first element of our segment to link with */
-    gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, parser, mux, sink, NULL);
-    gst_element_link_many(encoder, queue, parser, mux, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, neon, parser, mux, sink, NULL);
+    gst_element_link_many(encoder, queue, neon, parser, mux, sink, NULL);
     return gst_element_get_static_pad(encoder, "sink");
 }

@@ -152,8 +152,8 @@ buffer_drop_phantom(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
     struct pipeline_state *state = cbdata;
     if (state->phantom) {
+        GST_BUFFER_FLAG_SET(buffer, GST_BUFFER_FLAG_PREROLL);
         state->phantom--;
-        return FALSE;
     }
     return TRUE;
 } /* buffer_drop_phantom */
@@ -183,14 +183,8 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
      * these phantom frames when starting the recording.
      * 
      * TODO: Is there a way to check for these things before starting?
-     * BUG: The mp4mux element appears corrupt the mp4 metadata when the first frame
-     *      is dropped, so we only do the phantom dropping for raw modes.
      */
-    if (args->mode != PIPELINE_MODE_H264) {
-        state->phantom = 1;
-    } else {
-        state->phantom = 0;
-    }
+    state->phantom = 1;
 
     /* Configure elements. */
     g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
@@ -342,6 +336,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
     struct pipeline_state *state = (struct pipeline_state *)data;
     GstState newstate;
     GError *error;
+    gchar *debug;
 
     switch (GST_MESSAGE_TYPE (msg)) {
         case GST_MESSAGE_STATE_CHANGED:
@@ -360,8 +355,12 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
             break;
 
         case GST_MESSAGE_ERROR:
-            gst_message_parse_error(msg, &error, NULL);
+            gst_message_parse_error(msg, &error, &debug);
             fprintf(stderr, "GST error received from %s: %s\n", GST_OBJECT_NAME(msg->src), error->message);
+            if (debug) {
+                fprintf(stderr, "GST debug info: %s\n", debug);
+                g_free(debug);
+            }
             strncpy(state->error, error->message, sizeof(state->error));
             state->error[sizeof(state->error)-1] = '\0';
             g_error_free(error);
