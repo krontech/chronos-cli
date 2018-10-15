@@ -31,6 +31,10 @@
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
 
+#define PIPELINE_MAX_HRES   1920
+#define PIPELINE_MAX_VRES   1080
+#define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES * 4)
+
 struct CamVideo;
 
 /* Playback regions are stored as a double-linked list. */
@@ -103,7 +107,7 @@ struct pipeline_state {
     const struct ioport *iops;
     int                 fsync_fd;
     int                 write_fd;
-    void *              write_buf;
+    void *              scratchpad;
     char                error[80];
     
     /* Camera information */

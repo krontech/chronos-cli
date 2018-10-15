@@ -22,7 +22,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/types.h>
-#include <sys/signalfd.h>
+#include <sys/mman.h>
 #include <gst/gst.h>
 #include <gst/controller/gstcontroller.h>
 
@@ -460,6 +460,14 @@ main(int argc, char * argv[])
         return -1;
     }
 
+    /* Allocate a scratchpad for frame operations. */
+    state->scratchpad = mmap(NULL, PIPELINE_SCRATCHPAD_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (state->scratchpad == MAP_FAILED) {
+        fprintf(stderr, "Failed to allocate scratch pad: %s\n", strerror(errno));
+        fpga_close(state->fpga);
+        return -1;
+    }
+
     /* Attempt to get the camera serial number. */
     fd = open(ioport_find_by_name(state->iops, "eeprom-i2c"), O_RDWR);
     if (fd >= 0) {
@@ -573,6 +581,7 @@ main(int argc, char * argv[])
     } while(catch_sigint == 0);
 
     unlink(SCREENCAP_PATH);
+    munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);
     g_main_loop_unref(state->mainloop);
     gst_event_unref(state->eos);
     fpga_close(state->fpga);

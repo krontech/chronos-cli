@@ -23,8 +23,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <dirent.h>
-#include <sys/uio.h>
-#include <sys/mman.h>
 #include <gst/gst.h>
 
 #include "pipeline.h"
@@ -34,38 +32,6 @@
 /* Typical kernel page size. */
 #define KPAGE_SIZE          4096
 #define TIFF_HDR_SIZE       KPAGE_SIZE
-
-/* Write a DNG file without compression. */
-void
-dng_write(int fd, const struct tiff_ifd *ifd, size_t hdrsize, GstBuffer *buffer)
-{
-    int size = GST_BUFFER_SIZE(buffer);
-    const uint8_t *data = GST_BUFFER_DATA(buffer);
-    size_t workmemsz = (hdrsize > KPAGE_SIZE) ? hdrsize : KPAGE_SIZE;
-
-    /* Allocate working memory. */
-    uint8_t *kpage = mmap(NULL, workmemsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (kpage == MAP_FAILED) {
-        fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
-        return;
-    }
-
-    /* Build and write the TIFF IFD */
-    write(fd, tiff_build_header(kpage, hdrsize, ifd), hdrsize);
-
-    /* Fast-memcpy the pixel data into a temp buffer and then write. */
-    while (size > KPAGE_SIZE) {
-        memcpy_neon(kpage, data, KPAGE_SIZE);
-        write(fd, kpage, KPAGE_SIZE);
-        data += KPAGE_SIZE;
-        size -= KPAGE_SIZE;
-    }
-    if (size) {
-        memcpy_neon(kpage, data, size);
-        write(fd, kpage, size);
-    }
-    munmap(kpage, workmemsz);
-} /* dng_write */
 
 static gboolean
 dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
@@ -125,7 +91,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
-    /* Write the frame data. */
+    /* Create the next file in the image sequence. */
     state->dngcount++;
     if (state->mode == PIPELINE_MODE_TIFF_GREY) {
         image_ifd.count--; /* Remove the WhiteLevel tag when saving greyscale TIFF. */
@@ -138,7 +104,11 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    dng_write(fd, &image_ifd, TIFF_HDR_SIZE, buf);
+
+    /* Write the header and frame data. */
+    tiff_build_header(state->scratchpad, TIFF_HDR_SIZE, &image_ifd);
+    memcpy_neon((unsigned char *)state->scratchpad + TIFF_HDR_SIZE, GST_BUFFER_DATA(buf), GST_BUFFER_SIZE(buf));
+    write(fd, state->scratchpad, GST_BUFFER_SIZE(buf) + TIFF_HDR_SIZE);
     close(fd);
     return TRUE;
 } /* dng_probe_grayscale */
@@ -222,7 +192,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
-    /* Write the frame data. */
+    /* Create the next file in the image sequence. */
     state->dngcount++;
     sprintf(fname, "frame_%06lu.dng", state->dngcount);
     fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -230,7 +200,11 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    dng_write(fd, &image_ifd, TIFF_HDR_SIZE, buf);
+
+    /* Write the header and frame data. */
+    tiff_build_header(state->scratchpad, TIFF_HDR_SIZE, &image_ifd);
+    memcpy_neon((unsigned char *)state->scratchpad + TIFF_HDR_SIZE, GST_BUFFER_DATA(buf), GST_BUFFER_SIZE(buf));
+    write(fd, state->scratchpad, GST_BUFFER_SIZE(buf) + TIFF_HDR_SIZE);
     close(fd);
     return TRUE;
 } /* dng_probe_bayer */
@@ -290,38 +264,6 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
     return gst_element_get_static_pad(queue, "sink");
 } /* cam_dng_sink */
 
-/* Write a TIFF file without compression. */
-static void
-tiff_bgr_write(int fd, const struct tiff_ifd *ifd, size_t hdrsize, GstBuffer *buffer)
-{
-    int size = GST_BUFFER_SIZE(buffer);
-    const uint8_t *data = GST_BUFFER_DATA(buffer);
-    size_t workmemsz = (hdrsize > 3*KPAGE_SIZE) ? hdrsize : 3*KPAGE_SIZE;
-
-    /* Allocate working memory. */
-    uint8_t *kpage = mmap(NULL, workmemsz, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (kpage == MAP_FAILED) {
-        fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
-        return;
-    }
-
-    /* Build and write the TIFF IFD */
-    write(fd, tiff_build_header(kpage, hdrsize, ifd), hdrsize);
-
-    /* Reorder and write the pixel data. */
-    while (size > (3 * KPAGE_SIZE)) {
-        memcpy_bgr2rgb(kpage, data, 3 * KPAGE_SIZE);
-        write(fd, kpage, 3 * KPAGE_SIZE);
-        data += (3 * KPAGE_SIZE);
-        size -= (3 * KPAGE_SIZE);
-    }
-    if (size) {
-        memcpy_bgr2rgb(kpage, data, size);
-        write(fd, kpage, size);
-    }
-    munmap(kpage, workmemsz);
-} /* tiff_bgr_write */
-
 static gboolean
 tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
 {
@@ -372,7 +314,7 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
-    /* Write the frame data. */
+    /* Create the next file in the image sequence. */
     state->dngcount++;
     sprintf(fname, "frame_%06lu.tiff", state->dngcount);
     fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
@@ -380,7 +322,11 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         fprintf(stderr, "Failed to create TIFF frame (%s)\n", strerror(errno));
         return TRUE;
     }
-    tiff_bgr_write(fd, &image_ifd, TIFF_HDR_SIZE, buf);
+
+    /* Write the header and frame data. */
+    tiff_build_header(state->scratchpad, TIFF_HDR_SIZE, &image_ifd);
+    memcpy_bgr2rgb((unsigned char *)state->scratchpad + TIFF_HDR_SIZE, GST_BUFFER_DATA(buf), GST_BUFFER_SIZE(buf));
+    write(fd, state->scratchpad, GST_BUFFER_SIZE(buf) + TIFF_HDR_SIZE);
     close(fd);
     return TRUE;
 } /* tiff_probe_rgb */

@@ -67,8 +67,7 @@ blackref_probe(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
         state->phantom--;
         return FALSE;
     }
-    memcpy_sum16(state->write_buf, GST_BUFFER_DATA(buffer), size);
-    //debug_log16(state->write_buf);
+    memcpy_sum16(state->scratchpad, GST_BUFFER_DATA(buffer), size);
     return TRUE;
 }
 
@@ -77,11 +76,10 @@ cam_blackref_done(struct pipeline_state *state, const struct pipeline_args *args
 {
     int fd = open(args->filename, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd >= 0) {
-        neon_div16(state->write_buf, state->hres * state->vres * 2);
-        write(fd, state->write_buf, state->hres * state->vres * 2);
+        neon_div16(state->scratchpad, state->hres * state->vres * 2);
+        write(fd, state->scratchpad, state->hres * state->vres * 2);
         close(fd);
     }
-    free(state->write_buf);
 }
 
 /* Launch a gstreamer pipeline to take a black reference image. */
@@ -97,11 +95,6 @@ cam_blackref(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Open the file for writing. */
     state->phantom = 1;
-    state->write_buf = malloc(size);
-    if (!state->write_buf) {
-        fprintf(stderr, "failed to allocate memory for reference image: %s\n", strerror(errno));
-        return NULL;
-    }
 
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
@@ -109,7 +102,6 @@ cam_blackref(struct pipeline_state *state, struct pipeline_args *args)
     queue           = gst_element_factory_make("queue",         "ref-queue");
     sink            = gst_element_factory_make("fakesink",      "file-sink");
     if (!state->pipeline || !state->source || !queue || !sink) {
-        free(state->write_buf);
         return NULL;
     }
     gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, sink, NULL);
@@ -132,7 +124,6 @@ cam_blackref(struct pipeline_state *state, struct pipeline_args *args)
                 NULL);
     ret = gst_element_link_filtered(state->source, queue, caps);
     if (!ret) {
-        free(state->write_buf);
         gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }

@@ -32,30 +32,8 @@ static gboolean
 raw12_probe(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
     struct pipeline_state *state = cbdata;
-    const uint8_t *data = GST_BUFFER_DATA(buffer);
-    int size = GST_BUFFER_SIZE(buffer);
-
-    /* Allocate working memory. */
-    uint8_t *kpage = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (kpage == MAP_FAILED) {
-        fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
-        return TRUE;
-    }
-
-    /* Use NEON to copy into the working buffer, and then write to disk. */
-    while (size > 4096) {
-        memcpy_le12_pack(kpage, data, 4096);
-        write(state->write_fd, kpage, 3072);
-        data += 4096;
-        size -= 4096;
-    }
-    if (size) {
-        memcpy_le12_pack(kpage, data, size);
-        write(state->write_fd, kpage, (size * 3) / 4);
-    }
-
-    /* Cleanup */
-    munmap(kpage, 4096);
+    memcpy_le12_pack(state->scratchpad, GST_BUFFER_DATA(buffer), GST_BUFFER_SIZE(buffer));
+    write(state->write_fd, state->scratchpad, (GST_BUFFER_SIZE(buffer) * 3) / 4);
     return TRUE;
 }
 
@@ -63,30 +41,8 @@ static gboolean
 raw16_probe(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
     struct pipeline_state *state = cbdata;
-    const uint8_t *data = GST_BUFFER_DATA(buffer);
-    int size = GST_BUFFER_SIZE(buffer);
-
-    /* Allocate working memory. */
-    uint8_t *kpage = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (kpage == MAP_FAILED) {
-        fprintf(stderr, "mmap() failed: %s\n", strerror(errno));
-        return TRUE;
-    }
-
-    /* Use NEON to copy into the working buffer, and then write to disk. */
-    while (size > 4096) {
-        memcpy_neon(kpage, data, 4096);
-        write(state->write_fd, kpage, 4096);
-        data += 4096;
-        size -= 4096;
-    }
-    if (size) {
-        memcpy_neon(kpage, data, size);
-        write(state->write_fd, kpage, size);
-    }
-
-    /* Cleanup */
-    munmap(kpage, 4096);
+    memcpy_neon(state->scratchpad, GST_BUFFER_DATA(buffer), GST_BUFFER_SIZE(buffer));
+    write(state->write_fd, state->scratchpad, GST_BUFFER_SIZE(buffer));
     return TRUE;
 }
 
