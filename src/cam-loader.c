@@ -188,7 +188,7 @@ main(int argc, char *const argv[])
     const char *bitstream;
     const char *spidev = DEFAULT_FPGA_SPIDEV;
     struct fpga *fpga;
-    uint16_t version;
+    uint16_t ver_major, ver_minor;
 	int ret;
 	const char *shortopts = "hv";
 	const struct option options[] = {
@@ -244,13 +244,14 @@ main(int argc, char *const argv[])
 
     /* Reset the FPGA and load the memory space.  */
     fpga = fpga_open();
-    if (!fpga) {
+    if (fpga == NULL) {
         return 1;
     }
     fpga->reg[SYSTEM_RESET] = 1;
     usleep(200000);
-    version = fpga->reg[FPGA_VERSION];
-    fprintf(stdout, "Loaded FPGA bistream version: %d\n", version);
+    ver_major = fpga->reg[FPGA_VERSION];
+    ver_minor = fpga->reg[FPGA_SUBVERSION];
+    fprintf(stdout, "Loaded FPGA bistream version: %d.%d\n", ver_major, ver_minor);
     fpga_close(fpga);
     return 0;
 } /* main */

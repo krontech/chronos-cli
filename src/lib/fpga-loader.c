@@ -337,10 +337,11 @@ fpga_load(const char *spi, const char *bitstream, FILE *log)
             fprintf(stderr, "Failed to issue FPGA write disable command: %s\n", strerror(errno));
             break;
         }
+        /* Success! */
+        ret = 0;
         if (log) {
             fprintf(log, "fpga_load: Programming Successful\n");
         }
-
     } while(0);
 
     close(fd);

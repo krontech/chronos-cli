@@ -5,11 +5,12 @@ bin_PROGRAMS += cam-regdump cam-recover cam-mock
 AM_CFLAGS = -I ${srcdir}/lib ${GLIB_CFLAGS}
 AM_CFLAGS += -Wno-deprecated-declarations
 AM_LDFLAGS = -pthread
-GLIB_LIBS=-lglib-2.0 -lgobject-2.0
-DBUS_LIBS=-l:libdbus-glib-1.so.2 -l:libdbus-1.so.3
+#GLIB_LIBS=-lglib-2.0 -lgobject-2.0
+#DBUS_LIBS=-l:libdbus-glib-1.so.2 -l:libdbus-1.so.3
 
 ## Build the pipeline and FPGA daemons only for ARM targets.
 if CAMBUILD
+GLIB_LIBS += -lpcre
 AM_CFLAGS += -mfloat-abi=softfp -mcpu=cortex-a8 -mfpu=neon
 bin_PROGRAMS += cam-daemon
 bin_PROGRAMS += cam-pipeline
@@ -61,9 +62,10 @@ cam_recover_LDFLAGS = ${AM_LDFLAGS}
 cam_recover_SOURCES = cam-recover.c
 
 ## Camera Daemon
-cam_daemon_LDADD = libcamera.a ${DBUS_LIBS} ${GLIB_LIBS}
-cam_daemon_CFLAGS = ${AM_CFLAGS} ${GLIB_CFLAGS} ${DBUS_CFLAGS}
-cam_daemon_LDFLAGS = ${AM_LDFLAGS}
+cam_daemon_LDADD = libcamera.a
+cam_daemon_LDADD += ${DBUS_LIBS} ${GLIB_LIBS}
+cam_daemon_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_daemon_LDFLAGS = ${AM_LDFLAGS} -pthread
 cam_daemon_SOURCES = daemon/main.c
 cam_daemon_SOURCES += daemon/calibration.c
 cam_daemon_SOURCES += daemon/camera.c
