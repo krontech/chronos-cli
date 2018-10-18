@@ -1,4 +1,4 @@
-AC_INIT(chronos, 0.1, okirby@krontech.ca)
+AC_INIT(chronos-cli, 0.3.1, okirby@krontech.ca)
 AM_INIT_AUTOMAKE([subdir-objects -Wall -Werror foreign])
 AM_SILENT_RULES([yes])
 AM_PROG_AR
@@ -11,6 +11,7 @@ AC_ARG_VAR(SYSROOT,
 AM_CONDITIONAL(SYSROOT, [test "x$SYSROOT" != "x"])
 
 ## Build all tools only when compiling for ARM.
+AC_CANONICAL_HOST
 AS_CASE([$host],
 	[arm*-linux-*], [XCOMPILE="camera"],
 	[XCOMPILE="host"])

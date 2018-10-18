@@ -1,0 +1,22 @@
+Source: chronos-cli
+Section: misc
+Priority: optional
+Maintainer: Owen Kirby <oskirby@gmail.com>
+Build-Depends: debhelper (>= 9), autotools-dev,
+		autoconf, automake, libtool, pkg-config,
+		libglib2.0-dev,
+		libdbus-1-dev, libdbus-glib-1-dev,
+		libjpeg-dev,
+		libgstreamer0.10-dev,
+		libgstreamer-plugins-base0.10-dev,
+		linux-kernel-headers
+Standards-Version: 3.9.8
+Homepage: https://github.com/krontech/chronos-cli
+
+Package: chronos-cli
+Architecture: armel
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: Video daemon and tools for the Chronos Camera
+ GStreamer video pipeline to operate the live display, video
+ playback, encoders and file saving operations for the Chronos
+ high speed camera.
