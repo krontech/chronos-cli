@@ -37,6 +37,10 @@
 #define PWRCMD_GET_DATA_EXT     0x04
 
 #define PWRCMD_IS_IN_BOOTLOADER 0x7f
+#define PWRCMD_CMD_ERASE_PAGE	0x80
+#define PWRCMD_CMD_WRITE_DATA	0x81
+#define PWRCMD_CMD_JUMP_TO_PROG	0x82
+#define PWRCMD_CMD_GET_BOOT_VER 0x83
 
 /* Flags for the extended battery data. */
 #define PWRCMD_FLAG_BATT_PRESENT    0x01
@@ -59,7 +63,9 @@ typedef struct  {
 
 /* Transmit a single-byte command to the power controller. */
 int pwrcmd_command(int fd, uint8_t cmd);
-int pwrcmd_receive(int fd, uint8_t *buf, size_t maxlen, size_t *offs);
+int pwrcmd_transmit(int fd, uint8_t cmd, const void *buf, size_t len);
+int pwrcmd_receive(int fd, uint8_t *buf, size_t maxlen, int timeout);
+int pwrcmd_try_receive(int fd, uint8_t *buf, size_t maxlen, size_t *offs);
 
 /* Parse the battery data command. */
 int pwrcmd_parse_battery(BatteryData *batt, uint8_t *buf, size_t maxlen);

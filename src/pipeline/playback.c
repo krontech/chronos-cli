@@ -22,7 +22,6 @@
 #include <poll.h>
 #include <pthread.h>
 #include <sys/types.h>
-#include <sys/signalfd.h>
 
 #include "pipeline.h"
 

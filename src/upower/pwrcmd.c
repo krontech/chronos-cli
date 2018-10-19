@@ -18,6 +18,9 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <sys/uio.h>
+#include <poll.h>
+#include <time.h>
 #include <errno.h>
 #include <setjmp.h>
 
@@ -25,17 +28,21 @@
 #include "mbcrc16.h"
 
 static uint16_t
-pwrcmd_crc_init(size_t len)
+pwrcmd_crc(uint8_t cmd, const void *buf, size_t len)
 {
-    uint16_t crc = CRC16Iteration(CRC16_INIT, (len >> 8) & 0xff);
-    return CRC16Iteration(crc, (len >> 0) & 0xff);
+    uint16_t crc = CRC16_INIT;
+    crc = CRC16Iteration(crc, ((len+1) >> 8) & 0xff);
+    crc = CRC16Iteration(crc, ((len+1) >> 0) & 0xff);
+    crc = CRC16Iteration(crc, cmd);
+    if (!len) return crc;
+    return CRC16(buf, len, crc);
 }
 
 /* Transmit a power command (1-byte value) */
 int
 pwrcmd_command(int fd, uint8_t cmd)
 {
-    uint16_t crc = CRC16Iteration(pwrcmd_crc_init(1), cmd);
+    uint16_t crc = pwrcmd_crc(cmd, NULL, 0);
     uint8_t buf[] = {
         PWRCMD_SOF_VALUE,   /* Start-of-Frame */
         0, 1,               /* Length*/
@@ -44,6 +51,29 @@ pwrcmd_command(int fd, uint8_t cmd)
         (crc >> 0) & 0xff,
     };
     return write(fd, buf, sizeof(buf));
+}
+
+/* Transmit a power command with payload */
+int
+pwrcmd_transmit(int fd, uint8_t cmd, const void *buf, size_t len)
+{
+    uint16_t crc = pwrcmd_crc(cmd, buf, len);
+    uint16_t footer[] = {
+        (crc >> 8) & 0xff,
+        (crc >> 0) & 0xff,
+    };
+    uint8_t header[] = {
+        PWRCMD_SOF_VALUE,
+        ((len + 1) >> 8) & 0xff,
+        ((len + 1) >> 0) & 0xff,
+        cmd
+    };
+    struct iovec iov[] = {
+        { .iov_base = header, .iov_len = sizeof(header) },
+        { .iov_base = (void *)buf, .iov_len = len },
+        { .iov_base = footer, .iov_len = sizeof(footer) }
+    };
+    return writev(fd, iov, sizeof(iov) / sizeof(struct iovec));
 }
 
 /* Get the next character from the input stream, or jump out if we need more data. */
@@ -65,11 +95,11 @@ pwrcmd_getchar(int fd, jmp_buf jbuf)
  * Try reading a command from the power controller, updating offs as we go.
  * Returns:
  *      Positive if a command was successfully received.
- *      Zero if the command failed (bad CRC, invalid length, or etc...)
- *      Negative if we ran out of input.
+ *      Zero if we ran out of input before finding a valid command.
+ *      Negative if there was an error reading from the file descriptor.
  */
 int
-pwrcmd_receive(int fd, uint8_t *buf, size_t maxlen, size_t *offs)
+pwrcmd_try_receive(int fd, uint8_t *buf, size_t maxlen, size_t *offs)
 {
     jmp_buf jbuf;
     size_t length;
@@ -128,6 +158,67 @@ pwrcmd_receive(int fd, uint8_t *buf, size_t maxlen, size_t *offs)
     memmove(buf, buf + 3, length);
     return length;
 }
+
+/*
+ * Reading a command from the power controller, with a timeout.
+ * Returns:
+ *      Positive if a command was successfully received.
+ *      Zero if we ran out of input before finding a valid command.
+ *      Negative if there was an error reading from the file descriptor.
+ * 
+ * Timeout can take the values:
+ *      Positive to wait for at most 'timeout' milliseconds for the command.
+ *      Zero to read the command immediately, or return an error.
+ *      Negative to block indefinitely for the next valid command.
+ */
+int
+pwrcmd_receive(int fd, uint8_t *buf, size_t maxlen, int timeout)
+{
+    size_t offset = 0;
+    struct timespec end = {0, 0};
+    int ret;
+
+    /* Compute how long to wait if a timeout was provided. */
+    if (timeout > 0) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        end.tv_sec = now.tv_sec + timeout / 1000;
+        end.tv_nsec = now.tv_nsec + (timeout % 1000) * 1000000;
+        if (end.tv_nsec > 1000000000) {
+            end.tv_nsec -= 1000000000;
+            end.tv_sec++;
+        }
+    }
+
+    /* Poll for input */
+    for (;;) {
+        int msec = timeout;
+        struct pollfd pfd = {.fd = fd, .events = POLLIN | POLLERR, .revents = 0 };
+
+        /* Recompute the timeout (if finite). */
+        if (timeout > 0) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            msec = (end.tv_sec - now.tv_sec) * 1000;
+            msec -= (end.tv_nsec / 1000000);
+            msec += (now.tv_nsec / 1000000);
+            if (msec <= 0) {
+                errno = ETIMEDOUT;
+                return -1;
+            }
+        }
+
+        /* Wait for and process input. */
+        ret = poll(&pfd, 1, msec);
+        if (ret < 0) {
+            if (ret == 0) errno = ETIMEDOUT;
+            return -1;
+        }
+        ret = pwrcmd_try_receive(fd, buf, maxlen, &offset);
+        if (ret != 0) return ret;
+    }
+}
+
 
 /* Parse the battery data command. */
 int

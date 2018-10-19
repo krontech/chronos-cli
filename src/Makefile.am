@@ -119,6 +119,7 @@ cam_pipeline_SOURCES += pipeline/pipeline.h
 ## Power control daemon.
 cam_upower_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_upower_LDFLAGS = ${AM_LDFLAGS}
+cam_upower_LDADD = -lrt
 cam_upower_SOURCES = upower/cam-upower.c
 cam_upower_SOURCES += upower/pwrcmd.c
 cam_upower_SOURCES += upower/pwrcmd.h
