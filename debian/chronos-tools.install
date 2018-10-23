@@ -1,0 +1,5 @@
+usr/bin/cam-json
+usr/bin/cam-listener
+usr/bin/cam-loader
+usr/bin/cam-recover
+usr/bin/cam-regdump
