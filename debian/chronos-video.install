@@ -1,1 +1,2 @@
 usr/bin/cam-pipeline
+src/api/com.krontech.chronos.conf etc/dbus-1/system.d
