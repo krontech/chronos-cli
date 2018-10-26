@@ -209,13 +209,6 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     return TRUE;
 } /* dng_probe_bayer */
 
-static void
-cam_dng_done(struct pipeline_state *state, const struct pipeline_args *args)
-{
-    /* Flush all files to disk. */
-    sync();
-}
-
 GstPad *
 cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
@@ -256,8 +249,6 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
         gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_greyscale), state);
     }
     gst_object_unref(pad);
-
-    state->done = cam_dng_done;
 
     gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);
@@ -366,8 +357,6 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
     pad = gst_element_get_static_pad(queue, "src");
     gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
     gst_object_unref(pad);
-
-    state->done = cam_dng_done;
 
     gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);
     gst_element_link_many(queue, sink, NULL);

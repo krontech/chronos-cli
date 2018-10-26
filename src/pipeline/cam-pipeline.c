@@ -23,6 +23,8 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/mman.h>
+#include <pthread.h>
+#include <dirent.h>
 #include <gst/gst.h>
 #include <gst/controller/gstcontroller.h>
 
@@ -403,6 +405,26 @@ parse_resolution(const char *str, const char *name, unsigned long *x, unsigned l
     exit(EXIT_FAILURE);
 } /* parse_resolution */
 
+/* Perform disk synchronization in a separate thread. */
+static void *
+fsync_worker(void *arg)
+{
+    struct pipeline_state *state = arg;
+    struct stat st;
+    while (!g_main_loop_is_running(state->mainloop)) {
+        usleep(100); /* Ensure the main thread gets to g_main_loop_run. */
+    }
+    memset(&st, 0, sizeof(st));
+    if ((fstat(state->write_fd, &st) != 0) || S_ISDIR(st.st_mode)) {
+        /* TODO: Test for availability of syncfs(). */
+        sync();
+    } else {
+        fsync(state->write_fd);
+    }
+    g_main_loop_quit(state->mainloop);
+    return NULL;
+}
+
 int
 main(int argc, char * argv[])
 {
@@ -556,7 +578,7 @@ main(int argc, char * argv[])
         if (state->done) {
             state->done(state, &args);
         }
-        dbus_signal_eof(state, state->error);
+        playback_goto(state, PIPELINE_MODE_PAUSE);
         gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
         for (i = 0; i < 1000; i++) {
             if (!g_main_context_iteration (NULL, FALSE)) break;
@@ -569,12 +591,17 @@ main(int argc, char * argv[])
         gst_object_unref(GST_OBJECT(state->pipeline));
         g_source_remove(watchid);
 
-        /* Close any output files that might be in progress. */
+        /* Close output files that might be in progress. */
         if (state->write_fd >= 0) {
-            fsync(state->write_fd);
+            pthread_t tid;
+            if (pthread_create(&tid, NULL, fsync_worker, state)  == 0) {
+                g_main_loop_run(state->mainloop);
+                pthread_join(tid, NULL);
+            }
             close(state->write_fd);
             state->write_fd = -1;
         }
+        dbus_signal_eof(state, state->error);
     
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");

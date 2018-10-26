@@ -39,24 +39,6 @@ debug_log16(const void *data)
     fprintf(stderr, "\n");
 }
 
-#if 0
-/* TODO: Optimize this later with neon */
-static void
-memcpy_sum16(void *dst, const void *src, size_t len)
-{
-    uint16_t *pdst = dst;
-    const uint16_t *psrc = src;
-    unsigned int i;
-    fprintf(stderr, "\n");
-    for (i = 0; i < len/2; i++) {
-        pdst[i] += psrc[i];
-    }
-    for (i = 0; i < 16; i++) {
-        fprintf(stderr, " 0x%04x", pdst[i]);
-    }
-}
-#endif
-
 static gboolean
 blackref_probe(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
 {
