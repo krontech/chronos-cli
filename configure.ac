@@ -4,11 +4,11 @@ AM_SILENT_RULES([yes])
 AM_PROG_AR
 AC_PROG_CC
 AC_PROG_RANLIB
+LT_INIT
 
 ## Set a conditional if a GCC sysroot is provided.
-AC_ARG_VAR(SYSROOT,
-	AS_HELP_STRING([Root path to use for finding headers and libraries]))
-AM_CONDITIONAL(SYSROOT, [test "x$SYSROOT" != "x"])
+AC_SUBST(SYSROOT, ["$with_sysroot"])
+AM_CONDITIONAL(SYSROOT, [test "x$with_sysroot" != "x"])
 
 ## Build all tools only when compiling for ARM.
 AC_CANONICAL_HOST
@@ -37,6 +37,10 @@ PKG_CHECK_MODULES(GST, [
       or similar. The minimum version required is $GST_REQUIRED.
   ])
 ])
+
+## Optionally build the Python/FPGA wrapper
+PKG_CHECK_MODULES(PYTHON, [python3], [XPYTHON="yes"], [XPYTHON="no"])
+AM_CONDITIONAL(PYBUILD, [test "$XPYTHON" = "yes"])
 
 AC_SYS_LARGEFILE
 
