@@ -139,14 +139,21 @@ playback_region_totals(struct pipeline_state *state)
 static int
 playback_region_add(struct pipeline_state *state)
 {
+    struct playback_region *region;
     sigset_t sigset;
     /* Read the FIFO to extract the new region info. */
     uint32_t start = state->fpga->seq->md_fifo_read;
     uint32_t end = state->fpga->seq->md_fifo_read;
     uint32_t last = state->fpga->seq->md_fifo_read;
 
+    /* Ignore recording events within the live display or calibration regions. */
+    if (start == state->fpga->display->fpn_address) return 0;
+    if (start == state->fpga->seq->live_addr[0]) return 0;
+    if (start == state->fpga->seq->live_addr[1]) return 0;
+    if (start == state->fpga->seq->live_addr[2]) return 0;
+
     /* Prepare memory for the new region. */
-    struct playback_region *region = malloc(sizeof(struct playback_region));
+    region = malloc(sizeof(struct playback_region));
     if (!region) {
         return -1;
     }
