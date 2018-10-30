@@ -95,11 +95,11 @@ playback_frame_advance(struct pipeline_state *state, int delta)
         if (state->segframe < state->segsize) {
             unsigned long relframe = (state->segframe + (r->offset / r->framesz)) % state->segsize;
             state->fpga->display->frame_address = r->base + (relframe * r->framesz);
+            overlay_update(state, r);
             break;
         }
         count += state->segsize;
     }
-    overlay_update(state, r);
     state->fpga->display->manual_sync = 1;
 }
 
@@ -353,6 +353,7 @@ playback_loop(struct pipeline_state *state, unsigned long start, unsigned int ra
     state->position = start;
     state->loopstart = start;
     state->loopend = start + count;
+    if (state->loopend > state->totalframes) state->loopend = state->totalframes;
 
     /* Set playback mode and re-arm the timer. */
     control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
