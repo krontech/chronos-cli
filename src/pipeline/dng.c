@@ -44,6 +44,9 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     const uint8_t dng_version[] = {1, 4, 0, 0};
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
     const uint8_t exif_version[] = {'0', '2', '2', '0'};
+    const struct tiff_srational cmatrix[3] = {
+        {0, 1}, {1, 1}, {0, 1},
+    };
     char fname[64];
     int fd;
     /* HACK! May not actually correlate to the current frame. */
@@ -70,7 +73,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_LONG(257, yres),           /* ImageLength */
         TIFF_TAG_SHORT(258, 16),            /* BitsPerSample */
         TIFF_TAG_SHORT(259, 1),             /* Compression = None */
-        TIFF_TAG_SHORT(262, 1),             /* PhotometricInterpretation = Grayscale */
+        TIFF_TAG_SHORT(262, 34892),         /* PhotometricInterpretation = LinearRaw */
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
         TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
@@ -87,18 +90,13 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
         TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
-        //TIFF_TAG_STRING(50735, "???"),                /* CameraSerialNumber */
+        TIFF_TAG_VECTOR(50721, TIFF_TYPE_SRATIONAL, cmatrix, sizeof(cmatrix)/sizeof(struct tiff_srational)),
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
     /* Create the next file in the image sequence. */
     state->dngcount++;
-    if (state->mode == PIPELINE_MODE_TIFF_GREY) {
-        image_ifd.count--; /* Remove the WhiteLevel tag when saving greyscale TIFF. */
-        sprintf(fname, "frame_%06lu.tiff", state->dngcount);
-    } else {
-        sprintf(fname, "frame_%06lu.dng", state->dngcount);
-    }
+    sprintf(fname, "frame_%06lu.dng", state->dngcount);
     fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (fd < 0) {
         fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
@@ -256,6 +254,74 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 } /* cam_dng_sink */
 
 static gboolean
+tiff_probe_grayscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
+{
+    struct pipeline_state *state = cbdata;
+    GstCaps *caps = GST_BUFFER_CAPS(buf);
+    GstStructure *gstruct = gst_caps_get_structure(caps, 0);
+    unsigned long xres = g_value_get_int(gst_structure_get_value(gstruct, "width"));
+    unsigned long yres = g_value_get_int(gst_structure_get_value(gstruct, "height"));
+    const uint8_t exif_version[] = {'0', '2', '2', '0'};
+    char fname[64];
+    int fd;
+    /* HACK! May not actually correlate to the current frame. */
+    struct playback_region *region = state->region_head;
+    
+    /* The list of EXIF tags. */
+    time_t now = time(0);
+    char timestr[64];
+    struct tm timebuf;
+    const struct tiff_tag exif[] = {
+        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
+        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+    };
+    struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
+
+    /* The list of tags we want. */
+    const struct tiff_tag tags[] = {
+        /* TIFF Baseline Tags */
+        TIFF_TAG_LONG(254, 0),              /* SubFieldType = DNG Highest quality */
+        TIFF_TAG_LONG(256, xres),           /* ImageWidth */
+        TIFF_TAG_LONG(257, yres),           /* ImageLength */
+        TIFF_TAG_SHORT(258, 16),            /* BitsPerSample */
+        TIFF_TAG_SHORT(259, 1),             /* Compression = None */
+        TIFF_TAG_SHORT(262, 1),             /* PhotometricInterpretation = Grayscale */
+        TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
+        TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
+        TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
+        TIFF_TAG_SHORT(274, 1),             /* Orientation = Zero/zero is Top Left */
+        TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
+        TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
+        TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
+        TIFF_TAG_SHORT(284, 1),             /* PlanarConfiguration = Chunky */
+        TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
+        TIFF_TAG_SUBIFD(34665, &exif_ifd),              /* Exif IFD Pointer */
+        /* CinemaDNG Tags */
+        TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
+    };
+    struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
+
+    /* Create the next file in the image sequence. */
+    state->dngcount++;
+    sprintf(fname, "frame_%06lu.tiff", state->dngcount);
+    fd = openat(state->write_fd, fname, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if (fd < 0) {
+        fprintf(stderr, "Failed to create DNG frame (%s)\n", strerror(errno));
+        return TRUE;
+    }
+
+    /* Write the header and frame data. */
+    tiff_build_header(state->scratchpad, TIFF_HDR_SIZE, &image_ifd);
+    memcpy_neon((unsigned char *)state->scratchpad + TIFF_HDR_SIZE, GST_BUFFER_DATA(buf), GST_BUFFER_SIZE(buf));
+    write(fd, state->scratchpad, GST_BUFFER_SIZE(buf) + TIFF_HDR_SIZE);
+    close(fd);
+    return TRUE;
+} /* tiff_probe_grayscale */
+
+static gboolean
 tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
 {
     struct pipeline_state *state = cbdata;
@@ -355,7 +421,11 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Read the color detection pin. */
     pad = gst_element_get_static_pad(queue, "src");
-    gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
+    if (state->control & DISPLAY_CTL_COLOR_MODE) {
+        gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
+    } else {
+        gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_grayscale), state);
+    }
     gst_object_unref(pad);
 
     gst_bin_add_many(GST_BIN(state->pipeline), queue, sink, NULL);

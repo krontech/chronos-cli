@@ -258,7 +258,11 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         gst_caps_unref(caps);
 
         /* Create the raw video sink */
-        sinkpad = cam_dng_sink(state, args);
+        if (args->mode == PIPELINE_MODE_DNG) {
+            sinkpad = cam_dng_sink(state, args);
+        } else {
+            sinkpad = cam_tiff_sink(state, args);
+        }
         if (!sinkpad) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
@@ -602,7 +606,7 @@ main(int argc, char * argv[])
             state->write_fd = -1;
         }
         dbus_signal_eof(state, state->error);
-    
+
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");
     } while(catch_sigint == 0);
