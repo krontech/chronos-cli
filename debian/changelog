@@ -1,5 +1,14 @@
-chronos-cli (0.3.1~beta) unstable; urgency=medium
+chronos-cli (0.3.1~beta9) unstable; urgency=medium
 
-  * Initial release
+  * Generate version from git tags.
+  * Fix segfault if the playframe goes outside the recorded regions.
+  * pipeline: Monochrome DNG files should use LinearRaw encoding.
+  * Ignore recording segments in the calibration or display area.
+  * Avoid stalling D-Bus during teardown by doing fsync from another thread.
+  * Add Python/FPGA wrapper module.
+  * Add missing DBus config file to chronos-video package.
+  * Split Debian installation into multiple packages.
+  * upower: Periodically write battery status to /var/run/bmsFifo
+  * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Thu, 18 Oct 2018 11:31:07 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Tue, 30 Oct 2018 20:31:25 -0700

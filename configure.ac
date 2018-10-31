@@ -1,4 +1,4 @@
-AC_INIT(chronos-cli, 0.3.1, okirby@krontech.ca)
+AC_INIT([chronos-cli], v0.3.1-beta)
 AM_INIT_AUTOMAKE([subdir-objects -Wall -Werror foreign])
 AM_SILENT_RULES([yes])
 AM_PROG_AR
@@ -8,7 +8,7 @@ LT_INIT
 
 ## Set a conditional if a GCC sysroot is provided.
 AC_SUBST(SYSROOT, ["$with_sysroot"])
-AM_CONDITIONAL(SYSROOT, [test "x$with_sysroot" != "x"])
+AM_CONDITIONAL(SYSROOT, [test "x$with_sysroot" != "xno"])
 
 ## Build all tools only when compiling for ARM.
 AC_CANONICAL_HOST

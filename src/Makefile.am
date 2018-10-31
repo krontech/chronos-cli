@@ -107,7 +107,6 @@ cam_pipeline_SOURCES += pipeline/blackref.c
 cam_pipeline_SOURCES += pipeline/dng.c
 cam_pipeline_SOURCES += pipeline/h264.c
 cam_pipeline_SOURCES += pipeline/hdmi.c
-cam_pipeline_SOURCES += pipeline/gstmmap.c
 cam_pipeline_SOURCES += pipeline/gstneon.c
 cam_pipeline_SOURCES += pipeline/gstneon.h
 cam_pipeline_SOURCES += pipeline/lcd.c
