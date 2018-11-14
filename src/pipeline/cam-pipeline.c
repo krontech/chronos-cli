@@ -242,7 +242,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
      * Setup the Pipeline for saving CinemaDNG
      *=====================================================
      */
-    else if ((args->mode == PIPELINE_MODE_DNG) || (args->mode == PIPELINE_MODE_TIFF_GREY)) {
+    else if ((args->mode == PIPELINE_MODE_DNG) || (args->mode == PIPELINE_MODE_TIFF_RAW)) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
                     "width", G_TYPE_INT, state->hres,
@@ -261,7 +261,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         if (args->mode == PIPELINE_MODE_DNG) {
             sinkpad = cam_dng_sink(state, args);
         } else {
-            sinkpad = cam_tiff_sink(state, args);
+            sinkpad = cam_tiffraw_sink(state, args);
         }
         if (!sinkpad) {
             gst_object_unref(GST_OBJECT(state->pipeline));
@@ -304,7 +304,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
      * Setup the Pipeline for saving raw RGB pixel data.
      *=====================================================
      */
-    else if (args->mode == PIPELINE_MODE_TIFF_RGB) {
+    else if (args->mode == PIPELINE_MODE_TIFF) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-rgb",
                     "bpp", G_TYPE_INT, 24,
                     "width", G_TYPE_INT, state->hres,

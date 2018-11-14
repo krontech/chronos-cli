@@ -31,6 +31,23 @@ memcpy_bgr2rgb(void *dst, const void *src, size_t len)
 }
 
 void
+memcpy_rgb2mono(void *dst, const void *src, size_t len)
+{
+    asm volatile (
+    	"memcpy_rgb2mono_loop:          \n"
+        "   vld3.8 {d0,d1,d2}, [%[s]]!  \n"
+        "   vld3.8 {d3,d4,d5}, [%[s]]!  \n"
+        "   vhadd.u8 d0, d0, d2         \n"
+        "   vhadd.u8 d0, d1, d0         \n"
+        "   vhadd.u8 d3, d3, d5         \n"
+        "   vhadd.u8 d1, d3, d4         \n"
+        "   vstm %[d]!,{d0-d1}          \n"
+        "   subs %[count],%[count], #48 \n"
+        "   bgt memcpy_rgb2mono_loop    \n"
+        : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(len) :: "cc" );
+}
+
+void
 memcpy_sum16(void *dst, const void *src, size_t len)
 {
     asm volatile (

@@ -58,8 +58,8 @@ struct playback_region {
 #define PIPELINE_MODE_RAW16     4   /* 16-bit raw data (padded with zeros LSB) */
 #define PIPELINE_MODE_RAW12     5   /* 12-bit packed data */
 #define PIPELINE_MODE_DNG       6
-#define PIPELINE_MODE_TIFF_GREY 7   /* TIFF/Y16 format */
-#define PIPELINE_MODE_TIFF_RGB  8   /* TIFF/RGB888 format */
+#define PIPELINE_MODE_TIFF      7   /* Processed 8-bit TIFF format. */
+#define PIPELINE_MODE_TIFF_RAW  8   /* Linear RAW 16-bit TIFF format. */
 #define PIPELINE_MODE_BLACKREF  9   /* Save a black reference image. */
 
 #define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
@@ -173,6 +173,7 @@ GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);
+GstPad *cam_tiffraw_sink(struct pipeline_state *state, struct pipeline_args *args);
 
 /* Some background elements. */
 void hdmi_hotplug_launch(struct pipeline_state *state);

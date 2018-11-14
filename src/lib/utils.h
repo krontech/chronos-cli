@@ -106,11 +106,12 @@ gpio_write(int fd, int val)
 #ifdef __arm__
 void memcpy_neon(void *dest, const void *src, size_t len);
 void memcpy_bgr2rgb(void *dest, const void *src, size_t len);
+void memcpy_rgb2mono(void *dest, const void *src, size_t len);
 void memcpy_sum16(void *dest, const void *src, size_t len);
-void memcpy_le12_pack(void *dst, const void *src, size_t len);
+void memcpy_le12_pack(void *dest, const void *src, size_t len);
 
 void neon_div16(void *framebuf, size_t len);
-void neon_be12_unpack(void *dst, const void *src);
+void neon_be12_unpack(void *dest, const void *src);
 #endif
 
 #endif /* _CLI_UTILS_H */
