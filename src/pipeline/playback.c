@@ -66,6 +66,7 @@ playback_frame_advance(struct pipeline_state *state, int delta)
 {
     struct playback_region *r;
     unsigned long count = 0;
+    unsigned long playlen = state->loopend - state->loopstart;
     unsigned long segment;
 
     /* If no regions have been set, then just display the first address in memory. */
@@ -77,11 +78,13 @@ playback_frame_advance(struct pipeline_state *state, int delta)
 
     /* Advance the logical frame number. */
     if (delta > 0) {
+        if (delta >= playlen) delta %= playlen;
         state->position += delta;
-        if (state->position >= state->loopend) state->position -= (state->loopend - state->loopstart);
+        if (state->position >= state->loopend) state->position -= playlen;
     }
     else if (delta < 0) {
-        if (state->position < (state->loopstart - delta)) state->position += (state->loopend - state->loopstart);
+        if (-delta >= playlen) delta %= playlen;
+        if (state->position < (state->loopstart - delta)) state->position += playlen;
         state->position += delta;
     }
 
