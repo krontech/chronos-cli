@@ -48,9 +48,10 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
     cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY));
     cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(mode));
-    cam_dbus_dict_add_uint(dict, "segment", 0);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
+    cam_dbus_dict_add_uint(dict, "totalSegments", state->totalsegs);
     cam_dbus_dict_add_uint(dict, "position", state->position);
+    cam_dbus_dict_add_uint(dict, "segment", 0);
     if (PIPELINE_IS_SAVING(mode)) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
         cam_dbus_dict_add_float(dict, "framerate", estrate);
@@ -74,13 +75,8 @@ typedef struct CamVideoClass {
     GObjectClass parent;
     guint sof_signalid;
     guint eof_signalid;
+    guint seg_signalid;
 } CamVideoClass;
-
-static gboolean
-cam_video_livestream(CamVideo *vobj, GHashTable *args, GError **error)
-{
-    return 1;
-}
 
 static gboolean
 cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
@@ -374,6 +370,14 @@ cam_video_class_init(CamVideoClass *vclass)
                     G_TYPE_NONE,            /* Return GType of the return value. */
                     1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
 
+    vclass->seg_signalid = g_signal_new("segment", G_OBJECT_CLASS_TYPE(vclass),
+                    G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
+                    0,
+                    NULL, NULL,             /* GSignalAccumulator and its user data. */
+                    NULL,                   /* C signal marshaller - should be replaced with static version. */
+                    G_TYPE_NONE,            /* Return GType of the return value. */
+                    1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
+
     dbus_g_object_type_install_info(CAM_VIDEO_TYPE, &dbus_glib_cam_video_object_info);
 }
 
@@ -439,4 +443,11 @@ dbus_signal_eof(struct pipeline_state *state, const char *err)
         cam_dbus_dict_add_string(status, "error", err);
     }
     g_signal_emit(state->video, vclass->eof_signalid, 0, status);
+}
+
+void
+dbus_signal_segment(struct pipeline_state *state)
+{
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
+    g_signal_emit(state->video, vclass->seg_signalid, 0, cam_dbus_video_status(state));
 }

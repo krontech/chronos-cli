@@ -54,25 +54,6 @@ cam_video_recordfile(MockVideo *mock, GHashTable *args, GHashTable **data, GErro
 }
 
 gboolean
-cam_video_livestream(MockVideo *mock, GHashTable *args, GError **error)
-{
-#if 0
-    GHashTable *dict = cam_dbus_dict_new();
-    if (dict) {
-        cam_dbus_dict_add_string(dict, "model", "Mock Camera 1.4");
-        cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-        cam_dbus_dict_add_printf(dict, "fpgaVersion", "%d.%d", 3, 14);
-        cam_dbus_dict_add_printf(dict, "memoryGB", "%u", 8);
-        cam_dbus_dict_add_string(dict, "serial", "e^(i*pi)");
-    }
-    *data = dict;
-    return (dict != NULL);
-#else
-    return 1;
-#endif
-}
-
-gboolean
 cam_video_addregion(MockVideo *mock, GHashTable *args, GHashTable **data, GError **error)
 {
     struct mock_state *state = mock->state;

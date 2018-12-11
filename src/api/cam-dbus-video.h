@@ -151,53 +151,6 @@ dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER (GClosure     *closur
   g_value_set_boolean (return_value, v_return);
 }
 
-/* BOOLEAN:BOXED,POINTER */
-extern void dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER (GClosure     *closure,
-                                                                GValue       *return_value,
-                                                                guint         n_param_values,
-                                                                const GValue *param_values,
-                                                                gpointer      invocation_hint,
-                                                                gpointer      marshal_data);
-void
-dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER (GClosure     *closure,
-                                                    GValue       *return_value G_GNUC_UNUSED,
-                                                    guint         n_param_values,
-                                                    const GValue *param_values,
-                                                    gpointer      invocation_hint G_GNUC_UNUSED,
-                                                    gpointer      marshal_data)
-{
-  typedef gboolean (*GMarshalFunc_BOOLEAN__BOXED_POINTER) (gpointer     data1,
-                                                           gpointer     arg_1,
-                                                           gpointer     arg_2,
-                                                           gpointer     data2);
-  GMarshalFunc_BOOLEAN__BOXED_POINTER callback;
-  GCClosure *cc = (GCClosure*) closure;
-  gpointer data1, data2;
-  gboolean v_return;
-
-  g_return_if_fail (return_value != NULL);
-  g_return_if_fail (n_param_values == 3);
-
-  if (G_CCLOSURE_SWAP_DATA (closure))
-    {
-      data1 = closure->data;
-      data2 = g_value_peek_pointer (param_values + 0);
-    }
-  else
-    {
-      data1 = g_value_peek_pointer (param_values + 0);
-      data2 = closure->data;
-    }
-  callback = (GMarshalFunc_BOOLEAN__BOXED_POINTER) (marshal_data ? marshal_data : cc->callback);
-
-  v_return = callback (data1,
-                       g_marshal_value_peek_boxed (param_values + 1),
-                       g_marshal_value_peek_pointer (param_values + 2),
-                       data2);
-
-  g_value_set_boolean (return_value, v_return);
-}
-
 G_END_DECLS
 
 #endif /* __dbus_glib_marshal_cam_video_MARSHAL_H__ */
@@ -212,14 +165,13 @@ static const DBusGMethodInfo dbus_glib_cam_video_methods[] = {
   { (GCallback) cam_video_recordfile, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 309 },
   { (GCallback) cam_video_stop, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 386 },
   { (GCallback) cam_video_overlay, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 440 },
-  { (GCallback) cam_video_livestream, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER, 514 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_video_object_info = {  1,
   dbus_glib_cam_video_methods,
-  9,
-"com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0flush\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0configure\0S\0args\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0overlay\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livestream\0S\0settings\0I\0a{sv}\0\0\0",
-"com.krontech.chronos.video\0sof\0com.krontech.chronos.video\0eof\0\0",
+  8,
+"com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0flush\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0configure\0S\0args\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0overlay\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0\0",
+"com.krontech.chronos.video\0sof\0com.krontech.chronos.video\0eof\0com.krontech.chronos.video\0segment\0\0",
 "\0"
 };
 

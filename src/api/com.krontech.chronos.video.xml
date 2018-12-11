@@ -32,14 +32,14 @@
       <arg name="settings" direction="in" type="a{sv}"/>
       <arg name="status" direction="out" type="a{sv}"/>
     </method>
-    <method name="livestream">
-      <arg name="settings" direction="in" type="a{sv}"/>
-    </method>
     <signal name="sof">
       <arg name="status" direction="out" type="a{sv}"/>
     </signal>
     <signal name="eof">
       <arg name="settings" direction="out" type="a{sv}"/>
+    </signal>
+    <signal name="segment">
+      <arg name="status" direction="out" type="a{sv}"/>
     </signal>
   </interface>
 </node>

@@ -132,10 +132,12 @@ main(int argc, char * const argv[])
     /* Add signal handlers. */
     dbus_g_proxy_add_signal(proxy, "eof", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
     dbus_g_proxy_add_signal(proxy, "sof", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
+    dbus_g_proxy_add_signal(proxy, "segment", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
     
     /* Connect signal handlers. */
     dbus_g_proxy_connect_signal(proxy, "eof", G_CALLBACK(handler), "eof", NULL);
     dbus_g_proxy_connect_signal(proxy, "sof", G_CALLBACK(handler), "sof", NULL);
+    dbus_g_proxy_connect_signal(proxy, "segment", G_CALLBACK(handler), "segment", NULL);
 
     /* Run the loop until we exit. */
     g_main_loop_run(mainloop);

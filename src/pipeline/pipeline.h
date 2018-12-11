@@ -180,6 +180,7 @@ void hdmi_hotplug_launch(struct pipeline_state *state);
 void dbus_service_launch(struct pipeline_state *state);
 void dbus_signal_sof(struct pipeline_state *state);
 void dbus_signal_eof(struct pipeline_state *state, const char *err);
+void dbus_signal_segment(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);

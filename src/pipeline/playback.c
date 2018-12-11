@@ -189,6 +189,7 @@ playback_region_add(struct pipeline_state *state)
     /* Update the total recording region size and reset back to the start. */
     state->position = 0;
     playback_region_totals(state);
+    dbus_signal_segment(state);
     return 0;
 }
 

@@ -1,5 +1,8 @@
-chronos-cli (0.3.1~beta9) unstable; urgency=medium
+chronos-cli (0.3.1~beta12) unstable; urgency=medium
 
+  * Add D-Bus "segment" signal for notification of new recorded video.
+  * Ensure abs(frame delta) < length when in playback mode.
+  * Convert mono TIFF to 8-bit gamma, and add "tiffraw" for 16-bit linear data.
   * Generate version from git tags.
   * Fix segfault if the playframe goes outside the recorded regions.
   * pipeline: Monochrome DNG files should use LinearRaw encoding.
@@ -11,4 +14,4 @@ chronos-cli (0.3.1~beta9) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Tue, 30 Oct 2018 20:31:25 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Tue, 11 Dec 2018 15:36:18 -0800

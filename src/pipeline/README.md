@@ -4,7 +4,7 @@ Video Pipeline Interface
 The `cam-pipeline` program is responsible for managing the multimedia pipeline
 of the camera. This program connects the video stream from the FPGA to the
 output output devices on the camera. This pipeline can operate in one of three
-modes at any given time: live display, video playback, and video recording.
+modes at any given time: live display, video playback, and video file saving.
 
 In live display mode, the FPGA is capturing data off the image sensor, and will
 stream frames out to the camera at 60fps. When in this mode, the pipeline will
@@ -56,11 +56,11 @@ which implements the methods:
 * [`recordfile`](#recordfile): Encode and write video to a file.
 * [`stop`](#stop): Terminate video encoding and return to playback mode.
 * [`overlay`](#overlay): Configure an overlay text box for video and frame information.
-* `livestream`: Configure network video streams (TODO)
 
 And emits the DBus signal:
- * [`sof`](#sof): Video recording has started and the pipeline has entered record mode.
- * [`eof`](#eof): Video recording is complete and the pipeline has exited record mode.
+ * [`sof`](#sof): The video pipeline has changed mode, and the video stream has started.
+ * [`eof`](#eof): The video stream has ended and the video pipeline is about to change mode.
+ * [`segment`](#segment): The video pipeline has received a new video segment from the FPGA.
 
 status
 ------
@@ -75,6 +75,7 @@ arguments, and the returned hash map will contain the following members.
 | `"position"`      | `uint`    | The current frame number being display while in playback or record mode.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.
+| `"totalSegments"` | `uint`    | The total number of segments recorded in memory.
 | `"framerate"`     | `float`   | The target playback rate when in playback mode, or estimated frame rate when in record mode.
 | `"error"`         | `string`  | A description of the error (only present when generated in response to an error).
 | `"filename"`      | `string`  | The name of the file being saved (only present if `"filesave"` is `true`).
@@ -144,6 +145,7 @@ The `format` field accepts a FOURCC code defining the output video format, suppo
 | `"h264"` or `"x264"`  | H.264 compressed video saved in an MPEG-4 container.
 | `"dng"`               | Directory of CinemaDNG files, containing the raw sensor data.
 | `"tiff"`              | Directory of Adobe TIFF files, containing the processed RGB image.
+| `"tiffraw"`           | Directory of 16-bit TIFF files containing the raw sensor data.
 | `"byr2"` or `"y16"`   | Raw sensor data padded to 16-bit little-endian encoding.
 | `"y12b"`              | Raw sensor data in packed 12-bit little-endian encoding.
 | `"refimg"`            | Take the average of 16 frames and store the result in `"y16"` encoding.
@@ -221,4 +223,10 @@ eof
 The `eof` DBus signal is emitted by the pipeline when video recording has finished, upon emitting the `eof`,
 the pipeline will send itself a `SIGHUP` to reconfigure the pipeline and return to either playback or live
 display mode. The `eof` signal will include a hash map containing the same values as the [`status`](#status)
+method.
+
+segment
+-------
+The `segment` DBus signal is emitted by the pipeline when a new segment of recorded video is received from
+the FPGA. The `segment` signal will include a hash map containing the same values as the [`status`](#status)
 method.
