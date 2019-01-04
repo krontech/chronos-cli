@@ -74,8 +74,10 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     unsigned int minrate = (state->hres * state->vres * args->framerate / 4); /* Set a minimum quality of 0.25 bpp. */
     int flags = O_RDWR | O_CREAT | O_TRUNC;
 
-#ifdef O_LARGEFILE
+#if defined(O_LARGEFILE)
     flags |= O_LARGEFILE;
+#elif defined(__O_LARGEFILE)
+    flags |= __O_LARGEFILE;
 #endif
 
     /* Open the file for writing. */
