@@ -7,46 +7,11 @@
 #include <sys/types.h>
 
 #include "fpga.h"
+#include "pychronos.h"
 
 #if (PY_MAJOR_VERSION < 3)
 #error "Required python major version must be >=3"
 #endif
-
-#ifndef arraysize
-#define arraysize(_array_) (sizeof(_array_)/sizeof((_array_)[0]))
-#endif
-
-#ifndef offsetof
-#define offsetof(_type_, _member_) (uintptr_t)(&((_type_ *)0)->_member_)
-#endif
-
-#define FPGA_MAP_SIZE (16 * 1024 * 1024)
-
-static int pychronos_init_maps(void);
-
-static Py_buffer fpga_regbuffer = {
-    .buf = MAP_FAILED,
-    .obj = NULL,
-    .len = FPGA_MAP_SIZE,
-    .format = "<H",
-    .readonly = 0,
-    .itemsize = sizeof(uint16_t),
-    .ndim = 1,
-    .shape = (Py_ssize_t[]){FPGA_MAP_SIZE / sizeof(uint16_t)},
-    .strides = (Py_ssize_t[]){sizeof(uint16_t)},
-};
-
-static Py_buffer fpga_rambuffer = {
-    .buf = MAP_FAILED,
-    .obj = NULL,
-    .len = FPGA_MAP_SIZE,
-    .format = "<H",
-    .readonly = 0,
-    .itemsize = sizeof(uint16_t),
-    .ndim = 1,
-    .shape = (Py_ssize_t[]){FPGA_MAP_SIZE / sizeof(uint16_t)},
-    .strides = (Py_ssize_t[]){sizeof(uint16_t)},
-};
 
 /*=====================================*
  * FPGA Memory Mapping Base Type
@@ -63,51 +28,20 @@ struct fpgamap_reginfo {
     unsigned long   size;   /* Length of the scalar (or of a single element in the array). */
     unsigned long   count;  /* Zero for scalar types, length of the array for array types. */
 };
+#define FPGA_REG_INFO(_offset_, _size_, _count_) (struct fpgamap_reginfo []){{_offset_, _size_, _count_}}
 
 #define FPGA_REG_TYPED(_container_, _member_, _type_) \
-    (struct fpgamap_reginfo []){offsetof(_container_, _member_), sizeof(_type_), 0}
+    FPGA_REG_INFO(offsetof(_container_, _member_), sizeof(_type_), 0)
 
 #define FPGA_REG_SCALAR(_container_, _member_) \
-    (struct fpgamap_reginfo []){offsetof(_container_, _member_), sizeof(((_container_ *)0)->_member_), 0}
+    FPGA_REG_INFO(offsetof(_container_, _member_), sizeof(((_container_ *)0)->_member_), 0)
 
 #define FPGA_REG_ARRAY(_container_, _member_) \
-    (struct fpgamap_reginfo []){offsetof(_container_, _member_), sizeof(((_container_ *)0)->_member_[0]), arraysize(((_container_ *)0)->_member_)}
+    FPGA_REG_INFO(offsetof(_container_, _member_), sizeof(((_container_ *)0)->_member_[0]), arraysize(((_container_ *)0)->_member_))
+
 
 #define fpgaptr(_self_, _offset_, _type_) \
     (_type_ *)((unsigned char *)(((struct fpgamap *)_self_)->regs) + (uintptr_t)(_offset_))
-
-static int
-pychronos_init_maps(void)
-{
-    static int fd = -1;
-    if (fd >= 0) return 0;
-
-    fd = open("/dev/mem", O_RDWR | O_SYNC);
-    if (fd < 0) {
-        PyErr_SetFromErrno(PyExc_OSError);
-        return -1;
-    }
-
-    fpga_regbuffer.buf = mmap(0, FPGA_MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, GPMC_RANGE_BASE + GPMC_REGISTER_OFFSET);
-    if (fpga_regbuffer.buf == MAP_FAILED) {
-        PyErr_SetFromErrno(PyExc_OSError);
-        close(fd);
-        fd = -1;
-        return -1;
-    }
-
-    fpga_rambuffer.buf = mmap(0, FPGA_MAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, GPMC_RANGE_BASE + GPMC_RAM_OFFSET);
-    if (fpga_rambuffer.buf == MAP_FAILED) {
-        PyErr_SetFromErrno(PyExc_OSError);
-        munmap(fpga_regbuffer.buf, FPGA_MAP_SIZE);
-        close(fd);
-        fd = -1;
-        return -1;
-    }
-
-    /* Success */
-    return 0;
-}
 
 static int
 fpgamap_init(PyObject *self, PyObject *args, PyObject *kwargs)
@@ -272,9 +206,9 @@ fpgamap_getbuffer(PyObject *self, Py_buffer *view, int flags)
 static PyBufferProcs fpgamap_as_buffer = { .bf_getbuffer = fpgamap_getbuffer };
 
 static PyGetSetDef fpgamap_getset[] = {
-    {"mem8",  fpgamap_get_arrayview, NULL, "8-bit memory array view",  (struct fpgamap_reginfo []){0, sizeof(uint8_t), ULONG_MAX}},
-    {"mem16", fpgamap_get_arrayview, NULL, "16-bit memory array view", (struct fpgamap_reginfo []){0, sizeof(uint16_t), ULONG_MAX}},
-    {"mem32", fpgamap_get_arrayview, NULL, "32-bit memory array view", (struct fpgamap_reginfo []){0, sizeof(uint32_t), ULONG_MAX}},
+    {"mem8",  fpgamap_get_arrayview, NULL, "8-bit memory array view",  FPGA_REG_INFO(0, sizeof(uint8_t), ULONG_MAX) },
+    {"mem16", fpgamap_get_arrayview, NULL, "16-bit memory array view", FPGA_REG_INFO(0, sizeof(uint16_t), ULONG_MAX) },
+    {"mem32", fpgamap_get_arrayview, NULL, "32-bit memory array view", FPGA_REG_INFO(0, sizeof(uint32_t), ULONG_MAX) },
     { NULL },
 };
 
@@ -372,14 +306,15 @@ static PyGetSetDef sensor_getset[] = {
     {"sciControl",  fpgamap_get_uint, fpgamap_set_uint, "SCI Control Register",         FPGA_REG_TYPED(struct fpga_sensor, sci_control, uint16_t)},
     {"sciAddress",  fpgamap_get_uint, fpgamap_set_uint, "SCI Address Register",         FPGA_REG_TYPED(struct fpga_sensor, sci_address, uint16_t)},
     {"sciDataLen",  fpgamap_get_uint, fpgamap_set_uint, "SCI Data Length Register",     FPGA_REG_TYPED(struct fpga_sensor, sci_datalen, uint16_t)},
-    {"sciFifoAddr", fpgamap_get_uint, fpgamap_set_uint, "SCI Address FIFO Register",    FPGA_REG_TYPED(struct fpga_sensor, sci_fifo_addr, uint16_t)},
-    {"sciFifoData", fpgamap_get_uint, fpgamap_set_uint, "SCI Data FIFO Register",       FPGA_REG_TYPED(struct fpga_sensor, sci_fifo_data, uint16_t)},
+    {"sciFifoWrite", fpgamap_get_uint, fpgamap_set_uint, "SCI Write FIFO Register",     FPGA_REG_TYPED(struct fpga_sensor, sci_fifo_write, uint16_t)},
+    {"sciFifoRead", fpgamap_get_uint, fpgamap_set_uint, "SCI Read FIFO Register",       FPGA_REG_TYPED(struct fpga_sensor, sci_fifo_read, uint16_t)},
     /* Sensor Constant Definitions */
     {"RESET",           fpgamap_get_const, NULL, "Control Reset Flag", (void *)IMAGE_SENSOR_RESET_MASK},
     {"EVEN_TIMESLOT",   fpgamap_get_const, NULL, "Even Timeslot Flag", (void *)IMAGE_SENSOR_EVEN_TIMESLOT_MASK},
     {"SCI_RUN",         fpgamap_get_const, NULL, "SCI Run Mask",       (void *)SENSOR_SCI_CONTROL_RUN_MASK},
     {"SCI_RW",          fpgamap_get_const, NULL, "SCI Read/Write",     (void *)SENSOR_SCI_CONTROL_RW_MASK},
     {"SCI_FULL",        fpgamap_get_const, NULL, "SCI FIFO Full",      (void *)SENSOR_SCI_CONTROL_FIFO_FULL_MASK},
+    {"SCI_RESET",       fpgamap_get_const, NULL, "SCI FIFO Reset",     (void *)SENSOR_SCI_CONTROL_FIFO_RESET_MASK},
     {NULL}
 };
 
@@ -413,7 +348,7 @@ static PyGetSetDef sequencer_getset[] = {
     {"frameSize",   fpgamap_get_uint, fpgamap_set_uint, "Frame Size Register",          FPGA_REG_SCALAR(struct fpga_seq, frame_size)},
     {"regionStart", fpgamap_get_uint, fpgamap_set_uint, "Recording Region Start Address", FPGA_REG_SCALAR(struct fpga_seq, region_start)},
     {"regionStop",  fpgamap_get_uint, fpgamap_set_uint, "Recording Region End Address", FPGA_REG_SCALAR(struct fpga_seq, region_stop)},
-    /* TODO: live_addr[3]; How to handle arrays? */
+    {"liveAddr",    fpgamap_get_arrayview, NULL,        "Live Display Addresses",       FPGA_REG_ARRAY(struct fpga_seq, live_addr)},
     {"trigDelay",   fpgamap_get_uint, fpgamap_set_uint, "Trigger Delay Register",       FPGA_REG_SCALAR(struct fpga_seq, trig_delay)},
     {"mdFifo",      fpgamap_get_uint, NULL,            "MD FIFO Read Register",         FPGA_REG_SCALAR(struct fpga_seq, md_fifo_read)},
     /* Sequencer Constant Definitions */
@@ -615,22 +550,11 @@ static PyTypeObject overlay_type = {
     .tp_getset = overlay_getset,
 };
 
-/*=====================================*
- * Chronos Python Module
- *=====================================*/
-static PyModuleDef pychronos_module = {
-    PyModuleDef_HEAD_INIT,
-    "pychronos",    /* name of the module */
-    NULL,           /* module documentation */
-    -1,             /* module uses global state */
-    NULL,           /* module methods */
-};
-
-PyMODINIT_FUNC
-PyInit_pychronos(void)
+/* Initialization */
+int
+pychronos_init_regs(PyObject *mod)
 {
     int i;
-    PyObject *m, *o;
     PyTypeObject *types[] = {
         &fpgamap_type,
         &sensor_type,
@@ -640,42 +564,18 @@ PyInit_pychronos(void)
         &overlay_type,
     };
 
-    /* Initialize the FPGA register mapping and the Python objects. */
-    if (pychronos_init_maps()) {
-        return NULL;
-    }
+    /* Init the arrayview type */
     PyType_Ready(&arrayview_type);
-
-    /* Load the module. */
-    m = PyModule_Create(&pychronos_module);
-    if (m == NULL) {
-        return NULL;
-    }
-
-    /* Register the raw memory mapping */
-    o = PyMemoryView_FromBuffer(&fpga_regbuffer);
-    if (o == NULL) {
-        return NULL;
-    }
-    Py_INCREF(o);
-    PyModule_AddObject(m, "reg",  o);
-
-    o = PyMemoryView_FromBuffer(&fpga_regbuffer);
-    if (o == NULL) {
-        return NULL;
-    }
-    Py_INCREF(o);
-    PyModule_AddObject(m, "ram",  o);
+    Py_INCREF(&arrayview_type);
 
     /* Register all types. */
-    Py_INCREF(&arrayview_type);
     for (i = 0; i < arraysize(types); i++) {
         PyTypeObject *t = types[i]; 
         if (PyType_Ready(t) < 0) {
-            return NULL;
+            return -1;
         }
         Py_INCREF(t);
-        PyModule_AddObject(m, strchr(t->tp_name, '.') + 1,  (PyObject *)t);
+        PyModule_AddObject(mod, strchr(t->tp_name, '.') + 1,  (PyObject *)t);
     }
-    return m;
+    return 0;
 }

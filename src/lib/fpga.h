@@ -47,8 +47,8 @@ struct fpga_sensor {
     uint32_t sci_control;
     uint32_t sci_address;
     uint32_t sci_datalen;
-    uint32_t sci_fifo_addr;
-    uint32_t sci_fifo_data;
+    uint32_t sci_fifo_write;
+    uint32_t sci_fifo_read;
 };
 
 struct fpga_seq {
@@ -302,6 +302,7 @@ struct fpga_segments {
 #define SENSOR_SCI_CONTROL_RUN_MASK		0x1						//Write 1 to start, reads 1 while busy, 0 when done
 #define SENSOR_SCI_CONTROL_RW_MASK		0x2						//Read == 1, Write == 0
 #define SENSOR_SCI_CONTROL_FIFO_FULL_MASK	0x4					//1 indicates FIFO is full
+#define SENSOR_SCI_CONTROL_FIFO_RESET_MASK  0x8000              //Write 1 to reset the FIFO
 
 #define	EXT_SH_TRIGD_EXP_EN_MASK		0x1
 #define	EXT_SH_TRIGD_EXP_EN_OFFSET		0

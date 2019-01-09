@@ -76,7 +76,7 @@ sci_reg_read(const struct regtab *r, struct fpga *fpga)
     }
 
     usleep(1000);
-    return fpga->sensor->sci_fifo_data;
+    return fpga->sensor->sci_fifo_read;
 }
 
 #define REG_STRUCT(_type_, _base_, _member_) { \

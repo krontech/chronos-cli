@@ -159,7 +159,7 @@ lux1310_sci_read(struct lux1310_private_data *data, uint8_t addr)
     }
 
     usleep(1000);
-    return data->reg->sci_fifo_data;
+    return data->reg->sci_fifo_read;
 } /* lux1310_sci_read */
 
 static void
@@ -172,8 +172,8 @@ lux1310_sci_write(struct lux1310_private_data *data, uint8_t addr, uint16_t valu
     data->reg->sci_control &= ~SENSOR_SCI_CONTROL_RW_MASK;
     data->reg->sci_address = addr;
     data->reg->sci_datalen = 2;
-    data->reg->sci_fifo_addr = (value >> 8) & 0xff;
-    data->reg->sci_fifo_addr = (value >> 0) & 0xff;
+    data->reg->sci_fifo_write = (value >> 8) & 0xff;
+    data->reg->sci_fifo_write = (value >> 0) & 0xff;
 
     /* Start the transfer and then wait for completion. */
     data->reg->sci_control |= SENSOR_SCI_CONTROL_RUN_MASK;
@@ -200,7 +200,7 @@ lux1310_sci_writebuf(struct lux1310_private_data *data, uint8_t addr, const void
     data->reg->sci_address = addr;
     data->reg->sci_datalen = len;
     for (i = 0; i < len; i++) {
-        data->reg->sci_fifo_addr = *p++;
+        data->reg->sci_fifo_write = *p++;
     }
 
     /* Start the transfer and then wait for completion. */

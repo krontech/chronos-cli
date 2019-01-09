@@ -38,10 +38,6 @@ PKG_CHECK_MODULES(GST, [
   ])
 ])
 
-## Optionally build the Python/FPGA wrapper
-PKG_CHECK_MODULES(PYTHON, [python3], [XPYTHON="yes"], [XPYTHON="no"])
-AM_CONDITIONAL(PYBUILD, [test "$XPYTHON" = "yes"])
-
 AC_SYS_LARGEFILE
 
 AC_CONFIG_HEADERS([config.h])
