@@ -10,6 +10,8 @@ int pychronos_init_lux1310(PyObject *mod);
 extern Py_buffer fpga_regbuffer;
 extern Py_buffer fpga_rambuffer;
 
+PyObject * pychronos_array_getiter(PyObject *self);
+
 #ifndef arraysize
 #define arraysize(_array_) (sizeof(_array_)/sizeof((_array_)[0]))
 #endif

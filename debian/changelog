@@ -1,5 +1,6 @@
-chronos-cli (0.3.1~beta15) unstable; urgency=medium
+chronos-cli (0.3.1~beta16) unstable; urgency=medium
 
+  * Add lux1310 named registers, and frame readout helpers to python module.
   * Add Debian packaging of python3-pychronos module.
   * Add lux1310 class and more documentation to the Python/FPGA wrappers.
   * Add largefile support when saving H.264 files.
@@ -17,4 +18,4 @@ chronos-cli (0.3.1~beta15) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Mon, 14 Jan 2019 14:49:44 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Mon, 21 Jan 2019 13:32:44 -0800

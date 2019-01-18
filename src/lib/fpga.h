@@ -98,7 +98,7 @@ struct fpga_color {
 
 /* Video RAM readout */
 struct fpga_vram {
-    uint32_t identifier;    /* Should always read 0x0040 */
+    uint32_t identifier;    /* Should always read 0x0010 */
     uint32_t version;
     uint32_t subver;
     uint32_t control;
@@ -109,7 +109,7 @@ struct fpga_vram {
     uint8_t __reserved1[0x200 - 0x28]; /* Align to offset 0x200 */
     uint16_t buffer[1024];
 };
-#define VRAM_IDENTIFIER     0x40
+#define VRAM_IDENTIFIER     0x10
 
 #define VRAM_CTL_TRIG_READ  (1 << 0)
 #define VRAM_CTL_TRIG_WRITE (1 << 1)
