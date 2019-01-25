@@ -53,15 +53,15 @@ mem_init(struct fpga *fpga)
     close(fd);
 
     if (ram_size1 > ram_size0) {
-        fpga->reg[MMU_CONFIG] = MMU_INVERT_CS;
+        fpga->config->mmu_config = MMU_INVERT_CS;
         fprintf(stderr, "MMU: Invert CS remap\n");
     }
     else if ((ram_size0 < 16) && (ram_size1 < 16)) {
-        fpga->reg[MMU_CONFIG] = MMU_SWITCH_STUFFED;
+        fpga->config->mmu_config = MMU_SWITCH_STUFFED;
         fprintf(stderr, "MMU: switch stuffed remap\n");
     }
     else {
-        fpga->reg[MMU_CONFIG] = 0;
+        fpga->config->mmu_config = 0;
         fprintf(stderr, "MMU: no remap applied\n");
     }
     return (ram_size0 + ram_size1);

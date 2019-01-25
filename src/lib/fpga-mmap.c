@@ -81,12 +81,12 @@ fpga_open(void)
 	}
 
 	/* Setup structured access to FPGA registers. */
-	fpga->sensor = (struct fpga_sensor *)(fpga->reg + SENSOR_CONTROL);
-	fpga->seq = (struct fpga_seq *)(fpga->reg + SEQ_CONTROL);
-	fpga->display = (struct fpga_display *)(fpga->reg + DISPLAY_CTL);
-	fpga->vram = (struct fpga_vram *)(fpga->reg + VRAM_OFFSET);
-	fpga->overlay = (struct fpga_overlay *)(fpga->reg + OVERLAY_CONTROL);
-	fpga->cc_matrix = (uint32_t *)(fpga->reg + CCM_ADDR);
+	fpga->sensor = (struct fpga_sensor *)((uint8_t *)fpga->reg + FPGA_SENSOR_BASE);
+	fpga->seq = (struct fpga_seq *)((uint8_t *)fpga->reg + FPGA_SEQUENCER_BASE);
+	fpga->display = (struct fpga_display *)((uint8_t *)fpga->reg + FPGA_DISPLAY_BASE);
+	fpga->config = (struct fpga_config *)((uint8_t *)fpga->reg + FPGA_CONFIG_BASE);
+	fpga->vram = (struct fpga_vram *)((uint8_t *)fpga->reg + FPGA_VRAM_BASE);
+	fpga->overlay = (struct fpga_overlay *)((uint8_t *)fpga->reg + FPGA_OVERLAY_BASE);
 	return fpga;
 } /* fpga_open */
 

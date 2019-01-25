@@ -125,7 +125,9 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     const uint8_t dng_compatible[] = {1, 0, 0, 0};
     const uint8_t exif_version[] = {'0', '2', '2', '0'};
     const struct tiff_rational wbneutral[3] = {
-        {4096, state->fpga->reg[WBAL_RED]}, {4096, state->fpga->reg[WBAL_GREEN]}, {4096, state->fpga->reg[WBAL_BLUE]}
+        {4096, state->fpga->display->wbal[0]},
+        {4096, state->fpga->display->wbal[1]},
+        {4096, state->fpga->display->wbal[2]}
     };
     const struct tiff_srational cmatrix[9] = {
         /* CIE XYZ to LUX1310 color space conversion matrix. */

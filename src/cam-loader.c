@@ -247,10 +247,10 @@ main(int argc, char *const argv[])
     if (fpga == NULL) {
         return 1;
     }
-    fpga->reg[SYSTEM_RESET] = 1;
+    fpga->config->sys_reset = 1;
     usleep(200000);
-    ver_major = fpga->reg[FPGA_VERSION];
-    ver_minor = fpga->reg[FPGA_SUBVERSION];
+    ver_major = fpga->config->version;
+    ver_minor = fpga->config->version;
     fprintf(stdout, "Loaded FPGA bistream version: %d.%d\n", ver_major, ver_minor);
     fpga_close(fpga);
     return 0;

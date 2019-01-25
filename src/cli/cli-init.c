@@ -46,17 +46,17 @@ fpga_set_color_matrix(struct fpga *fpga, const double *cc, const double *wb, dou
         (4096.0 * wb[2] * gain),
     };
 
-	fpga->reg[CCM_11] = cc_within(cc[0] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_12] = cc_within(cc[1] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_13] = cc_within(cc[2] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_red[0] = cc_within(cc[0] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_red[1] = cc_within(cc[1] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_red[2] = cc_within(cc[2] * wb_gain[0], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
 
-	fpga->reg[CCM_21] = cc_within(cc[3] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_22] = cc_within(cc[4] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_23] = cc_within(cc[5] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_green[0] = cc_within(cc[3] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_green[1] = cc_within(cc[4] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_green[2] = cc_within(cc[5] * wb_gain[1], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
 
-	fpga->reg[CCM_31] = cc_within(cc[6] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_32] = cc_within(cc[7] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
-	fpga->reg[CCM_33] = cc_within(cc[8] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_blue[0] = cc_within(cc[6] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_blue[1] = cc_within(cc[7] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
+	fpga->display->ccm_blue[2] = cc_within(cc[8] * wb_gain[2], -COLOR_MATRIX_MAXVAL, COLOR_MATRIX_MAXVAL-1);
 } /* fpga_set_color_matrix */
 
 static int
@@ -95,15 +95,15 @@ do_init(struct fpga *fpga, char *const argv[], int argc)
     }
 
     if (ram_size1 > ram_size0) {
-        fpga->reg[MMU_CONFIG] = MMU_INVERT_CS;
+        fpga->config->mmu_config = MMU_INVERT_CS;
         fprintf(stderr, "MMU: Invert CS remap\n");
     }
     else if ((ram_size0 < 16) && (ram_size1 < 16)) {
-        fpga->reg[MMU_CONFIG] = MMU_SWITCH_STUFFED;
+        fpga->config->mmu_config = MMU_SWITCH_STUFFED;
         fprintf(stderr, "MMU: switch stuffed remap\n");
     }
     else {
-        fpga->reg[MMU_CONFIG] = 0;
+        fpga->config->mmu_config = 0;
         fprintf(stderr, "MMU: no remap applied\n");
     }
 

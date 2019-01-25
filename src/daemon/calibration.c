@@ -63,17 +63,17 @@ cal_update_color_matrix(CamObject *cam, double softgain)
     };
     cam->softgain = softgain;
     
-	cam->fpga->reg[CCM_11] = cc_within(cam->cc_matrix[0] * wb_gain[0]);
-	cam->fpga->reg[CCM_12] = cc_within(cam->cc_matrix[1] * wb_gain[0]);
-	cam->fpga->reg[CCM_13] = cc_within(cam->cc_matrix[2] * wb_gain[0]);
+	cam->fpga->display->ccm_red[0] = cc_within(cam->cc_matrix[0] * wb_gain[0]);
+	cam->fpga->display->ccm_red[1] = cc_within(cam->cc_matrix[1] * wb_gain[0]);
+	cam->fpga->display->ccm_red[2] = cc_within(cam->cc_matrix[2] * wb_gain[0]);
 
-	cam->fpga->reg[CCM_21] = cc_within(cam->cc_matrix[3] * wb_gain[1]);
-	cam->fpga->reg[CCM_22] = cc_within(cam->cc_matrix[4] * wb_gain[1]);
-	cam->fpga->reg[CCM_23] = cc_within(cam->cc_matrix[5] * wb_gain[1]);
+	cam->fpga->display->ccm_green[0] = cc_within(cam->cc_matrix[3] * wb_gain[1]);
+	cam->fpga->display->ccm_green[1] = cc_within(cam->cc_matrix[4] * wb_gain[1]);
+	cam->fpga->display->ccm_green[2] = cc_within(cam->cc_matrix[5] * wb_gain[1]);
 
-	cam->fpga->reg[CCM_31] = cc_within(cam->cc_matrix[6] * wb_gain[2]);
-	cam->fpga->reg[CCM_32] = cc_within(cam->cc_matrix[7] * wb_gain[2]);
-	cam->fpga->reg[CCM_33] = cc_within(cam->cc_matrix[8] * wb_gain[2]);
+	cam->fpga->display->ccm_blue[0] = cc_within(cam->cc_matrix[6] * wb_gain[2]);
+	cam->fpga->display->ccm_blue[1] = cc_within(cam->cc_matrix[7] * wb_gain[2]);
+	cam->fpga->display->ccm_blue[2] = cc_within(cam->cc_matrix[8] * wb_gain[2]);
 } /* cal_update_color_matrix */
 
 /* Helper function to pack pixels into memory despite inconvenient bit alignments. */

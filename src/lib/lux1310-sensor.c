@@ -395,9 +395,8 @@ lux1310_set_period(struct image_sensor *sensor, const struct image_geometry *g, 
     }
 
     /* Setup the timing generator to handle the the line period and start delay. */
-    /* TODO: Would it be cleaner to move these registers into the block of sensor stuff? */
-    sensor->fpga->reg[SENSOR_MAGIC_START_DELAY] = data->wavetab->start_delay;
-    sensor->fpga->reg[SENSOR_LINE_PERIOD] = max((g->hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3)) - 1;
+    data->reg->start_delay = data->wavetab->start_delay;
+    data->reg->line_period = max((g->hres / LUX1310_HRES_INCREMENT)+2, (data->wavetab->read_delay + 3)) - 1;
     return 0;
 } /* lux1310_set_period */
 
@@ -618,9 +617,9 @@ lux1310_init(struct fpga *fpga, const struct ioport *iops)
 
     /* Wait for the voltage levels to settle and strobe the reset low. */
     usleep(10000);
-    data->reg->control |= IMAGE_SENSOR_RESET_MASK;
+    data->reg->control |= SENSOR_CTL_RESET_MASK;
     usleep(100);
-    data->reg->control &= ~IMAGE_SENSOR_RESET_MASK;
+    data->reg->control &= ~SENSOR_CTL_RESET_MASK;
     usleep(1000);
 
     /* Reset the SCI registers to default. */

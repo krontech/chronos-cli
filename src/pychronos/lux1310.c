@@ -27,7 +27,7 @@ lux1310_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
         Py_DECREF(self);
         return NULL;
     }
-    self->sensor = (struct fpga_sensor *)(fpga_regbuffer.buf + SENSOR_CONTROL);
+    self->sensor = (struct fpga_sensor *)(fpga_regbuffer.buf + FPGA_SENSOR_BASE);
     return (PyObject *)self;
 }
 
@@ -62,7 +62,7 @@ lux1310_sci_write(volatile struct fpga_sensor *sensor, uint16_t address, uint16_
 {
     int i;
 
-    sensor->sci_control = SENSOR_SCI_CONTROL_FIFO_RESET_MASK;
+    sensor->sci_control = SENSOR_SCI_CONTROL_RESET_MASK;
     sensor->sci_address = address;
     sensor->sci_datalen = 2;
     sensor->sci_fifo_write = (value >> 8) & 0xff;
@@ -260,6 +260,220 @@ adcoffset_get_arrayview(PyObject *pyself, void *closure)
 }
 
 /*===============================================*
+ * Chronos 1.4 Sensor Board - DAC Configuration
+ *===============================================*/
+/* Which DAC output controls what sensor voltages */
+#define LUX1310_DAC_VDR3        0
+#define LUX1310_DAC_VABL        1
+#define LUX1310_DAC_VDR1        2
+#define LUX1310_DAC_VDR2        3
+#define LUX1310_DAC_VRSTB       4
+#define LUX1310_DAC_VRSTH       5
+#define LUX1310_DAC_VRSTL       6
+#define LUX1310_DAC_VRST        7
+
+/* Voltage Scale for the DAC outputs. */
+#define LUX1310_DAC_FULL_SCALE      4095
+#define LUX1310_DAC_VREF            3.3
+#define LUX1310_DAC_AUTOUPDATE      9
+#define LUX1310_DAC_CHANNELS        8
+
+/* Gain networks for some DAC outputs. */
+#define LUX1310_VABL_MUL        (100 + 232)
+#define LUX1310_VABL_DIV        (100)
+#define LUX1310_VRSTH_MUL       (499)
+#define LUX1310_VRSTH_DIV       (499 + 100)
+#define LUX1310_VRSTL_MUL       (100 + 232)
+#define LUX1310_VRSTL_DIV       (100)
+#define LUX1310_VRST_MUL        (499)
+#define LUX1310_VRST_DIV        (499 + 100)
+
+/* TODO: These should come from a board config file somewhere... */
+#define LUX1310_DAC_SPI_DEVICE  "/dev/spidev3.0"
+#define LUX1310_DAC_SPI_CHIPSEL "/sys/class/gpio/gpio33/value"
+#define LUX1310_COLOR_DETECT    "/sys/class/gpio/gpio66/value"
+
+/* Configure the DAC for auto-update operation. */
+static int
+lux1310_setup_dac(PyObject *mod)
+{
+    uint8_t wrdata[2] = {0, LUX1310_DAC_AUTOUPDATE << 4};
+    int spifd, spics;
+
+    /* Open the SPI device and program the DAC. */
+    spifd = open(LUX1310_DAC_SPI_DEVICE, O_RDWR);
+    if (spifd < 0) {
+        PyErr_SetFromErrno(mod);
+        return -1;
+    }
+    spics = open(LUX1310_DAC_SPI_CHIPSEL, O_WRONLY);
+    if (spics < 0) {
+        PyErr_SetFromErrno(mod);
+        close(spifd);
+        return -1;
+    }
+    write(spics, "0", 1);
+    write(spifd, wrdata, sizeof(wrdata));
+    write(spics, "1", 1);
+    
+    close(spics);
+    close(spifd);
+    return 0;
+}
+
+PyDoc_STRVAR(
+    lux1310_write_dac_docstring,
+    "writeDAC(dac, value) -> None\n\n"
+    "Write a new value to one of the DAC voltages on the sensor board.");
+
+/*
+ * TODO: Extend it into a variadic version that can accept multiple
+ * voltages and update them synchronously.
+ */
+static PyObject *
+lux1310_write_dac(PyObject *self, PyObject *args)
+{
+    double volts;
+    long vdac;
+    int channel;
+
+    uint8_t wrdata[2];
+    int spifd, spics;
+
+    if (!PyArg_ParseTuple(args, "id", &channel, &volts)) {
+        return NULL;
+    }
+    /* Convert the voltage into bits */
+    switch (channel) {
+        case LUX1310_DAC_VDR1:
+        case LUX1310_DAC_VDR2:
+        case LUX1310_DAC_VDR3:
+        case LUX1310_DAC_VRSTB:
+            /* No gain networks. */
+            vdac = (long)(LUX1310_DAC_FULL_SCALE * (volts / LUX1310_DAC_VREF));
+            break;
+
+        case LUX1310_DAC_VABL:
+            vdac = (long)(LUX1310_DAC_FULL_SCALE * (volts * LUX1310_VABL_MUL) / (LUX1310_DAC_VREF * LUX1310_VABL_DIV));
+            break;
+
+        case LUX1310_DAC_VRSTH:
+            vdac = (long)(LUX1310_DAC_FULL_SCALE * (volts * LUX1310_VRSTH_MUL) / (LUX1310_DAC_VREF * LUX1310_VRSTH_DIV));
+            break;
+
+        case LUX1310_DAC_VRSTL:
+            vdac = (long)(LUX1310_DAC_FULL_SCALE * (volts * LUX1310_VRSTL_MUL) / (LUX1310_DAC_VREF * LUX1310_VRSTL_DIV));
+            break;
+
+        case LUX1310_DAC_VRST:
+            vdac = (long)(LUX1310_DAC_FULL_SCALE * (volts * LUX1310_VRST_MUL) / (LUX1310_DAC_VREF * LUX1310_VRST_DIV));
+            break;
+
+        default:
+            PyErr_SetString(PyExc_ValueError, "Unsupported DAC");
+            return NULL;
+    }
+    if ((vdac > LUX1310_DAC_FULL_SCALE) || (vdac < 0)) {
+        PyErr_SetString(PyExc_ValueError, "DAC out of range");
+        return NULL;
+    }
+    wrdata[0] = (vdac >> 0) & 0xff;
+    wrdata[1] = (vdac >> 8) & 0x0f;
+    wrdata[1] += (channel & 0x7) << 4;
+
+    /* Open the SPI device and program the DAC. */
+    /* TODO: Some of this should be done at import to ensure DAC write-through mode is set. */
+    spifd = open(LUX1310_DAC_SPI_DEVICE, O_RDWR);
+    if (spifd < 0) {
+        return PyErr_SetFromErrno(self);
+    }
+    spics = open(LUX1310_DAC_SPI_CHIPSEL, O_WRONLY);
+    if (spics < 0) {
+        PyErr_SetFromErrno(self);
+        close(spifd);
+        return NULL;
+    }
+    write(spics, "0", 1);
+    write(spifd, wrdata, sizeof(wrdata));
+    write(spics, "1", 1);
+
+    /* Success! */
+    close(spics);
+    close(spifd);
+    Py_RETURN_NONE;
+}
+
+static PyObject *
+lux1310_get_colordetect(PyObject *self, void *closure)
+{
+    char buf[2];
+    int fd = open(LUX1310_COLOR_DETECT, O_RDONLY);
+    if (fd < 0) {
+        return PyErr_SetFromErrno(self);
+    }
+    if (read(fd, buf, sizeof(buf)) < 0) {
+        PyErr_SetFromErrno(self);
+        close(fd);
+        return NULL;
+    }
+    return PyBool_FromLong(buf[0] == '1');
+}
+
+/*===============================================*
+ * Wavetable Loader Function 
+ *===============================================*/
+PyDoc_STRVAR(
+    lux1310_write_wavetable_docstring,
+    "wavetable(bytes) -> None\n\n"
+    "Load a wavetable into the image sensor.");
+
+static PyObject *
+lux1310_write_wavetable(PyObject *pyself, PyObject *args)
+{
+    struct lux1310map *self = (struct lux1310map *)pyself;
+    Py_buffer wavetable;
+    int i;
+
+    if (!PyArg_ParseTuple(args, "y*", &wavetable)) {
+        return NULL;
+    }
+
+    if (PyBuffer_IsContiguous(&wavetable, 'C')) {
+        const uint8_t *wtdata = (const uint8_t *)wavetable.buf;
+
+        /* Clear the RW flag and reset the FIFO */
+        self->sensor->sci_control = SENSOR_SCI_CONTROL_RESET_MASK;
+        self->sensor->sci_address = 0x7F;
+        self->sensor->sci_datalen = wavetable.len;
+        for (i = 0; i < wavetable.len; i++) {
+            self->sensor->sci_fifo_write = wtdata[i];
+        }
+    }
+    /* Complicated case for complex buffers. */
+    else {
+        uint8_t *wtdata = malloc(wavetable.len);
+        if (!wtdata) {
+            PyErr_NoMemory();
+            return NULL;
+        }
+        PyBuffer_ToContiguous(wtdata, &wavetable, wavetable.len, 'C');
+
+        self->sensor->sci_control = SENSOR_SCI_CONTROL_RESET_MASK;
+        self->sensor->sci_address = 0x7F;
+        self->sensor->sci_datalen = wavetable.len;
+        for (i = 0; i < wavetable.len; i++) {
+            self->sensor->sci_fifo_write = wtdata[i];
+        }
+        free(wtdata);
+    }
+
+    /* Start the transfer and wait for completion. */
+    self->sensor->sci_control = SENSOR_SCI_CONTROL_RUN_MASK;
+    while (self->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK);
+    Py_RETURN_NONE;
+}
+
+/*===============================================*
  * LUX1310 Named Registers and Constants
  *===============================================*/
 /* Bit hacking to extract a value from a bitmask and shift it down. */
@@ -337,16 +551,26 @@ lux1310_set_bool(PyObject *pyself, PyObject *value, void *closure)
     return 0;
 }
 
+static PyObject *
+lux1310_get_const(PyObject *self, void *closure)
+{
+    return PyLong_FromLong((intptr_t)closure);
+}
+
 #define LUX1310_GETSET_UINT(_name_, _regdef_, _desc_) \
     { _name_, lux1310_get_uint, lux1310_set_uint, _desc_, (void *)(_regdef_)}
 
 #define LUX1310_GETSET_BOOL(_name_, _regdef_, _desc_) \
     { _name_, lux1310_get_bool, lux1310_set_bool, _desc_, (void *)(_regdef_)}
 
+#define LUX1310_GETSET_CONST(_name_, _value_, _desc_) \
+    { _name_, lux1310_get_const, NULL, _desc_, (void *)(intptr_t)(_value_)}
+
 static PyGetSetDef lux1310_getset[] = {
-    /* Special cases for handling arrayview types. */
+    /* Special case types. */
     {"reg",         lux1310_get_arrayview, NULL, "Raw image sensor registers", NULL},
     {"regAdcOs",    adcoffset_get_arrayview, NULL, "ADC offsets", NULL},
+    {"color",       lux1310_get_colordetect, NULL, "Color Detect", NULL},
     /* Named subfields registers. */
     {"revChip",     lux1310_get_uint, NULL, "Chip Revision Number",         (void *)LUX1310_SCI_REV_CHIP},
     {"regChipId",   lux1310_get_uint, NULL, "Chip ID Number",               (void *)LUX1310_SCI_CHIP_ID},
@@ -419,72 +643,33 @@ static PyGetSetDef lux1310_getset[] = {
     LUX1310_GETSET_UINT("regSerSync",       LUX1310_SCI_SER_SYNC,           "Synchronized the serializers"),
     LUX1310_GETSET_UINT("regClkSync",       LUX1310_SCI_CLK_SYNC,           "Re-synchronizes the SCIP clock divider"),
     LUX1310_GETSET_UINT("regSresetB",       LUX1310_SCI_SRESET_B,           "Soft reset: resets all registers"),
+    /* Constants for DAC Confuration  */
+    LUX1310_GETSET_CONST("DAC_VDR3",        LUX1310_DAC_VDR3,               "Pixel Driver High Dynamic Range Voltage 3"),
+    LUX1310_GETSET_CONST("DAC_VABL",        LUX1310_DAC_VABL,               "Pixel Anti-Blooming Low Voltage"),
+    LUX1310_GETSET_CONST("DAC_VDR1",        LUX1310_DAC_VDR1,               "Pixel Driver High Dynamic Range Voltage 1"),
+    LUX1310_GETSET_CONST("DAC_VDR2",        LUX1310_DAC_VDR2,               "Pixel Driver High Dynamic Range Voltage 2"),
+    LUX1310_GETSET_CONST("DAC_VRSTB",       LUX1310_DAC_VRSTB,              "Pixel Reset High Voltage 2"),
+    LUX1310_GETSET_CONST("DAC_VRSTH",       LUX1310_DAC_VRSTH,              "Pixel Driver Reset High Voltage"),
+    LUX1310_GETSET_CONST("DAC_VRSTL",       LUX1310_DAC_VRSTL,              "Pixel Driver Reset Low Voltage"),
+    LUX1310_GETSET_CONST("DAC_VRST",        LUX1310_DAC_VRST,               "Pixel Reset High Voltage"),
     {NULL}
 };
 
-/*===============================================*
- * Wavetable Loader Function 
- *===============================================*/
-PyDoc_STRVAR(
-    lux1310_write_wavetable_docstring,
-    "wavetable(bytes) -> None\n\n"
-    "Load a wavetable into the image sensor.");
-
-static PyObject *
-lux1310_write_wavetable(PyObject *pyself, PyObject *args)
-{
-    struct lux1310map *self = (struct lux1310map *)pyself;
-    Py_buffer wavetable;
-    int i;
-
-    if (!PyArg_ParseTuple(args, "y*", &wavetable)) {
-        return NULL;
-    }
-
-    if (PyBuffer_IsContiguous(&wavetable, 'C')) {
-        const uint8_t *wtdata = (const uint8_t *)wavetable.buf;
-
-        /* Clear the RW flag and reset the FIFO */
-        self->sensor->sci_control = SENSOR_SCI_CONTROL_FIFO_RESET_MASK;
-        self->sensor->sci_address = 0x7F;
-        self->sensor->sci_datalen = wavetable.len;
-        for (i = 0; i < wavetable.len; i++) {
-            self->sensor->sci_fifo_write = wtdata[i];
-        }
-    }
-    /* Complicated case for complex buffers. */
-    else {
-        uint8_t *wtdata = malloc(wavetable.len);
-        if (!wtdata) {
-            PyErr_NoMemory();
-            return NULL;
-        }
-        PyBuffer_ToContiguous(wtdata, &wavetable, wavetable.len, 'C');
-
-        self->sensor->sci_control = SENSOR_SCI_CONTROL_FIFO_RESET_MASK;
-        self->sensor->sci_address = 0x7F;
-        self->sensor->sci_datalen = wavetable.len;
-        for (i = 0; i < wavetable.len; i++) {
-            self->sensor->sci_fifo_write = wtdata[i];
-        }
-        free(wtdata);
-    }
-
-    /* Start the transfer and wait for completion. */
-    self->sensor->sci_control = SENSOR_SCI_CONTROL_RUN_MASK;
-    while (self->sensor->sci_control & SENSOR_SCI_CONTROL_RUN_MASK);
-    Py_RETURN_NONE;
-}
-
 static PyMethodDef lux1310_methods[] = {
-    {"wavetable", lux1310_write_wavetable, METH_VARARGS, lux1310_write_wavetable_docstring},
+    {"wavetable", lux1310_write_wavetable,  METH_VARARGS, lux1310_write_wavetable_docstring},
+    {"writeDAC",  lux1310_write_dac,        METH_VARARGS, lux1310_write_dac_docstring},
     {NULL, NULL, 0, NULL},
 };
+
+PyDoc_STRVAR(lux1310_docstring,
+"Return a new map of the LUX1310 image sensor register space. This map\n\
+provides structured read and write access to the registers via the SCI\n\
+communication channel.");
 
 static PyTypeObject lux1310_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "pychronos.lux1310",
-    .tp_doc = "Luxima LUX1310 Register Map",
+    .tp_doc = lux1310_docstring,
     .tp_basicsize = sizeof(struct lux1310map),
     .tp_itemsize = 0,
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
@@ -501,6 +686,11 @@ pychronos_init_lux1310(PyObject *mod)
     PyTypeObject *types[] = {
         &lux1310_type,
     };
+
+    i = lux1310_setup_dac(mod);
+    if (i != 0) {
+        return i;
+    }
 
     PyType_Ready(&lux1310_arrayview_type);
     Py_INCREF(&lux1310_arrayview_type);

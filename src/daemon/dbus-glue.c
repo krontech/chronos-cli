@@ -80,7 +80,7 @@ cam_control_get_camera_data(CamObject *cam, GHashTable **data, GError **error)
         cam_dbus_dict_add_string(dict, "model", "Chronos 1.4");
         cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
         cam_dbus_dict_add_printf(dict, "fpgaVersion", "%d.%d",
-            fpga->reg[FPGA_VERSION], fpga->reg[FPGA_SUBVERSION]);
+            fpga->config->version, fpga->config->subver);
         cam_dbus_dict_add_printf(dict, "memoryGB", "%u", cam->mem_gbytes);
         if (strlen(cam->serial)) {
             cam_dbus_dict_add_string(dict, "serial", cam->serial);

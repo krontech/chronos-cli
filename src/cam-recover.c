@@ -318,8 +318,8 @@ main(int argc, char *const argv[])
 
     /* Step 1) Ensure that we can retreieve a sane FPGA version. */
     printf("Checking FPGA configuration:\n");
-    version = fpga->reg[FPGA_VERSION];
-    subver = fpga->reg[FPGA_SUBVERSION];
+    version = fpga->config->version;
+    subver = fpga->config->subver;
     f_size = fpga->seq->frame_size;
     r_start = fpga->seq->region_start;
     r_stop = fpga->seq->region_stop;

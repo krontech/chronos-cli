@@ -60,7 +60,7 @@ main(void)
     if (!cam->fpga) {
         perror("FPGA initialization failed");
     }
-    cam->fpga->reg[SYSTEM_RESET] = 1;
+    cam->fpga->config->sys_reset = 1;
 
     cam->mem_gbytes = mem_init(cam->fpga);
     if (cam->mem_gbytes == 0) {

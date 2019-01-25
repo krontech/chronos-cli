@@ -250,10 +250,23 @@ static PyMemberDef frame_members[] = {
     { NULL }
 };
 
+PyDoc_STRVAR(frame_docstring,
+"frame(hRes, vRes)\n\
+--\n\
+\n\
+Create a frame buffer to contain an image of the desired resolution\n\
+and initially set to zeroes. The frame can be accessed as a 2D array\n\
+of integers.\n\
+\n\
+Parameters\n\
+----------\n\
+hRes, vRes : `int`\n\
+    Horizontal and vertical resolution of the frame");
+
 static PyTypeObject frame_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "pychronos.frame",
-    .tp_doc = "Raw frame image data",
+    .tp_doc = frame_docstring,
     .tp_basicsize = sizeof(struct frame_object),
     .tp_itemsize = sizeof(uint16_t),
     .tp_flags = Py_TPFLAGS_DEFAULT,
@@ -355,7 +368,7 @@ PyDoc_STRVAR(pychronos_read_raw_docstring,
 static PyObject *
 pychronos_read_raw(PyObject *self, PyObject *args)
 {
-    struct fpga_vram *vram = (struct fpga_vram *)(fpga_regbuffer.buf + VRAM_OFFSET * 2);
+    struct fpga_vram *vram = (struct fpga_vram *)(fpga_regbuffer.buf + FPGA_VRAM_BASE);
     unsigned long address, length;
     uint8_t *buffer;
     PyObject *obj;
@@ -381,7 +394,7 @@ PyDoc_STRVAR(pychronos_read_frame_docstring,
 static PyObject *
 pychronos_read_frame(PyObject *self, PyObject *args)
 {
-    struct fpga_vram *vram = (struct fpga_vram *)(fpga_regbuffer.buf + VRAM_OFFSET * 2);
+    struct fpga_vram *vram = (struct fpga_vram *)(fpga_regbuffer.buf + FPGA_VRAM_BASE);
     struct frame_object *frame;
     unsigned long address, length;
     uint8_t *buffer;
@@ -449,7 +462,7 @@ PyDoc_STRVAR(pychronos_write_frame_docstring,
 static PyObject *
 pychronos_write_frame(PyObject *self, PyObject *args)
 {
-    struct fpga_vram *vram = (struct fpga_vram *)(fpga_regbuffer.buf + VRAM_OFFSET * 2);
+    struct fpga_vram *vram = (struct fpga_vram *)(fpga_regbuffer.buf + FPGA_VRAM_BASE);
     unsigned long address;
     PyObject *frame;
     Py_buffer pbuffer;
