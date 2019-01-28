@@ -556,7 +556,12 @@ static PyModuleDef pychronos_module = {
 PyMODINIT_FUNC
 PyInit_pychronos(void)
 {
+    int i;
     PyObject *m, *o;
+    PyTypeObject *pubtypes[] = {
+        &frame_type,
+        &seqcommand_type,
+    };
 
     /* Initialize the FPGA register mapping and the Python objects. */
     if (pychronos_init_maps()) {
@@ -584,14 +589,20 @@ PyInit_pychronos(void)
     Py_INCREF(o);
     PyModule_AddObject(m, "ram",  o);
 
-    pychronos_init_regs(m);
-    pychronos_init_lux1310(m);
+    /* Register all public types. */
+    for (i = 0; i < arraysize(pubtypes); i++) {
+        PyTypeObject *t = pubtypes[i]; 
+        if (PyType_Ready(t) < 0) {
+            return NULL;
+        }
+        Py_INCREF(t);
+        PyModule_AddObject(m, strchr(t->tp_name, '.') + 1,  (PyObject *)t);
+    }
 
     PyType_Ready(&pychronos_arrayiter_type);
     Py_INCREF(&pychronos_arrayiter_type);
-    
-    PyType_Ready(&frame_type);
-    Py_INCREF(&frame_type);
-    PyModule_AddObject(m, strchr(frame_type.tp_name, '.') + 1,  (PyObject *)&frame_type);
+
+    pychronos_init_regs(m);
+    pychronos_init_lux1310(m);
     return m;
 }

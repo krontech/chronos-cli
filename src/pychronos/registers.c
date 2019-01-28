@@ -369,7 +369,7 @@ static PyTypeObject sensor_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = sensor_init,
     .tp_getset = sensor_getset,
 };
@@ -377,6 +377,94 @@ static PyTypeObject sensor_type = {
 /*=====================================*
  * Sequencer Register Space
  *=====================================*/
+struct seqprogram_array {
+    PyObject_HEAD
+    uint64_t *program;
+};
+
+static Py_ssize_t
+seqprogram_array_length(PyObject *self)
+{
+    return 16; /* Some ambiguity as to its length... */
+}
+
+static PyObject *
+seqprogram_array_getval(PyObject *self, PyObject *key)
+{
+    struct seqprogram_array *view = (struct seqprogram_array *)self;
+    unsigned long index = PyLong_AsUnsignedLong(key);
+
+    if (PyErr_Occurred()) {
+        return NULL;
+    }
+    if (index >= seqprogram_array_length(self)) {
+        PyErr_SetString(PyExc_IndexError, "Array index out of range");
+        return NULL;
+    }
+    return PyLong_FromUnsignedLongLong(view->program[index]);
+}
+
+static int
+seqprogram_array_setval(PyObject *self, PyObject *key, PyObject *val)
+{
+    struct seqprogram_array *view = (struct seqprogram_array *)self;
+    unsigned long long pgmcommand;
+    unsigned long index;
+    PyObject *vobject;
+
+    /* Parse the program index. */
+    index = PyLong_AsUnsignedLong(key);
+    if (PyErr_Occurred()) {
+        return -1;
+    }
+    if (index >= seqprogram_array_length(self)) {
+        PyErr_SetString(PyExc_IndexError, "Array index out of range");
+        return -1;
+    }
+
+    /* Convert whatever we got to an integer and write it. */
+    vobject = PyNumber_Long(val);
+    if (!vobject) {
+        return -1;
+    }
+    pgmcommand = PyLong_AsUnsignedLongLong(vobject);
+    Py_DECREF(vobject);
+    if (PyErr_Occurred()) {
+        return -1;
+    }
+    view->program[index] = pgmcommand;
+    return 0;
+}
+
+static PyMappingMethods seqprogram_as_array = {
+    .mp_length = seqprogram_array_length,
+    .mp_subscript = seqprogram_array_getval,
+    .mp_ass_subscript = seqprogram_array_setval
+};
+
+static PyTypeObject seqprogram_arrayview_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "pychronos.seqprogram",
+    .tp_doc = "Sequencer Program Array View",
+    .tp_basicsize = sizeof(struct seqprogram_array),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+    .tp_as_mapping = &seqprogram_as_array,
+    .tp_iter = pychronos_array_getiter,
+};
+
+static PyObject *
+seqprogram_get_arrayview(PyObject *self, void *closure)
+{
+    struct fpgamap *fmap = (struct fpgamap *)self;
+    struct seqprogram_array *view = PyObject_New(struct seqprogram_array, &seqprogram_arrayview_type);
+    if (view) {
+        view->program = (uint64_t *)fmap->regs + ((FPGA_SEQPROGRAM_BASE - FPGA_SEQUENCER_BASE) / sizeof(uint64_t));
+    }
+    return (PyObject *)view;
+}
+
 static PyGetSetDef sequencer_getset[] = {
     {"control",     fpga_get_uint, fpga_set_uint, "Control Register",             FPGA_REG_TYPED(struct fpga_seq, control, uint16_t)},
     {"status",      fpga_get_uint, fpga_set_uint, "Status Register",              FPGA_REG_TYPED(struct fpga_seq, status, uint16_t)},
@@ -388,6 +476,7 @@ static PyGetSetDef sequencer_getset[] = {
     {"mdFifo",      fpga_get_uint, NULL,          "MD FIFO Read Register",        FPGA_REG_SCALAR(struct fpga_seq, md_fifo_read)},
     {"writeAddr",   fpga_get_uint, NULL,          "Current Frame Write Address",  FPGA_REG_SCALAR(struct fpga_seq, write_addr)},
     {"lastAddr",    fpga_get_uint, NULL,          "Last Written Frame Address",   FPGA_REG_SCALAR(struct fpga_seq, last_addr)},
+    {"seqprogram",  seqprogram_get_arrayview, NULL, "Sequencer Program Registers", NULL},
     /* Sequencer Constant Definitions */
     {"SW_TRIG",     fpga_get_const, NULL,    "Software Trigger Request", (void *)SEQ_CTL_SOFTWARE_TRIG},
     {"START_REC",   fpga_get_const, NULL,    "Start Recording Request",  (void *)SEQ_CTL_START_RECORDING},
@@ -429,7 +518,7 @@ static PyTypeObject sequencer_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = sequencer_init,
     .tp_getset = sequencer_getset,
 };
@@ -483,7 +572,7 @@ static PyTypeObject trigger_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = trigger_init,
     .tp_getset = trigger_getset,
 };
@@ -830,7 +919,7 @@ static PyTypeObject display_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = display_init,
     .tp_getset = display_getset,
 };
@@ -881,7 +970,7 @@ static PyTypeObject config_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = config_init,
     .tp_getset = config_getset,
 };
@@ -936,7 +1025,7 @@ static PyTypeObject vram_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = vram_init,
     .tp_getset = vram_getset,
 };
@@ -1013,7 +1102,7 @@ static PyTypeObject overlay_type = {
     .tp_basicsize = sizeof(struct fpgamap),
     .tp_itemsize = 0,
     .tp_base = &fpgamap_type,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = overlay_init,
     .tp_getset = overlay_getset,
 };
@@ -1039,6 +1128,8 @@ pychronos_init_regs(PyObject *mod)
     /* Init the arrayview type */
     PyType_Ready(&arrayview_type);
     Py_INCREF(&arrayview_type);
+    PyType_Ready(&seqprogram_arrayview_type);
+    Py_INCREF(&seqprogram_arrayview_type);
     PyType_Ready(&ccm_arrayview_type);
     Py_INCREF(&ccm_arrayview_type);
     PyType_Ready(&wbal_arrayview_type);
@@ -1051,12 +1142,13 @@ pychronos_init_regs(PyObject *mod)
     PyModule_AddIntMacro(mod, FPGA_TIMEBASE_HZ);
     PyModule_AddIntMacro(mod, FPGA_SENSOR_BASE);
     PyModule_AddIntMacro(mod, FPGA_SEQUENCER_BASE);
+    PyModule_AddIntMacro(mod, FPGA_TRIGGER_BASE);
+    PyModule_AddIntMacro(mod, FPGA_SEQPROGRAM_BASE);
     PyModule_AddIntMacro(mod, FPGA_DISPLAY_BASE);
     PyModule_AddIntMacro(mod, FPGA_CONFIG_BASE);
     PyModule_AddIntMacro(mod, FPGA_COL_GAIN_BASE);
     PyModule_AddIntMacro(mod, FPGA_VRAM_BASE);
     PyModule_AddIntMacro(mod, FPGA_SCI_BASE);
-    PyModule_AddIntMacro(mod, FPGA_SEQPGM_BASE);
     PyModule_AddIntMacro(mod, FPGA_IO_BASE);
     PyModule_AddIntMacro(mod, FPGA_TIMING_BASE);
     PyModule_AddIntMacro(mod, FPGA_PIPELINE_BASE);

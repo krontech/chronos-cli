@@ -37,6 +37,7 @@
 #define FPGA_SENSOR_BASE            0x0000
 #define FPGA_SEQUENCER_BASE         0x0040
 #define FPGA_TRIGGER_BASE           0x00A0
+#define FPGA_SEQPROGRAM_BASE        0x0100
 #define FPGA_DISPLAY_BASE           0x0400
 #define FPGA_CONFIG_BASE            0x0500
 #define FPGA_COL_GAIN_BASE          0x1000

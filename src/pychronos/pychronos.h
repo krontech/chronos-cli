@@ -9,6 +9,7 @@ int pychronos_init_lux1310(PyObject *mod);
 
 extern Py_buffer fpga_regbuffer;
 extern Py_buffer fpga_rambuffer;
+extern PyTypeObject seqcommand_type;
 
 PyObject * pychronos_array_getiter(PyObject *self);
 

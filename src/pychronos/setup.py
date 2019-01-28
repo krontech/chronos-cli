@@ -14,7 +14,8 @@ pychronos = Extension('pychronos',
                                  '../lib/lux1310.h'],
                       sources = ['module.c',
                                  'registers.c',
-                                 'lux1310.c'],
+                                 'lux1310.c',
+                                 'sequencer.c'],
                       extra_compile_args=extra_cflags,
                       extra_link_args=extra_ldflags)
 

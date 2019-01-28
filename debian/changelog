@@ -1,5 +1,6 @@
-chronos-cli (0.3.1~beta17) unstable; urgency=medium
+chronos-cli (0.3.1~beta18) unstable; urgency=medium
 
+  * Add sequencer command class to aid in register programming.
   * Add additional blocks and documentation to pychronos.
   * Add lux1310 named registers, and frame readout helpers to python module.
   * Add Debian packaging of python3-pychronos module.
@@ -19,4 +20,4 @@ chronos-cli (0.3.1~beta17) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Sat, 26 Jan 2019 15:09:27 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Mon, 28 Jan 2019 16:23:26 -0800
