@@ -14,6 +14,8 @@
  *  You should have received a copy of the GNU General Public License       *
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.   *
  ****************************************************************************/
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -52,22 +54,6 @@ cam_pipeline_restart(struct pipeline_state *state)
 {
     gst_event_ref(state->eos);
     gst_element_send_event(state->pipeline, state->eos);
-}
-
-static void
-handle_sigint(int sig)
-{
-    catch_sigint = 1;
-    cam_pipeline_restart(cam_pipeline_state());
-}
-
-static void
-handle_sighup(int sig)
-{
-    struct pipeline_state *state = cam_pipeline_state();
-    if (!PIPELINE_IS_SAVING(state->mode)) {
-        cam_pipeline_restart(state);
-    }
 }
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
@@ -379,6 +365,137 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
     }
 } /* cam_bus_watch */
 
+/*===============================================
+ * GLib glue to receive SIGHUP safely.
+ *===============================================
+ */
+static gboolean
+handle_sigint(gpointer data)
+{
+    struct pipeline_state *state = data;
+    catch_sigint = 1;
+    cam_pipeline_restart(state);
+}
+
+static gboolean
+handle_sighup(gpointer data)
+{
+    struct pipeline_state *state = data;
+    if (!PIPELINE_IS_SAVING(state->mode)) {
+        cam_pipeline_restart(state);
+    }
+}
+
+/* In modern Glib, this is a one-line call... */
+#if GLIB_CHECK_VERSION(2, 30, 0)
+
+#include <glib-unix.h>
+
+static int
+signals_init(struct pipeline_state *state)
+{
+    /* Shutdown and cleanup on SIGINT and SIGTERM  */    
+    g_unix_signal_add(SIGTERM, handle_sigint, state);
+    g_unix_signal_add(SIGINT, handle_sigint, state);
+    /* Reconfigure the pipeline on SIGHUP */
+    g_unix_signal_add(SIGHUP, handle_sighup, state);
+    return 0;
+}
+
+#else
+/*
+ * The old Arago-based systems don't have signal handling helpers
+ * in Glib so we need to roll our own using the self-pipe trick.
+ */
+static int signal_fds[2] = { -1, -1 };
+static GPollFD signal_pfd;
+
+/* The actual signal handler - just writes to the self pipe */
+static void
+g_unix_signal_handler(int signo)
+{
+    write(signal_fds[1], &signo, sizeof(signo));
+}
+
+/* Wrappers to wake up the GMainContext on signal reception. */
+static gboolean
+g_unix_signal_prepare(GSource *source, gint *timeout)
+{
+    signal_pfd.revents = 0;
+    *timeout = -1;
+    return FALSE;
+}
+
+static gboolean
+g_unix_signal_check(GSource *source)
+{
+    return (signal_pfd.revents & G_IO_IN) != 0;
+}
+
+static gboolean
+g_unix_signal_dispatch(GSource *source, GSourceFunc callback, gpointer user_data)
+{
+    int signo;
+    if (read(signal_fds[0], &signo, sizeof(signo)) != sizeof(signo)) {
+        return FALSE;
+    }
+    switch (signo) {
+        case SIGTERM:
+        case SIGINT:
+            handle_sigint(cam_pipeline_state());
+            break;
+        case SIGHUP:
+            handle_sighup(cam_pipeline_state());
+            break;
+        default:
+            /* Do Nothing */
+            break;
+    }
+}
+
+static GSourceFuncs g_unix_signal_source = {
+    .prepare = g_unix_signal_prepare,
+    .check = g_unix_signal_check,
+    .dispatch = g_unix_signal_dispatch,
+    .finalize = NULL,
+};
+
+static int
+signals_init(struct pipeline_state *state)
+{
+    GSource *source = g_source_new(&g_unix_signal_source, sizeof(GSource));
+    if (!source) {
+        fprintf(stderr, "Failed to create Glib wakeup source\n");
+        return -1;
+    }
+
+    /* Create a UNIX pipe to pass the signal safely into Glib */
+    if (pipe(signal_fds) != 0) {
+        fprintf(stderr, "Failed to create wakeup pipe: %s\n", strerror(errno));
+        g_source_unref(source);
+        return -1;
+    }
+    fcntl(signal_fds[1], F_GETFL, O_NONBLOCK);
+    
+    /* Setup to poll the read side of the pipe. */
+    signal_pfd.fd = signal_fds[0];
+    signal_pfd.events = G_IO_IN;
+    signal_pfd.revents = 0;
+    g_source_add_poll(source, &signal_pfd);
+    g_source_attach(source, g_main_loop_get_context(state->mainloop));
+
+    /* Install the POSIX signal handlers. */
+    signal(SIGTERM, g_unix_signal_handler);
+    signal(SIGINT,  g_unix_signal_handler);
+    signal(SIGHUP,  g_unix_signal_handler);
+    return 0;
+}
+#endif
+
+/*===============================================
+ * Pipeline Main Entry Point
+ *===============================================
+ */
 static void
 usage(FILE *fp, int argc, char *argv[])
 {
@@ -494,6 +611,13 @@ main(int argc, char * argv[])
         return -1;
     }
 
+    /* Initialize the POSIX signal handlers. */
+    if (signals_init(state) < 0) {
+        fprintf(stderr, "Failed to setup signal handlers\n");
+        fpga_close(state->fpga);
+        return -1;
+    }
+
     /* Attempt to get the camera serial number. */
     fd = open(ioport_find_by_name(state->iops, "eeprom-i2c"), O_RDWR);
     if (fd >= 0) {
@@ -508,19 +632,13 @@ main(int argc, char * argv[])
     if (mkfifo(SCREENCAP_PATH, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) != 0) {
         fprintf(stderr, "Unable to create FIFO: %s\n", strerror(errno));
     }
+    signal(SIGPIPE, SIG_IGN);
 
     /* Launch the HDMI and DBus threads. */
     hdmi_hotplug_launch(state);
     dbus_service_launch(state);
     playback_init(state);
-    
-    /* Shutdown and cleanup on SIGINT and SIGTERM  */
-    signal(SIGTERM, handle_sigint);
-    signal(SIGINT, handle_sigint);
 
-    /* Reconfigure the pipeline on SIGHUP */
-    signal(SIGHUP, handle_sighup);
-    signal(SIGPIPE, SIG_IGN);
     do {
         /* Launch the pipeline. */
         struct pipeline_args args;
