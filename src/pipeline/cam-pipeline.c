@@ -363,6 +363,8 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
             fprintf(stderr, "GST message received: %s\n", GST_MESSAGE_TYPE_NAME(msg));
             break;
     }
+
+    return TRUE;
 } /* cam_bus_watch */
 
 /*===============================================
@@ -414,7 +416,10 @@ static GPollFD signal_pfd;
 static void
 g_unix_signal_handler(int signo)
 {
-    write(signal_fds[1], &signo, sizeof(signo));
+    if (signo <= 255) {
+        int c = signo;
+        write(signal_fds[1], &c, 1);
+    }
 }
 
 /* Wrappers to wake up the GMainContext on signal reception. */
@@ -435,9 +440,9 @@ g_unix_signal_check(GSource *source)
 static gboolean
 g_unix_signal_dispatch(GSource *source, GSourceFunc callback, gpointer user_data)
 {
-    int signo;
-    if (read(signal_fds[0], &signo, sizeof(signo)) != sizeof(signo)) {
-        return FALSE;
+    char signo;
+    if (read(signal_fds[0], &signo, 1) != 1) {
+        return TRUE;
     }
     switch (signo) {
         case SIGTERM:
@@ -451,6 +456,7 @@ g_unix_signal_dispatch(GSource *source, GSourceFunc callback, gpointer user_data
             /* Do Nothing */
             break;
     }
+    return TRUE;
 }
 
 static GSourceFuncs g_unix_signal_source = {
@@ -464,6 +470,8 @@ static int
 signals_init(struct pipeline_state *state)
 {
     GSource *source = g_source_new(&g_unix_signal_source, sizeof(GSource));
+    int flags;
+
     if (!source) {
         fprintf(stderr, "Failed to create Glib wakeup source\n");
         return -1;
@@ -475,7 +483,8 @@ signals_init(struct pipeline_state *state)
         g_source_unref(source);
         return -1;
     }
-    fcntl(signal_fds[1], F_GETFL, O_NONBLOCK);
+    flags = fcntl(signal_fds[1], F_GETFL);
+    fcntl(signal_fds[1], F_SETFL, flags | O_NONBLOCK);
     
     /* Setup to poll the read side of the pipe. */
     signal_pfd.fd = signal_fds[0];
