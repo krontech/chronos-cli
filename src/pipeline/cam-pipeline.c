@@ -23,12 +23,17 @@
 #include <signal.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/types.h>
 #include <sys/mman.h>
 #include <pthread.h>
 #include <dirent.h>
 #include <gst/gst.h>
 #include <gst/controller/gstcontroller.h>
+
+/* For ti81xx framebuffer blending. */
+#include <linux/types.h>
+#include <linux/ti81xxfb.h>
 
 #include "fpga.h"
 #include "i2c.h"
@@ -442,6 +447,7 @@ g_unix_signal_dispatch(GSource *source, GSourceFunc callback, gpointer user_data
 {
     char signo;
     if (read(signal_fds[0], &signo, 1) != 1) {
+        fprintf(stderr, "Failed to read signal from pipe: %s\n", strerror(errno));
         return TRUE;
     }
     switch (signo) {
@@ -559,6 +565,7 @@ int
 main(int argc, char * argv[])
 {
     sigset_t sigset;
+    struct ti81xxfb_region_params regp;
     struct pipeline_state *state = cam_pipeline_state();
     /* Option Parsing */
     const char *short_options = "o:h";
@@ -636,7 +643,22 @@ main(int argc, char * argv[])
         state->serial[sizeof(state->serial)-1] = '\0';
         close(fd);
     }
-    
+
+    /* Attempt to configure the frame buffer pixel blending. */
+    fd = open("/dev/fb0", O_RDWR);
+    if (fd >= 0) {
+        if (ioctl(fd, TIFB_GET_PARAMS, &regp) < 0) {
+            fprintf(stderr, "Failed to read ti81xx framebuffer parameters: %s\n", strerror(errno));
+        }
+        else {
+            regp.blendtype = TI81XXFB_BLENDING_PIXEL;
+            if (ioctl(fd, TIFB_SET_PARAMS, &regp) < 0) {
+                fprintf(stderr, "Failed to enable ti81xx pixel blending: %s\n", strerror(errno));
+            }
+        }
+        close(fd);
+    }
+
     /* Attempt to create the frame-grabber FIFO */
     if (mkfifo(SCREENCAP_PATH, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) != 0) {
         fprintf(stderr, "Unable to create FIFO: %s\n", strerror(errno));
@@ -737,7 +759,8 @@ main(int argc, char * argv[])
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");
     } while(catch_sigint == 0);
-
+    
+    fprintf(stderr, "Exiting the pipeline...\n");
     unlink(SCREENCAP_PATH);
     munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);
     g_main_loop_unref(state->mainloop);
