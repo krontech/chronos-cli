@@ -510,7 +510,7 @@ lux1310_set_uint(PyObject *pyself, PyObject *value, void *closure)
     unsigned long newvalue;
 
     /* Parse the register value. */
-    newvalue = PyLong_AsUnsignedLong(value) * lsb;;
+    newvalue = PyLong_AsUnsignedLong(value) * lsb;
     if (PyErr_Occurred()) {
         return -1;
     }
@@ -520,7 +520,7 @@ lux1310_set_uint(PyObject *pyself, PyObject *value, void *closure)
     }
 
     /* Mask out the old bits, and replace them with the new. */
-    readvalue = (readvalue & ~mask) | newvalue;
+    newvalue |= (readvalue & ~mask);
     lux1310_sci_write(self->sensor, (regdef >> LUX1310_SCI_REG_ADDR), newvalue);
     return 0;
 }

@@ -51,6 +51,7 @@
 #define FPGA_VIDSRC_BASE            0x7100
 #define FPGA_CALSRC_BASE            0x7200
 #define FPGA_OVERLAY_BASE           0x8000
+#define FPGA_COL_OFFSET_BASE        0xD000
 
 struct fpga_sensor {
     uint32_t control;

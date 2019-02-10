@@ -315,7 +315,7 @@ static PyGetSetDef sensor_getset[] = {
     {"control",     fpga_get_uint, fpga_set_uint, "Control Register",               FPGA_REG_TYPED(struct fpga_sensor, control, uint16_t)},
     {"clkPhase",    fpga_get_uint, fpga_set_uint, "Clock Phase Register",           FPGA_REG_TYPED(struct fpga_sensor, clk_phase, uint16_t)},
     {"syncToken",   fpga_get_uint, fpga_set_uint, "Sync Token Register",            FPGA_REG_TYPED(struct fpga_sensor, sync_token, uint16_t)},
-    {"dataCorrect", fpga_get_uint, NULL,          "Data Correct Status Register",   FPGA_REG_TYPED(struct fpga_sensor, data_correct, uint16_t)},
+    {"dataCorrect", fpga_get_uint, NULL,          "Data Correct Status Register",   FPGA_REG_SCALAR(struct fpga_sensor, data_correct)},
     {"fifoStart",   fpga_get_uint, fpga_set_uint, "FIFO Starting Address Register", FPGA_REG_TYPED(struct fpga_sensor, fifo_start, uint16_t)},
     {"fifoStop",    fpga_get_uint, fpga_set_uint, "FIFO Ending Address Register",   FPGA_REG_TYPED(struct fpga_sensor, fifo_stop, uint16_t)},
     {"framePeriod", fpga_get_uint, fpga_set_uint, "Frame Period Register",          FPGA_REG_TYPED(struct fpga_sensor, frame_period, uint32_t)},
@@ -1149,12 +1149,14 @@ pychronos_init_regs(PyObject *mod)
     PyModule_AddIntMacro(mod, FPGA_COL_GAIN_BASE);
     PyModule_AddIntMacro(mod, FPGA_VRAM_BASE);
     PyModule_AddIntMacro(mod, FPGA_SCI_BASE);
+    PyModule_AddIntMacro(mod, FPGA_COL_CURVE_BASE);
     PyModule_AddIntMacro(mod, FPGA_IO_BASE);
     PyModule_AddIntMacro(mod, FPGA_TIMING_BASE);
     PyModule_AddIntMacro(mod, FPGA_PIPELINE_BASE);
     PyModule_AddIntMacro(mod, FPGA_VIDSRC_BASE);
     PyModule_AddIntMacro(mod, FPGA_CALSRC_BASE);
     PyModule_AddIntMacro(mod, FPGA_OVERLAY_BASE);
+    PyModule_AddIntMacro(mod, FPGA_COL_OFFSET_BASE);
 
     /* Register all types. */
     for (i = 0; i < arraysize(pubtypes); i++) {
