@@ -214,10 +214,9 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
-    int flags = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     int ret;
 
-    ret = mkdir(args->filename, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    ret = mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (ret < 0) {
         strcpy(state->error, strerror(errno));
         fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
@@ -463,10 +462,9 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
-    int flags = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     int ret;
 
-    ret = mkdir(args->filename, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    ret = mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (ret < 0) {
         strcpy(state->error, strerror(errno));
         fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
@@ -508,10 +506,9 @@ cam_tiffraw_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *queue, *sink;
     GstPad *pad;
-    int flags = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
     int ret;
 
-    ret = mkdir(args->filename, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    ret = mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (ret < 0) {
         strcpy(state->error, strerror(errno));
         fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
