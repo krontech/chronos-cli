@@ -23,8 +23,9 @@ class spd:
         # Set offset and read SPD data.
         os.write(fd, bytearray([0]))
         self.data = os.read(fd, 128)
+        os.close(fd)
     
-    def __bignum__(self, number, units):
+    def __bignum(self, number, units):
         bits = number.bit_length() // 10
         suffix = {
             0: "",
@@ -50,11 +51,11 @@ class spd:
         }
 
         s = "JEDEC SPD Version: %s" % (self.version)
-        s += "\nMemory Size: %s" % (self.__bignum__(self.size, "B"))
+        s += "\nMemory Size: %s" % (self.__bignum(self.size, "B"))
         s += "\nMemory Type: %s" % (typeNames[self.memoryType] if self.memoryType in typeNames else "Unknown")
         s += "\nModule Type: %s" % (modNames[self.module] if self.module in modNames else "Unknown")
         s += "\nOperating Voltages: %s" % (self.voltages)
-        s += "\nMemory Chip Size: %s" % (self.__bignum__(self.chipSize, "b"))
+        s += "\nMemory Chip Size: %s" % (self.__bignum(self.chipSize, "b"))
         s += "\nAddress Bits: %s" % (self.bankBits + self.rowBits + self.colBits)
         s += "\nRanks: %s" % (self.ranks)
 

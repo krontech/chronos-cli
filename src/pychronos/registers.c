@@ -1149,14 +1149,14 @@ pychronos_init_regs(PyObject *mod)
     PyModule_AddIntMacro(mod, FPGA_COL_GAIN_BASE);
     PyModule_AddIntMacro(mod, FPGA_VRAM_BASE);
     PyModule_AddIntMacro(mod, FPGA_SCI_BASE);
-    PyModule_AddIntMacro(mod, FPGA_COL_CURVE_BASE);
+    PyModule_AddIntMacro(mod, FPGA_COL_OFFSET_BASE);
     PyModule_AddIntMacro(mod, FPGA_IO_BASE);
     PyModule_AddIntMacro(mod, FPGA_TIMING_BASE);
     PyModule_AddIntMacro(mod, FPGA_PIPELINE_BASE);
     PyModule_AddIntMacro(mod, FPGA_VIDSRC_BASE);
     PyModule_AddIntMacro(mod, FPGA_CALSRC_BASE);
     PyModule_AddIntMacro(mod, FPGA_OVERLAY_BASE);
-    PyModule_AddIntMacro(mod, FPGA_COL_OFFSET_BASE);
+    PyModule_AddIntMacro(mod, FPGA_COL_CURVE_BASE);
 
     /* Register all types. */
     for (i = 0; i < arraysize(pubtypes); i++) {

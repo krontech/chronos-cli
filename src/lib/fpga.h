@@ -44,14 +44,14 @@
 #define FPGA_VRAM_BASE              0x2000
 #define FPGA_SCI_BASE               0x3000
 #define FPGA_SEQPGM_BASE            0x4000
-#define FPGA_COL_CURVE_BASE         0x5000
+#define FPGA_COL_OFFSET_BASE        0x5000
 #define FPGA_IO_BASE                0x6000
 #define FPGA_TIMING_BASE            0x6100
 #define FPGA_PIPELINE_BASE          0x7000
 #define FPGA_VIDSRC_BASE            0x7100
 #define FPGA_CALSRC_BASE            0x7200
 #define FPGA_OVERLAY_BASE           0x8000
-#define FPGA_COL_OFFSET_BASE        0xD000
+#define FPGA_COL_CURVE_BASE         0xD000
 
 struct fpga_sensor {
     uint32_t control;

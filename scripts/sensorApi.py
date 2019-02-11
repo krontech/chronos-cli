@@ -7,7 +7,7 @@ class frameGeometry:
         self.vRes = vRes
         self.hOffset = hOffset
         self.vOffset = vOffset
-        self.vDarkRows = 0
+        self.vDarkRows = vDarkRows
         self.bitDepth = bitDepth
     
     def __repr__(self):
@@ -15,7 +15,7 @@ class frameGeometry:
         return "frameGeometry(hRes=%s, vRes=%s, hOffset=%s, vOffset=%s, vDarkRows=%s, bitDepth=%s)" % args
     
     def pixels(self):
-        return self.hRes * (self.vRes * self.vDarkRows)
+        return self.hRes * (self.vRes + self.vDarkRows)
     
     def size(self):
         return self.pixels() * self.bitDepth // 8

@@ -250,7 +250,7 @@ main(int argc, char *const argv[])
     fpga->config->sys_reset = 1;
     usleep(200000);
     ver_major = fpga->config->version;
-    ver_minor = fpga->config->version;
+    ver_minor = fpga->config->subver;
     fprintf(stdout, "Loaded FPGA bistream version: %d.%d\n", ver_major, ver_minor);
     fpga_close(fpga);
     return 0;

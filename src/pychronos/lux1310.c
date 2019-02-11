@@ -5,6 +5,9 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
+#include <linux/types.h>
+#include <linux/spi/spidev.h>
 
 #include "fpga.h"
 #include "lux1310.h"
@@ -291,34 +294,59 @@ adcoffset_get_arrayview(PyObject *pyself, void *closure)
 /* TODO: These should come from a board config file somewhere... */
 #define LUX1310_DAC_SPI_DEVICE  "/dev/spidev3.0"
 #define LUX1310_DAC_SPI_CHIPSEL "/sys/class/gpio/gpio33/value"
-#define LUX1310_COLOR_DETECT    "/sys/class/gpio/gpio66/value"
+#define LUX1310_COLOR_DETECT    "/sys/class/gpio/gpio34/value"
+
+static int
+lux1310_write_spi(PyObject *obj, uint16_t value)
+{
+    int spifd, spics;;
+    uint8_t wrdata[2] = {
+        (value & 0x00ff) >> 0,
+        (value & 0xff00) >> 8
+    };
+    struct spi_ioc_transfer xfer = {
+        .tx_buf = (uintptr_t)&wrdata,
+        .rx_buf = 0,
+        .len = sizeof(wrdata),
+        .speed_hz = 1000000, /* 1MHz */
+        .delay_usecs = 0,
+        .bits_per_word = 16,
+        .cs_change = 0,
+    };
+    /* Would have been nice for this to be in the xfer struct. */
+    uint8_t mode = SPI_MODE_1;
+
+    /* Open the SPI device and program the DAC. */
+    spifd = open(LUX1310_DAC_SPI_DEVICE, O_RDWR);
+    if (spifd < 0) {
+        PyErr_SetFromErrno(obj);
+        return -1;
+    }
+    if (ioctl(spifd, SPI_IOC_WR_MODE, &mode)) {
+        PyErr_SetFromErrno(obj);
+        close(spifd);
+        return -1;
+    }
+    spics = open(LUX1310_DAC_SPI_CHIPSEL, O_WRONLY);
+    if (spics < 0) {
+        PyErr_SetFromErrno(obj);
+        close(spifd);
+        return -1;
+    }
+    write(spics, "0", 1);
+    ioctl(spifd, SPI_IOC_MESSAGE(1), &xfer);
+    write(spics, "1", 1);
+
+    close(spics);
+    close(spifd);
+    return 0;
+}
 
 /* Configure the DAC for auto-update operation. */
 static int
 lux1310_setup_dac(PyObject *mod)
 {
-    uint8_t wrdata[2] = {0, LUX1310_DAC_AUTOUPDATE << 4};
-    int spifd, spics;
-
-    /* Open the SPI device and program the DAC. */
-    spifd = open(LUX1310_DAC_SPI_DEVICE, O_RDWR);
-    if (spifd < 0) {
-        PyErr_SetFromErrno(mod);
-        return -1;
-    }
-    spics = open(LUX1310_DAC_SPI_CHIPSEL, O_WRONLY);
-    if (spics < 0) {
-        PyErr_SetFromErrno(mod);
-        close(spifd);
-        return -1;
-    }
-    write(spics, "0", 1);
-    write(spifd, wrdata, sizeof(wrdata));
-    write(spics, "1", 1);
-    
-    close(spics);
-    close(spifd);
-    return 0;
+    return lux1310_write_spi(mod, LUX1310_DAC_AUTOUPDATE << 12);
 }
 
 PyDoc_STRVAR(
@@ -336,9 +364,6 @@ lux1310_write_dac(PyObject *self, PyObject *args)
     double volts;
     long vdac;
     int channel;
-
-    uint8_t wrdata[2];
-    int spifd, spics;
 
     if (!PyArg_ParseTuple(args, "id", &channel, &volts)) {
         return NULL;
@@ -377,29 +402,9 @@ lux1310_write_dac(PyObject *self, PyObject *args)
         PyErr_SetString(PyExc_ValueError, "DAC out of range");
         return NULL;
     }
-    wrdata[0] = (vdac >> 0) & 0xff;
-    wrdata[1] = (vdac >> 8) & 0x0f;
-    wrdata[1] += (channel & 0x7) << 4;
-
-    /* Open the SPI device and program the DAC. */
-    /* TODO: Some of this should be done at import to ensure DAC write-through mode is set. */
-    spifd = open(LUX1310_DAC_SPI_DEVICE, O_RDWR);
-    if (spifd < 0) {
-        return PyErr_SetFromErrno(self);
-    }
-    spics = open(LUX1310_DAC_SPI_CHIPSEL, O_WRONLY);
-    if (spics < 0) {
-        PyErr_SetFromErrno(self);
-        close(spifd);
+    if (lux1310_write_spi(self, (channel << 12) | vdac) < 0) {
         return NULL;
     }
-    write(spics, "0", 1);
-    write(spifd, wrdata, sizeof(wrdata));
-    write(spics, "1", 1);
-
-    /* Success! */
-    close(spics);
-    close(spifd);
     Py_RETURN_NONE;
 }
 
@@ -431,41 +436,27 @@ static PyObject *
 lux1310_write_wavetable(PyObject *pyself, PyObject *args)
 {
     struct lux1310map *self = (struct lux1310map *)pyself;
+    PyObject *wtobj;
     Py_buffer wavetable;
+    const uint8_t *wtdata;
     int i;
 
-    if (!PyArg_ParseTuple(args, "y*", &wavetable)) {
+    if (!PyArg_ParseTuple(args, "O", &wtobj)) {
+        return NULL;
+    }
+    if (PyObject_GetBuffer(wtobj, &wavetable, PyBUF_SIMPLE) < 0) {
         return NULL;
     }
 
-    if (PyBuffer_IsContiguous(&wavetable, 'C')) {
-        const uint8_t *wtdata = (const uint8_t *)wavetable.buf;
-
-        /* Clear the RW flag and reset the FIFO */
-        self->sensor->sci_control = SENSOR_SCI_CONTROL_RESET_MASK;
-        self->sensor->sci_address = 0x7F;
-        self->sensor->sci_datalen = wavetable.len;
-        for (i = 0; i < wavetable.len; i++) {
-            self->sensor->sci_fifo_write = wtdata[i];
-        }
+    /* Reset the FIFO and load the wavetable. */
+    wtdata = (const uint8_t *)wavetable.buf;
+    self->sensor->sci_control = SENSOR_SCI_CONTROL_RESET_MASK;
+    self->sensor->sci_address = 0x7F;
+    self->sensor->sci_datalen = wavetable.len;
+    for (i = 0; i < wavetable.len; i++) {
+        self->sensor->sci_fifo_write = wtdata[i];
     }
-    /* Complicated case for complex buffers. */
-    else {
-        uint8_t *wtdata = malloc(wavetable.len);
-        if (!wtdata) {
-            PyErr_NoMemory();
-            return NULL;
-        }
-        PyBuffer_ToContiguous(wtdata, &wavetable, wavetable.len, 'C');
-
-        self->sensor->sci_control = SENSOR_SCI_CONTROL_RESET_MASK;
-        self->sensor->sci_address = 0x7F;
-        self->sensor->sci_datalen = wavetable.len;
-        for (i = 0; i < wavetable.len; i++) {
-            self->sensor->sci_fifo_write = wtdata[i];
-        }
-        free(wtdata);
-    }
+    PyBuffer_Release(&wavetable);
 
     /* Start the transfer and wait for completion. */
     self->sensor->sci_control = SENSOR_SCI_CONTROL_RUN_MASK;
