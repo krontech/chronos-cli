@@ -139,6 +139,15 @@ playback_region_totals(struct pipeline_state *state)
     state->totalsegs = nsegs;
 }
 
+/* Wrapper to call dbus asynchronously from the main thread. */
+static gboolean
+playback_signal_segment(gpointer data)
+{
+    struct pipeline_state *state = data;
+    dbus_signal_segment(state);
+    return FALSE;
+}
+
 static int
 playback_region_add(struct pipeline_state *state)
 {
@@ -189,7 +198,13 @@ playback_region_add(struct pipeline_state *state)
     /* Update the total recording region size and reset back to the start. */
     state->position = 0;
     playback_region_totals(state);
-    dbus_signal_segment(state);
+
+    /* Emit a signal from the main loop. */
+    GSource *segsource = g_idle_source_new();
+    if (segsource) {
+        g_source_set_callback(segsource, playback_signal_segment, state, NULL);
+        g_source_attach(segsource, g_main_loop_get_context(state->mainloop));
+    }
     return 0;
 }
 
