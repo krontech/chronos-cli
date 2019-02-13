@@ -85,7 +85,7 @@ struct fpgamap_arrayview {
         uint8_t     *u8;
     } u;
     unsigned int    itemsize;
-    size_t          itemcount;
+    Py_ssize_t      itemcount;
 };
 
 static Py_ssize_t
@@ -160,10 +160,48 @@ arrayview_setval(PyObject *self, PyObject *key, PyObject *value)
     return 0;
 }
 
-static PyMappingMethods fpgamap_as_array = {
+static int
+arrayview_getbuffer(PyObject *self, Py_buffer *buffer, int flags)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+    buffer->buf = view->u.raw;
+    buffer->obj = self;
+    buffer->len = view->itemcount * view->itemsize;
+    buffer->readonly = 0;
+    buffer->itemsize = view->itemsize;
+    switch (view->itemsize) {
+        case 1:
+            buffer->format = (flags & PyBUF_FORMAT) ? "B" : NULL;
+            break;
+        case 2:
+            buffer->format = (flags & PyBUF_FORMAT) ? "H" : NULL;
+            break;
+        case 4:
+            buffer->format = (flags & PyBUF_FORMAT) ? "I" : NULL;
+            break;
+        default:
+            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
+            return -1;
+    }
+    buffer->ndim = 1;
+    buffer->shape = (flags & PyBUF_ND) ? &view->itemcount : NULL;
+    /* Simple n-dimensional array */
+    buffer->strides = NULL;
+    buffer->suboffsets = NULL;
+    buffer->internal = NULL;
+
+    Py_INCREF(self);
+    return 0;
+}
+
+static PyMappingMethods arrayview_as_array = {
     .mp_length = arrayview_length,
     .mp_subscript = arrayview_getval,
     .mp_ass_subscript = arrayview_setval
+};
+
+static PyBufferProcs arrayview_as_buffer = {
+    .bf_getbuffer = arrayview_getbuffer,
 };
 
 static PyTypeObject arrayview_type = {
@@ -174,7 +212,8 @@ static PyTypeObject arrayview_type = {
     .tp_itemsize = 0,
     .tp_flags = Py_TPFLAGS_DEFAULT,
     .tp_new = PyType_GenericNew,
-    .tp_as_mapping = &fpgamap_as_array,
+    .tp_as_mapping = &arrayview_as_array,
+    .tp_as_buffer = &arrayview_as_buffer,
     .tp_iter = pychronos_array_getiter,
 };
 
@@ -877,7 +916,7 @@ static PyGetSetDef display_getset[] = {
     {"BYPASS_GAIN",     fpga_get_const, NULL, "Bypass Gain",                            (void *)DISPLAY_PIPELINE_BYPASS_GAIN},
     {"BYPASS_DEMOSAIC", fpga_get_const, NULL, "Bypass Demosaic",                        (void *)DISPLAY_PIPELINE_BYPASS_DEMOSAIC},
     {"BYPASS_COLOR_MATRIX", fpga_get_const, NULL, "Bypass Color Matrix",                (void *)DISPLAY_PIPELINE_BYPASS_COLOR_MATRIX},
-    {"BYPASS_GAMMA_TABLE", fpga_get_const, NULL, "Bypass FPN",                          (void *)DISPLAY_PIPELINE_BYPASS_GAMMA_TABLE},
+    {"BYPASS_GAMMA_TABLE", fpga_get_const, NULL, "Bypass the gamma table",              (void *)DISPLAY_PIPELINE_BYPASS_GAMMA_TABLE},
     {"RAW_12BPP",       fpga_get_const, NULL, "Enable Raw 12-bit",                      (void *)DISPLAY_PIPELINE_RAW_12BPP},
     {"RAW_16BPP",       fpga_get_const, NULL, "Enable Raw 16-bit",                      (void *)DISPLAY_PIPELINE_RAW_16BPP},
     {"RAW_16PAD",       fpga_get_const, NULL, "Enable 16-bit LSB pad",                  (void *)DISPLAY_PIPELINE_RAW_16PAD},

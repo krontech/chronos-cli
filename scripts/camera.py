@@ -3,7 +3,9 @@ import pychronos
 import fcntl
 import time
 import os
+import numpy
 
+from sensorApi import liveReadout
 from spd import spd
 
 class camera:
@@ -16,6 +18,7 @@ class camera:
     LIVE_REGION_START = (CAL_REGION_START + MAX_FRAME_WORDS * CAL_REGION_FRAMES)
     LIVE_REGION_FRAMES = 3
     REC_REGION_START = (LIVE_REGION_START + MAX_FRAME_WORDS * LIVE_REGION_FRAMES)
+    FPN_ADDRESS = CAL_REGION_START
 
     def __init__(self, sensor):
         # Store a reference to the image sensor.
@@ -177,3 +180,62 @@ class camera:
             return serial.decode("utf-8")
         except:
             return ""
+
+    def startBlackCal(self, numFrames=16, useLiveBuffer=True):
+        # get the resolution from the display properties
+        display = pychronos.display()
+        xres = display.hRes
+        yres = display.vRes
+
+        print("Starting")
+
+        # Readout and average the frames from the live buffer.
+        # TODO: Setup the sequencer and do the same thing with a recording.
+        fAverage = numpy.zeros((yres, xres))
+        reader = liveReadout(xres, yres)
+        for i in range(0, numFrames):
+            yield from reader.startLiveReadout()
+            fAverage += numpy.asarray(reader.result)
+        fAverage /= numFrames
+
+        # Readout the column gain and linearity calibration.
+        colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, display.hRes * 2)
+        colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, display.hRes * 2)
+        colOffsetRegs = pychronos.fpgamap(pychronos.FPGA_COL_OFFSET_BASE, display.hRes * 2)
+        gain = numpy.asarray(colGainRegs.mem16, dtype=numpy.uint16) / (1 << 12)
+        curve = numpy.asarray(colCurveRegs.mem16, dtype=numpy.int16) / (1 << 21)
+        offsets = numpy.asarray(colOffsetRegs.mem16, dtype=numpy.int16)
+        yield 0
+
+        # For each column, the average gives the DC component of the FPN, which
+        # gets applied to the column calibration as the constant term. The column
+        # calibration function is given by:
+        #
+        # f(x) = curve * x^2 + gain * x + offset
+        #
+        # For the FPN to be black, we expected f(fpn) == 0, and therefore:
+        #
+        # offset = -(curve * fpn^2 + gain * fpn)
+        colAverage = numpy.average(fAverage, 0)
+        colOffset = curve * (colAverage * colAverage) + gain * colAverage
+        # TODO: Would be nice to have a write helper.
+        for x in range(0, xres):
+            colOffsetRegs.mem16[x] = int(-colOffset[x]) & 0xffff
+        yield 0
+
+        # For each pixel, the AC component of the FPN can be found by subtracting
+        # the column average, which we will load into the per-pixel FPN region as
+        # a signed quantity.
+        #
+        # TODO: For even better calibration, this should actually take the slope
+        # into consideration around the FPN, in which case we would also divide
+        # by the derivative of f(x) for the column.
+        fpn = numpy.int16(fAverage - colAverage)
+        pychronos.writeframe(display.fpnAddr, fpn)
+
+        print("---------------------------------------------")
+        print("fpn details: min = %d, max = %d" % (numpy.min(fAverage), numpy.max(fAverage)))
+        print("fpn standard deviation: %d" % (numpy.std(fAverage)))
+        print("fpn standard deviation horiz: %s" % (numpy.std(fAverage, axis=1)))
+        print("fpn standard deviation vert:  %s" % (numpy.std(fAverage, axis=0)))
+        print("---------------------------------------------")

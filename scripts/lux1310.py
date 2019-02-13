@@ -5,7 +5,7 @@ import math
 import copy
 import numpy
 
-from sensorApi import sensor, frameGeometry
+from sensorApi import sensor, frameGeometry, liveReadout
 import lux1310wt
 
 class lux1310(sensor):
@@ -311,45 +311,16 @@ class lux1310(sensor):
         self.sci.regGainSelFb = feedback
         self.sci.regGainBit = sgain
     
-    ## TODO: This might make more sense as a global helper function, since we'll
-    ## probably use it all over the place for doing calibration. Maybe the super
-    ## is a better place to put it? Or is it more of a pychronos thing?
-    ##
-    ## FIXME: This will hang if the camera is currently recording, in which case
-    ## lastAddr and writeAddr will point to somewhere in the recording region.
-    def readFromLive(self, hRes, vRes, numFrames=1):
-        seq = pychronos.sequencer()
-        backup = [seq.liveAddr[0], seq.liveAddr[1], seq.liveAddr[2]]
-        frames = [None] * numFrames
-        page = 0
-
-        for i in range(0, numFrames):
-            # Set all three live buffers to the same address.
-            seq.liveAddr[0] = backup[page]
-            seq.liveAddr[1] = backup[page]
-            seq.liveAddr[2] = backup[page]
-
-            # Wait for the sequencer to being writing to the update live address.
-            while (seq.writeAddr != backup[page]): pass
-
-            # Read a frame then switch pages.
-            page ^= 1
-            frames[i] = pychronos.readframe(backup[page], hRes, vRes)
-
-        ## Restore the live display buffers to normal operation.
-        seq.liveAddr[0] = backup[0]
-        seq.liveAddr[1] = backup[1]
-        seq.liveAddr[2] = backup[2]
-        return frames
-    
     def autoAdcOffsetIteration(self, fSize, numFrames=4):
-        # Read out the frames and average them together.
+        # Read out the calibration frames.
         fAverage = numpy.zeros((fSize.vDarkRows * fSize.hRes // self.ADC_CHANNELS, self.ADC_CHANNELS), dtype=numpy.uint32)
-        for f in self.readFromLive(fSize.hRes, fSize.vDarkRows, numFrames):
-            fAverage += numpy.reshape(f, (-1, self.ADC_CHANNELS))
-        fAverage /= numFrames
-
+        for x in range(0, numFrames):
+            reader = liveReadout(fSize.hRes, fSize.vDarkRows)
+            yield from reader.startLiveReadout()
+            fAverage += numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
+        
         # Train the ADC offsets for a target of Average = Footroom + StandardDeviation
+        fAverage /= numFrames
         adcAverage = numpy.average(fAverage, 0)
         adcStdDev = numpy.std(fAverage, 0)
         for col in range(0, self.ADC_CHANNELS):
@@ -374,62 +345,63 @@ class lux1310(sensor):
         # Enable ADC calibration and iterate on the offsets.
         self.sci.regAdcCalEn = True
         for i in range(0, iterations):
-            time.sleep(tRefresh)
-            self.autoAdcOffsetIteration(fSize)
+            yield tRefresh
+            yield from self.autoAdcOffsetIteration(fSize)
 
     def autoAdcGainCal(self, fSize):
-        colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, 0x1000)
-        colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, 0x1000)
-
         # Setup some math constants
         numRows = 64
         tRefresh = (self.fpga.framePeriod * 3) / self.LUX1310_TIMING_HZ
         tRefresh += (1/60)
         pixFullScale = (1 << fSize.bitDepth)
 
+        colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, 0x1000)
+        colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, 0x1000)
+        reader = liveReadout(fSize.hRes, numRows)
+
         # Disable the FPGA timing engine.
         prev = self.fpga.intTime
         self.fpga.intTime = 0
-        time.sleep(tRefresh)
+        yield tRefresh
 
         # Reload the wavetable for gain calibration
         self.updateWavetable(fSize, frameClocks=self.fpga.framePeriod, gaincal=True)
         self.fpga.intTime = prev
 
-        # Hunting for the dummy voltage range
-        maxColumn = pixFullScale
-        minColumn = 0
-        vhigh = 31
-        vlow = 0
-
         # Search for a dummy voltage high reference point.
+        vhigh = 31
         while (vhigh > 0):
             self.sci.regSelVdumrst = vhigh
-            time.sleep(tRefresh)
-            frame = numpy.reshape(self.readFromLive(fSize.hRes, numRows)[0], (-1, self.ADC_CHANNELS))
+            yield tRefresh
             
+            # Read a frame out of the live display.
+            yield from reader.startLiveReadout()
+            frame = numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
+
             # Compute the column averages and find the maximum value
             highColumns = numpy.average(frame, 0)
-            maxColumn = numpy.amax(frame)
 
             # High voltage should be less than 7/8ths of full scale.
-            if (maxColumn <= (pixFullScale - (pixFullScale / 8))):
+            if (numpy.amax(highColumns) <= (pixFullScale - (pixFullScale / 8))):
                 break
             else:
                 vhigh -= 1
         
         # Search for a dummy voltage low reference point.
+        vlow = 0
         while (vlow < vhigh):
             self.sci.regSelVdumrst = vlow
-            time.sleep(tRefresh)
-            frame = numpy.reshape(self.readFromLive(fSize.hRes, numRows)[0], (-1, self.ADC_CHANNELS))
+            yield tRefresh
+
+            # Read a frame out of the live display.
+            yield from reader.startLiveReadout()
+            frame = numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
 
             # Compute the column averages and find the minimum value
             lowColumns = numpy.average(frame, 0)
-            minColumn = numpy.amin(frame)
 
             # Find the minum voltage that does not clip.
-            if (minColumn >= self.ADC_FOOTROOM):
+            if (numpy.amin(lowColumns) >= self.ADC_FOOTROOM):
                 break
             else:
                 vlow += 1
@@ -437,8 +409,11 @@ class lux1310(sensor):
         # Sample the midpoint, which should be somewhere around quarter scale.
         vmid = (vhigh + 3*vlow) // 4
         self.sci.regSelVdumrst = vmid
-        time.sleep(tRefresh)
-        frame = numpy.reshape(self.readFromLive(fSize.hRes, numRows)[0], (-1, self.ADC_CHANNELS))
+        yield tRefresh
+
+        # Read a frame out of the live display.
+        yield from reader.startLiveReadout()
+        frame = numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
         midColumns = numpy.average(frame, 0)
 
         #print("ADC Columns low (%s): %s" % (vlow, lowColumns))
@@ -462,7 +437,8 @@ class lux1310(sensor):
                 maxColumn = diff
 
         # Compute the 2-point calibration coefficient.
-        gain2pt = numpy.full(self.ADC_CHANNELS, maxColumn) / (highColumns - lowColumns)
+        diff = (highColumns - lowColumns)
+        gain2pt = numpy.full(self.ADC_CHANNELS, maxColumn) / diff
 
         # Predict the ADC to be linear with dummy voltage and find the error.
         predict = lowColumns + (diff * (vmid - vlow) / (vhigh - vlow))
@@ -505,7 +481,7 @@ class lux1310(sensor):
         display = pychronos.display()
         display.gainControl |= display.GAINCTL_3POINT
 
-    def autoAnalogCal(self):     
+    def startAnalogCal(self):     
         # Retrieve the current resolution and frame period.
         fSizePrev = self.getCurrentGeometry()
         fSizeCal = copy.deepcopy(fSizePrev)
@@ -525,10 +501,10 @@ class lux1310(sensor):
             self.fpga.intTime = prev
         
         # Perform ADC offset calibration using the optical black regions.
-        self.autoAdcOffsetCal(fSizeCal)
+        yield from self.autoAdcOffsetCal(fSizeCal)
 
         # Perform ADC column gain calibration using the dummy voltage.
-        self.autoAdcGainCal(fSizeCal)
+        yield from self.autoAdcGainCal(fSizeCal)
 
         # Restore the frame period and wavetable.
         prev = self.fpga.intTime
