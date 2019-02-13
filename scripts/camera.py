@@ -21,16 +21,30 @@ class camera:
     FPN_ADDRESS = CAL_REGION_START
 
     def __init__(self, sensor):
-        # Store a reference to the image sensor.
         self.sensor = sensor
+    
+    def reset(self, bitstream=None):
+        """Reset the camera and initialize the FPGA and image sensor.
 
-        # Setup the FPGA
-        # HACK: This should be done outside of this class.
-        os.system("cam-loader /var/camera/FPGA.bit")
-        config = pychronos.config()
-        config.sysReset = 1
-        time.sleep(0.2)
-        print("Loaded FPGA Version %s.%s" % (config.version, config.subver))
+        Parameters
+        ----------
+        bitstream : str, optional
+            File path to the FPGA bitstream to load, or None to perform
+            only a soft-reset of the FPGA.
+        """
+
+        # Setup the FPGA if a bitstream was provided.
+        if (bitstream):
+            os.system("cam-loader %s" % (bitstream))
+            config = pychronos.config()
+            config.sysReset = 1
+            time.sleep(0.2)
+            print("Loaded FPGA Version %s.%s" % (config.version, config.subver))
+        else:
+            config = pychronos.config()
+            config.sysReset = 1
+            time.sleep(0.2)
+            print("Detected FPGA Version %s.%s" % (config.version, config.subver))
 
         # Setup memory
         self.ramSizeWords = self.setupMemory() // self.BYTES_PER_WORD
@@ -52,6 +66,11 @@ class camera:
 
         displayRegs = pychronos.display()
         displayRegs.control = displayRegs.COLOR_MODE
+        i = 0
+        for row in self.sensor.getColorMatrix():
+            for val in row:
+                displayRegs.colorMatrix[i] = val
+                i += 1
 
         # Load a default calibration
         colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, 0x1000)
@@ -61,7 +80,7 @@ class camera:
             colCurveRegs.mem16[0] = 0
 
         # Reboot the sensor and enter live display mode
-        self.sensor.boot()
+        self.sensor.reset()
         self.sensor.setResolution(self.geometry)
 
     def setupMemory(self):
@@ -182,7 +201,37 @@ class camera:
             return ""
 
     def startBlackCal(self, numFrames=16, useLiveBuffer=True):
+        """Begin the black calibration proceedure at the current settings.
+
+        Black calibration takes a sequence of images with the lens cap or shutter
+        closed and averages them to find the black level of the image sensor. This
+        value can then be subtracted during playback to correct for image offset
+        defects.
+
+        Parameters
+        ----------
+        numFrames : int, optional
+            The number of frames to use for black calibration (default 16 frames)
+        useLiveBuffer : bool, optional
+            Whether to use the live display for black calibration (default True)
+
+        Yields
+        ------
+        float :
+            The sleep time, in seconds, between steps of the calibration proceedure.
+        
+        Examples
+        --------
+        This function returns a generator iterator with the sleep time between the
+        steps of the black calibration proceedure. The caller may use this for
+        cooperative multithreading, or can complete the calibration sychronously
+        as follows:
+
+        for delay in camera.startBlackCal():
+            time.sleep(delay)
+        """
         # get the resolution from the display properties
+        # TODO: We actually want to get it from the sequencer.
         display = pychronos.display()
         xres = display.hRes
         yres = display.vRes
@@ -229,7 +278,7 @@ class camera:
         #
         # TODO: For even better calibration, this should actually take the slope
         # into consideration around the FPN, in which case we would also divide
-        # by the derivative of f(x) for the column.
+        # by the derivative of f'(fpn) for the column.
         fpn = numpy.int16(fAverage - colAverage)
         pychronos.writeframe(display.fpnAddr, fpn)
 
@@ -239,3 +288,50 @@ class camera:
         print("fpn standard deviation horiz: %s" % (numpy.std(fAverage, axis=1)))
         print("fpn standard deviation vert:  %s" % (numpy.std(fAverage, axis=0)))
         print("---------------------------------------------")
+
+    def startZeroTimeBlackCal(self):
+        """Begin the black calibration proceedure using a zero-time exposure.
+
+        Black calibration is best performed with the lens cap or shutter closed,
+        but in the absence of user intervention, an acceptable calibration can be
+        achieved by taking a zero-time exposure instead.
+
+        Parameters
+        ----------
+        numFrames : int, optional
+            The number of frames to use for black calibration (default 16 frames)
+        useLiveBuffer : bool, optional
+            Whether to use the live display for black calibration (default True)
+
+        Yields
+        ------
+        float :
+            The sleep time, in seconds, between steps of the calibration proceedure.
+        
+        Examples
+        --------
+        This function returns a generator iterator with the sleep time between the
+        steps of the black calibration proceedure. The caller may use this for
+        cooperative multithreading, or can complete the calibration sychronously
+        as follows:
+
+        for delay in camera.startBlackCal():
+            time.sleep(delay)
+        """
+        # Grab the current frame size and exposure.
+        fSize = self.sensor.getCurrentGeometry()
+        expPrev = self.sensor.getCurrentExposure()
+        expMin, expMax = self.sensor.getExposureRange(fSize)
+
+        # Reconfigure for the minum exposure supported by the sensor.
+        self.sensor.setExposurePeriod(expMin)
+
+        # Do a fast black cal from the live display buffer.
+        # TODO: We might get better quality out of the zero-time cal by
+        # testing a bunch of exposure durations and finding the actual
+        # zero-time intercept.
+        yield (3 / 60) # ensure the exposure time has taken effect.
+        yield from self.startBlackCal(numFrames=2, useLiveBuffer=True)
+
+        # Restore the previous exposure settings.
+        self.sensor.setExposurePeriod(expPrev)

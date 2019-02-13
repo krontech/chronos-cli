@@ -46,118 +46,10 @@ class lux1310(sensor):
 
         super().__init__()
 
-    def getMaxGeometry(self):
-        return frameGeometry(
-            hRes=self.MAX_HRES, vRes=self.MAX_VRES,
-            hOffset=0, vOffset=0,
-            vDarkRows=self.MAX_VDARK,
-            bitDepth=self.BITS_PER_PIXEL)
-    
-    def getCurrentGeometry(self):
-        fSize = self.getMaxGeometry()
-        fSize.hRes = self.sci.regXend - 0x20 + 1
-        fSize.hOffset = self.sci.regXstart - 0x20
-        fSize.hRes -= fSize.hOffset
-        fSize.vOffset = self.sci.regYstart
-        fSize.vRes = self.sci.regYend - fSize.vOffset + 1
-        fSize.vDarkRows = self.sci.regNbDrkRows
-        return fSize
-
-    def getPeriodRange(self, size):
-        # TODO: Need to validate the frame size.
-        # TODO: Probably need to enforce some maximum frame period.
-        clocks = self.getMinFrameClocks(size)
-        return (clocks / self.LUX1310_TIMING_HZ, 0)
-    
-    def getExposureRange(self, size):
-        # TODO: Does this also need the frame period or can we abstract
-        # that away somehow with something like shutter angle and overhead
-        # like the old D-Bus daemon docs did.
-
-        # Defaulting to 1us minimum exposure and infinite maximum exposure.
-        return (1.0 / 1000000, 0)
-
-    def isValidResolution(self, size):
-	    # Enforce resolution limits.
-        if ((size.hRes < self.MIN_HRES) or (size.hRes + size.hOffset) > self.MAX_HRES):
-            return False
-        if ((size.vRes < self.MIN_VRES) or (size.vRes + size.vOffset) > self.MAX_VRES):
-            return False
-        if (size.vDarkRows > self.MAX_VDARK):
-            return False
-        if (size.bitDepth != self.BITS_PER_PIXEL):
-            return False
-        
-        # Enforce minimum pixel increments.
-        if ((size.hRes % self.HRES_INCREMENT) != 0):
-            return False
-        if ((size.vRes % self.VRES_INCREMENT) != 0):
-            return False
-        if ((size.vDarkRows % self.VRES_INCREMENT) != 0):
-            return False
-        
-        # Otherwise, the resultion and offset are valid.
-        return True
-    
-    ## TODO: I think this whole function is unnecessary on the LUX1310 FPGA
-    ## builds, even in the C++ camApp it doesn't run to completion, and the
-    ## return codes are ignored.
-    def autoPhaseCal(self):
-        """Private function - calibrate the FPGA data acquisition channels"""
-        self.fpga.clkPhase = 0
-        self.fpga.clkPhase = 1
-        self.fpga.clkPhase = 0
-        print("Phase calibration dataCorrect=%s" % (self.fpga.dataCorrect))
-    
-    def getMinFrameClocks(self, size, wtSize=0):
-        # Select the longest wavetable that fits within the line readout time,
-        # or fall back to the shortest wavetable for extremely small resolutions.
-        if (wtSize == 0):
-            ideal = (size.hRes // self.HRES_INCREMENT) + self.LUX1310_MIN_HBLANK - 3
-            for x in self.wavetables:
-                wtSize = x.clocks
-                if (wtSize <= ideal):
-                    break
-
-        # Compute the minimum number of 90MHz LUX1310 sensor clocks per frame.
-        # Refer to section 7.1 of the LUX1310 datasheet version v3.0
-        tRead = size.hRes // self.HRES_INCREMENT
-        tTx = 25        # hard-coded to 25 clocks in the FPGA, should be at least 350ns
-        tRow = max(tRead + self.LUX1310_MIN_HBLANK, wtSize + 3)
-        tFovf = self.LUX1310_SOF_DELAY + wtSize + self.LUX1310_LV_DELAY + 10
-        tFovb = 41      # Duration between PRSTN falling and TXN falling (I think)
-        tFrame = tRow * (size.vRes + size.vDarkRows) + tTx + tFovf + tFovb - self.LUX1310_MIN_HBLANK
-
-        # Convert from LUX1310 sensor clocks to FPGA timing clocks.
-        return (tFrame * self.LUX1310_TIMING_HZ) // self.LUX1310_SENSOR_HZ
-
-    def updateWavetable(self, size, frameClocks, gaincal=False):
-        # Select the longest wavetable that gives a frame period longer than
-        # the target frame period. Note that the wavetables are sorted by length
-        # in descending order.
-        wavetab = None
-        for x in self.wavetables:
-            wavetab = x
-            if (frameClocks >= self.getMinFrameClocks(size, x.clocks)):
-                break
-        
-        # If a suitable wavetabl exists, then load it.
-        if (wavetab):
-            self.sci.regTimingEn = False
-            self.sci.regRdoutDly = wavetab.clocks
-            self.sci.reg[0x7A] = wavetab.clocks
-            if (gaincal):
-                self.sci.wavetable(wavetab.gaintab)
-            else:
-                self.sci.wavetable(wavetab.wavetab)
-            self.sci.regTimingEn = True
-            self.fpga.startDelay = wavetab.abnDelay
-            self.fpga.linePeriod = max((size.hRes // self.HRES_INCREMENT) + 2, wavetab.clocks + 3) - 1
-        # Otherwise, the frame period was probably too short for this resolution.
-        else:
-            raise ValueError("Frame period too short, no suitable wavetable found")
-
-    def boot(self, size=None):
+    #--------------------------------------------
+    # Sensor Configuration and Control API
+    #--------------------------------------------
+    def reset(self, fSize=None):
         # Disable integration while setup is in progress.
         self.fpga.framePeriod = 100 * 4000
         self.fpga.intTime = 100 * 4100
@@ -192,8 +84,7 @@ class lux1310(sensor):
         self.sci.regTstPat = 2          # Enable test pattern
         self.sci.regPclkVblank = 0xFC0  # Set PCLK channel output during vertical blank
         self.sci.reg[0x5A] = 0xE1       # Configure for inverted DCLK output
-
-        self.autoPhaseCal()
+        self.__autoPhaseCal()
 
         # Return to normal data mode
         self.sci.regPclkVblank = 0xf00          # PCLK channel output during vertical blanking
@@ -247,6 +138,84 @@ class lux1310(sensor):
         self.fpga.intTime = 100*3900
         return True
 
+    ## TODO: I think this whole function is unnecessary on the LUX1310 FPGA
+    ## builds, even in the C++ camApp it doesn't run to completion, and the
+    ## return codes are ignored.
+    def __autoPhaseCal(self):
+        """Private function - calibrate the FPGA data acquisition channels"""
+        self.fpga.clkPhase = 0
+        self.fpga.clkPhase = 1
+        self.fpga.clkPhase = 0
+        print("Phase calibration dataCorrect=%s" % (self.fpga.dataCorrect))
+    
+    #--------------------------------------------
+    # Frame Geometry Configuration Functions
+    #--------------------------------------------
+    def getMaxGeometry(self):
+        return frameGeometry(
+            hRes=self.MAX_HRES, vRes=self.MAX_VRES,
+            hOffset=0, vOffset=0,
+            vDarkRows=self.MAX_VDARK,
+            bitDepth=self.BITS_PER_PIXEL)
+    
+    def getCurrentGeometry(self):
+        fSize = self.getMaxGeometry()
+        fSize.hRes = self.sci.regXend - 0x20 + 1
+        fSize.hOffset = self.sci.regXstart - 0x20
+        fSize.hRes -= fSize.hOffset
+        fSize.vOffset = self.sci.regYstart
+        fSize.vRes = self.sci.regYend - fSize.vOffset + 1
+        fSize.vDarkRows = self.sci.regNbDrkRows
+        return fSize
+
+    def isValidResolution(self, size):
+	    # Enforce resolution limits.
+        if ((size.hRes < self.MIN_HRES) or (size.hRes + size.hOffset) > self.MAX_HRES):
+            return False
+        if ((size.vRes < self.MIN_VRES) or (size.vRes + size.vOffset) > self.MAX_VRES):
+            return False
+        if (size.vDarkRows > self.MAX_VDARK):
+            return False
+        if (size.bitDepth != self.BITS_PER_PIXEL):
+            return False
+        
+        # Enforce minimum pixel increments.
+        if ((size.hRes % self.HRES_INCREMENT) != 0):
+            return False
+        if ((size.vRes % self.VRES_INCREMENT) != 0):
+            return False
+        if ((size.vDarkRows % self.VRES_INCREMENT) != 0):
+            return False
+        
+        # Otherwise, the resultion and offset are valid.
+        return True
+    
+    def updateWavetable(self, size, frameClocks, gaincal=False):
+        # Select the longest wavetable that gives a frame period longer than
+        # the target frame period. Note that the wavetables are sorted by length
+        # in descending order.
+        wavetab = None
+        for x in self.wavetables:
+            wavetab = x
+            if (frameClocks >= self.getMinFrameClocks(size, x.clocks)):
+                break
+        
+        # If a suitable wavetabl exists, then load it.
+        if (wavetab):
+            self.sci.regTimingEn = False
+            self.sci.regRdoutDly = wavetab.clocks
+            self.sci.reg[0x7A] = wavetab.clocks
+            if (gaincal):
+                self.sci.wavetable(wavetab.gaintab)
+            else:
+                self.sci.wavetable(wavetab.wavetab)
+            self.sci.regTimingEn = True
+            self.fpga.startDelay = wavetab.abnDelay
+            self.fpga.linePeriod = max((size.hRes // self.HRES_INCREMENT) + 2, wavetab.clocks + 3) - 1
+        # Otherwise, the frame period was probably too short for this resolution.
+        else:
+            raise ValueError("Frame period too short, no suitable wavetable found")
+
     def updateReadoutWindow(self, size):
         # Configure the image sensor resolution
         hStartBlocks = size.hOffset // self.HRES_INCREMENT
@@ -283,15 +252,75 @@ class lux1310(sensor):
         # Switch to the minimum frame period and 180-degree shutter after changing resolution.
         self.fpga.framePeriod = fClocks
         self.fpga.intTime = fClocks // 2
+    
+    #--------------------------------------------
+    # Frame Timing Configuration Functions
+    #--------------------------------------------
+    def getMinFrameClocks(self, size, wtSize=0):
+        # Select the longest wavetable that fits within the line readout time,
+        # or fall back to the shortest wavetable for extremely small resolutions.
+        if (wtSize == 0):
+            ideal = (size.hRes // self.HRES_INCREMENT) + self.LUX1310_MIN_HBLANK - 3
+            for x in self.wavetables:
+                wtSize = x.clocks
+                if (wtSize <= ideal):
+                    break
+
+        # Compute the minimum number of 90MHz LUX1310 sensor clocks per frame.
+        # Refer to section 7.1 of the LUX1310 datasheet version v3.0
+        tRead = size.hRes // self.HRES_INCREMENT
+        tTx = 25        # hard-coded to 25 clocks in the FPGA, should be at least 350ns
+        tRow = max(tRead + self.LUX1310_MIN_HBLANK, wtSize + 3)
+        tFovf = self.LUX1310_SOF_DELAY + wtSize + self.LUX1310_LV_DELAY + 10
+        tFovb = 41      # Duration between PRSTN falling and TXN falling (I think)
+        tFrame = tRow * (size.vRes + size.vDarkRows) + tTx + tFovf + tFovb - self.LUX1310_MIN_HBLANK
+
+        # Convert from LUX1310 sensor clocks to FPGA timing clocks.
+        return (tFrame * self.LUX1310_TIMING_HZ) // self.LUX1310_SENSOR_HZ
+    
+    def getPeriodRange(self, size):
+        # TODO: Need to validate the frame size.
+        # TODO: Probably need to enforce some maximum frame period.
+        clocks = self.getMinFrameClocks(size)
+        return (clocks / self.LUX1310_TIMING_HZ, 0)
+    
+    def getCurrentPeriod(self):
+        return self.fpga.framePeriod / self.LUX1310_TIMING_HZ
 
     def setFramePeriod(self, fPeriod):
         # TODO: Sanity-check the frame period.
         self.fpga.framePeriod = math.ceil(fPeriod * self.LUX1310_TIMING_HZ)
+    
+    def getExposureRange(self, size):
+        # TODO: Does this also need the frame period or can we abstract
+        # that away somehow with something like shutter angle and overhead
+        # like the old D-Bus daemon docs did.
 
+        # Defaulting to 1us minimum exposure and infinite maximum exposure.
+        return (1.0 / 1000000, 0)
+
+    def getCurrentExposure(self):
+        return self.fpga.intTime / self.LUX1310_TIMING_HZ
+    
     def setExposurePeriod(self, expPeriod):
         # TODO: Sanity-check the exposure time.
         self.fpga.intTime = math.ceil(expPeriod * self.LUX1310_TIMING_HZ)
-    
+
+    #--------------------------------------------
+    # Sensor Analog Calibration Functions
+    #--------------------------------------------
+    def getColorMatrix(self, cTempK=5500):
+        if not self.sci.color:
+            # Identity matrix for monochrome cameras.
+            return [[1.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    [0.0, 0.0, 1.0]]
+        else:
+            # CIECAM16/D55
+            return [[ 1.9147, -0.5768, -0.2342], 
+			        [-0.3056,  1.3895, -0.0969],
+			        [ 0.1272, -0.9531,  1.6492]]
+
     def setGain(self, gain):
         gainConfig = {  # VRSTB, VRST,  VRSTH,  Sampling Cap, Feedback Cap, Serial Gain
             1:          ( 2.7,   3.3,   3.6,    0x007f,       0x007f,       0x3),
