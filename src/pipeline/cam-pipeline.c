@@ -198,6 +198,8 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     state->hres = state->fpga->display->h_res;
     state->vres = state->fpga->display->v_res;
     state->position = args->start;
+    state->loopstart = 0;
+    state->loopend = state->totalframes;
 
     /*=====================================================
      * Setup the Pipeline in H.264 Recording Mode

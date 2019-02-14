@@ -1,5 +1,10 @@
-chronos-cli (0.3.1~beta23) unstable; urgency=medium
+chronos-cli (0.3.1~beta28) unstable; urgency=medium
 
+  * Add recording sequencer to the camtest.py demo.
+  * Add zero-time black calibration to the python API.
+  * Add black calibration routines to python camera class.
+  * Fix race condition in generation of DBus segment signal.
+  * Add python class for Camera initialization.
   * Add execute permissions when creating directories for DNG save.
   * Add python class for programming and calibration of the LUX1310 sensor.
   * pipeline: Enable pixel blending on /dev/fb0 when starting the pipeline.
@@ -25,4 +30,4 @@ chronos-cli (0.3.1~beta23) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Sun, 10 Feb 2019 19:21:17 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Wed, 13 Feb 2019 23:00:16 -0800

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from camera import camera
 from lux1310 import lux1310
+from sequencer import seqcommand
 
 import os
 import time
@@ -13,6 +14,8 @@ FPGA_BITSTREAM = "/var/camera/FPGA.bit"
 GPIO_ENCA = "/sys/class/gpio/gpio20/value"
 GPIO_ENCB = "/sys/class/gpio/gpio26/value"
 GPIO_ENCSW = "/sys/class/gpio/gpio27/value"
+REC_LED_FRONT = "/sys/class/gpio/gpio41/value"
+REC_LED_BACK = "/sys/class/gpio/gpio25/value"
 
 # Initialize the Camera and image sensor
 cam = camera(lux1310())
@@ -23,6 +26,10 @@ for delay in cam.sensor.startAnalogCal():
     time.sleep(delay)
 for delay in cam.startZeroTimeBlackCal():
     time.sleep(delay)
+
+# Grab the current frame size
+fSize = cam.sensor.getCurrentGeometry()
+recState = None
 
 # Quick and dirty class to help out with GPIO access
 class gpio:
@@ -61,13 +68,12 @@ p.register(enca.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
 p.register(encb.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
 p.register(encsw.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
 while True:
-    p.poll()
+    p.poll(-1)
 
     delta = 0
     enca.update()
     encb.update()
     encsw.update() # TODO: Debounce Me!
-    fSize = cam.sensor.getCurrentGeometry()
 
     # On encoder motion, change the exposure timing.
     if (encb.changed() and not enca.value):
@@ -97,18 +103,54 @@ while True:
     
     # Start recording on encoder switch depress
     if (encsw.rising()):
-        print("TODO: Start Recording in gated burst mode")
+        # Start recording in gated burst.
+        program = [ seqcommand(blockSize=cam.getRecordingMaxFrames(fSize), blkTermRising=True) ]
+        print("Starting recording with program=%s" % (program))
+        recState = cam.startRecording(program)
+        os.system("cam-json -v flush")
+
+        # Turn on the record LEDs (active low)
+        f = open(REC_LED_FRONT, "w")
+        f.write("0")
+        f = open(REC_LED_BACK, "w")
+        f.write("0")
+
+        # TODO: Track the recording state using epoll timeouts.
     
     # End recording and begin filesave on encoder switch release.
-    # TODO: Need to disable the encoder switch until save is done,
-    # poll the status API until it it's not saving anymore.
     if (encsw.falling()):
-        filesaveArgs = {
-            "filename": os.path.join(os.getcwd(), "test.mp4"),
-            "format": "x264",
-            "start": 0,
-            "framerate": 60,
-            "bitrate": int(fSize.pixels() * 60 * 0.5)
-        }
-        status = subprocess.check_output(["cam-json", "-v", "recordfile", "-"], input=json.dumps(filesaveArgs).encode())
-        print(status)
+        cam.stopRecording()
+        time.sleep(1)
+        print("Terminating recording")
+
+        # Turn off the record LEDs (active low)
+        f = open(REC_LED_FRONT, "w")
+        f.write("1")
+        f = open(REC_LED_BACK, "w")
+        f.write("1")
+        break
+
+# Get some info on how much was recorded.
+status = json.loads(subprocess.check_output(["cam-json", "-v", "status"]).decode("utf-8"))
+if (status['totalFrames'] == 0):
+    print("No frames recorded - aborting")
+    print("Status = %s" % (status))
+
+# Save the resulting recording to a file.
+filesaveArgs = {
+    "filename": os.path.join(os.getcwd(), "test.mp4"),
+    "format": "x264",
+    "start": 0,
+    "length": status['totalFrames'],
+    "framerate": 60,
+    "bitrate": int(fSize.pixels() * 60 * 0.5)
+}
+subprocess.check_output(["cam-json", "-v", "recordfile", "-"], input=json.dumps(filesaveArgs).encode())
+
+# Poll the status API until recording is completed.
+while True:
+    status = json.loads(subprocess.check_output(["cam-json", "-v", "status"]).decode("utf-8"))
+    if ("filename" in status):
+        print("Writing frame %s of %s at %s fps" % (status['position'], status['totalFrames'], status['framerate']))
+    else:
+        break

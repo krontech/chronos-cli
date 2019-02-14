@@ -16,6 +16,8 @@
 /*=====================================*
  * FPGA Memory Mapping Base Type
  *=====================================*/
+static PyTypeObject fpgamap_type;
+
 struct fpgamap {
     PyObject_HEAD
     void            *regs;
@@ -39,9 +41,445 @@ struct fpgamap_reginfo {
 #define FPGA_REG_ARRAY(_container_, _member_) \
     FPGA_REG_INFO(offsetof(_container_, _member_), sizeof(((_container_ *)0)->_member_[0]), arraysize(((_container_ *)0)->_member_))
 
-
 #define fpgaptr(_self_, _offset_, _type_) \
     (_type_ *)((unsigned char *)(((struct fpgamap *)_self_)->regs) + (uintptr_t)(_offset_))
+
+/*=====================================*
+ * Register Accessor Methods
+ *=====================================*/
+static PyObject *
+fpga_get_uint(PyObject *self, void *closure)
+{
+    struct fpgamap_reginfo *info = closure;
+    switch (info->size) {
+        case sizeof(uint8_t):   return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint8_t));
+        case sizeof(uint16_t):  return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint16_t));
+        case sizeof(uint32_t):  return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint32_t));
+        case sizeof(uint64_t):  return PyLong_FromUnsignedLongLong(*fpgaptr(self, info->offset, uint64_t));
+        default:
+            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
+            return NULL;
+    }
+}
+
+static int
+fpga_set_uint(PyObject *self, PyObject *value, void *closure)
+{
+    struct fpgamap_reginfo *info = closure;
+    unsigned long long intval;
+    PyObject *intobj;
+
+    /* Convert whatever we got into an integer. */
+    intobj = PyNumber_Long(value);
+    if (!intobj) {
+        return -1;
+    }
+    intval = PyLong_AsUnsignedLongLong(intobj);
+    if ((intval >> (info->size * 8)) != 0) {
+        Py_DECREF(intobj);
+        PyErr_SetString(PyExc_ValueError, "Register value out of range");
+        return -1;
+    }
+    Py_DECREF(intobj);
+
+    /* Write it into the registers. */
+    switch (info->size) {
+        case sizeof(uint8_t):
+            *fpgaptr(self, info->offset, uint8_t) = intval;
+            break;
+        case sizeof(uint16_t):
+            *fpgaptr(self, info->offset, uint16_t) = intval;
+            break;
+        case sizeof(uint32_t):
+            *fpgaptr(self, info->offset, uint32_t) = intval;
+            break;
+        case sizeof(uint64_t):
+            *fpgaptr(self, info->offset, uint64_t) = intval;
+            break;
+        default:
+            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
+            return -1;
+    }
+    return 0;
+}
+
+static PyObject *
+fpga_get_const(PyObject *self, void *closure)
+{
+    return PyLong_FromLong((uintptr_t)closure);
+}
+
+static PyObject *
+fpgamap_get_buf(PyObject *self, void *closure)
+{
+    struct fpgamap *fmap = closure;
+    struct fpgamap_reginfo *info = closure;
+    PyObject *args = Py_BuildValue("()");
+    PyObject *kwds = Py_BuildValue("{s:i,s:i}", "offset", fmap->roffset + info->offset, "size", info->size);
+    PyObject *buf = PyObject_Call((PyObject *)&fpgamap_type, args, kwds);
+    Py_DECREF(args);
+    Py_DECREF(kwds);
+    return buf;
+}
+
+/*=====================================*
+ * Array and Memory View Methods
+ *=====================================*/
+struct fpgamap_arrayview {
+    PyObject_HEAD
+    PyObject        *parent;
+    unsigned long   offset;
+    unsigned long   itemsize;
+    Py_ssize_t      itemcount;
+};
+
+static Py_ssize_t
+arrayview_length(PyObject *self)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+    return view->itemcount;
+}
+
+static PyObject *
+arrayview_getval(PyObject *self, PyObject *key)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+    unsigned long index = PyLong_AsUnsignedLong(key);
+    struct fpgamap_reginfo info = {
+        .offset = view->offset + (index * view->itemsize),
+        .size = view->itemsize,
+        .count = view->itemcount,
+    };
+
+    /* Sanity check the index. */
+    if (PyErr_Occurred()) {
+        return NULL;
+    }
+    if (index >= view->itemcount) {
+        PyErr_SetString(PyExc_IndexError, "Register index out of range");
+        return NULL;
+    }
+
+    return fpga_get_uint(view->parent, &info);
+}
+
+static int
+arrayview_setval(PyObject *self, PyObject *key, PyObject *value)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+    unsigned long index = PyLong_AsUnsignedLong(key);
+    struct fpgamap_reginfo info = {
+        .offset = view->offset + (index * view->itemsize),
+        .size = view->itemsize,
+        .count = view->itemcount,
+    };
+
+    /* Sanity check the index. */
+    if (PyErr_Occurred()) {
+        return -1;
+    }
+    if (index >= view->itemcount) {
+        PyErr_SetString(PyExc_IndexError, "Register index out of range");
+        return -1;
+    }
+
+    return fpga_set_uint(view->parent, value, &info);
+}
+
+static int
+arrayview_getbuffer(PyObject *self, Py_buffer *buffer, int flags)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+
+    buffer->buf = fpgaptr(view->parent, view->offset, void);
+    buffer->obj = self;
+    buffer->len = view->itemcount * view->itemsize;
+    buffer->readonly = 0;
+    buffer->itemsize = view->itemsize;
+    switch (view->itemsize) {
+        case 1:
+            buffer->format = (flags & PyBUF_FORMAT) ? "B" : NULL;
+            break;
+        case 2:
+            buffer->format = (flags & PyBUF_FORMAT) ? "H" : NULL;
+            break;
+        case 4:
+            buffer->format = (flags & PyBUF_FORMAT) ? "I" : NULL;
+            break;
+        case 8:
+            buffer->format = (flags & PyBUF_FORMAT) ? "Q" : NULL;
+            break;
+        default:
+            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
+            return -1;
+    }
+    buffer->ndim = 1;
+    buffer->shape = (flags & PyBUF_ND) ? &view->itemcount : NULL;
+    /* Simple n-dimensional array */
+    buffer->strides = NULL;
+    buffer->suboffsets = NULL;
+    buffer->internal = NULL;
+
+    Py_INCREF(self);
+    return 0;
+}
+
+PyDoc_STRVAR(fpgamap_arrayview_docstring,
+"arrayview(parent, offset=0, size=4, count=FPGA_MAP_SIZE/size)\n\
+--\n\
+\n\
+Return an array view for a subset of the FPGA register space, start\n\
+offset bytes into the parent fpgamap class.\n\
+\n\
+Parameters\n\
+----------\n\
+parent : `fpgamap`\n\
+    The parent FPGA register mapping class.\n\
+offset : `int`, optional\n\
+    Starting offset of the array into the parent mapping (zero, by default)\n\
+size : `int`, optional\n\
+    Length of a single member of the array (4, default)\n\
+count : `int`\n\
+    Number of array elements to export (FPGA_MAP_SIZE/size, by default)");
+
+static int
+arrayview_init(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+    struct fpgamap *fmap;
+    PyObject *parent;
+    char *keywords[] = {
+        "parent",
+        "offset",
+        "size",
+        "count",
+        NULL,
+    };
+
+    view->parent = NULL;
+    view->offset = 0;
+    view->itemsize = 4;
+    view->itemcount = 0;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O|kkn", keywords,
+            &parent, &view->offset, &view->itemsize, &view->itemcount)) {
+        return -1;
+    }
+    
+    if (PyType_IsSubtype(Py_TYPE(parent), &fpgamap_type) != 1) {
+        PyErr_SetString(PyExc_TypeError, "Parent must be an subtype of fpgamap");
+        return -1;
+    }
+    fmap = (struct fpgamap *)parent;
+    if (view->offset + (view->itemcount * view->itemsize) > fmap->rsize) {
+        /* The array view doesn't fit into the parent mapping. */
+        PyErr_SetString(PyExc_ValueError, "Array mapping exceeds parent address space");
+        return -1;
+    }
+    /* If no count was specified, infer it from the parent mapping. */
+    if (view->itemcount == 0) {
+        view->itemcount = (fmap->rsize - view->offset) / view->itemsize;
+    }
+
+    /* Success */
+    view->parent = parent;
+    Py_INCREF(view->parent);
+    return 0;
+}
+
+/* Arrayview destructor */
+static void
+arrayview_dealloc(PyObject *self)
+{
+    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
+    if (view->parent) {
+        Py_DECREF(view->parent);
+        view->parent = NULL;
+    }
+    Py_TYPE(self)->tp_free(self);
+}
+
+static PyMappingMethods arrayview_as_array = {
+    .mp_length = arrayview_length,
+    .mp_subscript = arrayview_getval,
+    .mp_ass_subscript = arrayview_setval
+};
+
+static PyBufferProcs arrayview_as_buffer = {
+    .bf_getbuffer = arrayview_getbuffer,
+};
+
+static PyTypeObject arrayview_type = {
+    PyVarObject_HEAD_INIT(NULL, 0)
+    .tp_name = "pychronos.arrayview",
+    .tp_doc = fpgamap_arrayview_docstring,
+    .tp_basicsize = sizeof(struct fpgamap_arrayview),
+    .tp_itemsize = 0,
+    .tp_flags = Py_TPFLAGS_DEFAULT,
+    .tp_new = PyType_GenericNew,
+    .tp_init = arrayview_init,
+    .tp_dealloc = arrayview_dealloc,
+    .tp_as_mapping = &arrayview_as_array,
+    .tp_as_buffer = &arrayview_as_buffer,
+    .tp_iter = pychronos_array_getiter,
+};
+
+/* Getter to return an arrayview object. */
+static PyObject *
+fpga_get_arrayview(PyObject *self, void *closure)
+{
+    struct fpgamap_reginfo *info = closure;
+    PyObject *args = Py_BuildValue("(O,k,k,n)", self, info->offset, info->size, info->count);
+    if (args) {
+        PyObject *buf = PyObject_CallObject((PyObject *)&arrayview_type, args);
+        Py_DECREF(args);
+        return buf;
+    }
+    return NULL;
+}
+
+/* TODO: Should we add a setter to allow something like foo->arrayview = [0x11, 0x22, 0x33, 0x44] */
+
+/* MemoryView Protocol. */
+static int
+fpgamap_getbuffer(PyObject *self, Py_buffer *view, int flags)
+{
+    struct fpgamap *fmap = (struct fpgamap *)self;
+    view->format = (flags & PyBUF_FORMAT) ? "<H" : NULL;
+    return PyBuffer_FillInfo(view, self, fmap->regs, fmap->rsize, 0, flags);
+}
+static PyBufferProcs fpgamap_as_buffer = { .bf_getbuffer = fpgamap_getbuffer };
+
+static PyGetSetDef fpgamap_getset[] = {
+    {"mem8",  fpga_get_arrayview, NULL, "8-bit memory array view",  FPGA_REG_INFO(0, sizeof(uint8_t), 0) },
+    {"mem16", fpga_get_arrayview, NULL, "16-bit memory array view", FPGA_REG_INFO(0, sizeof(uint16_t), 0) },
+    {"mem32", fpga_get_arrayview, NULL, "32-bit memory array view", FPGA_REG_INFO(0, sizeof(uint32_t), 0) },
+    { NULL },
+};
+
+PyDoc_STRVAR(fpgamap_reg_read_docstring,
+"regRead(offset, size)\n\
+--\n\
+\n\
+Helper function to read an integer value of the given size from memory\n\
+beginning offset bytes from the start of the register mapping.\n\
+\n\
+Parameters\n\
+----------\n\
+offset : `int`\n\
+    Offset in bytes from the start of the register mapping.\n\
+size : `int`\n\
+    Length of the integer to read.\n\
+\n\
+Returns\n\
+-------\n\
+int");
+
+static PyObject *
+fpgamap_reg_read(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    struct fpgamap_reginfo info;
+    char *keywords[] = {
+        "offset",
+        "size",
+        NULL,
+    };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|kk", keywords, &info.offset, &info.size)) {
+        return NULL;
+    }
+    info.count = 1;
+    return fpga_get_uint(self, &info);
+}
+
+PyDoc_STRVAR(fpgamap_reg_write_docstring,
+"regWrite(offset, size, value)\n\
+--\n\
+\n\
+Helper function to write an integer value of the given size into memory\n\
+at the offset bytes from the start of the register mapping.\n\
+\n\
+Parameters\n\
+----------\n\
+offset : `int`\n\
+    Offset in bytes from the start of the register mapping.\n\
+size : `int`\n\
+    Length of the integer to write.\n\
+value : `object`\n\
+    Value to be written, must be convertable to an integer.");
+
+static PyObject *
+fpgamap_reg_write(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    struct fpgamap_reginfo info;
+    PyObject *value;
+    char *keywords[] = {
+        "offset",
+        "size",
+        "value",
+        NULL,
+    };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|kkO", keywords, &info.offset, &info.size, &value)) {
+        return NULL;
+    }
+    info.count = 1;
+    fpga_set_uint(self, value, &info);
+    Py_RETURN_NONE;
+}
+
+PyDoc_STRVAR(fpgamap_reg_array_docstring,
+"regArray(offset, size, count)\n\
+--\n\
+\n\
+Helper function to generate an array view from a subset of the register\n\
+mapping, starting at a given offset into memory. This function is a wrapper\n\
+for the expression: `arrayview(self, offset, size, count)`\n\
+\n\
+Parameters\n\
+----------\n\
+offset : `int`\n\
+    Offset in bytes from the start of the register mapping.\n\
+size : `int`\n\
+    Size of the array elements.\n\
+count : `int`\n\
+    Number of array elements.");
+
+static PyObject *
+fpgamap_reg_array(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    struct fpgamap_reginfo info;
+    char *keywords[] = {
+        "offset",
+        "size",
+        "count",
+        NULL,
+    };
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|kkk", keywords, &info.offset, &info.size, &info.count)) {
+        return NULL;
+    }
+    return fpga_get_arrayview(self, &info);
+}
+
+static PyMethodDef fpgamap_methods[] = {
+    {"regRead",     (PyCFunction)fpgamap_reg_read,  METH_VARARGS | METH_KEYWORDS, fpgamap_reg_read_docstring},
+    {"regWrite",    (PyCFunction)fpgamap_reg_write, METH_VARARGS | METH_KEYWORDS, fpgamap_reg_write_docstring},
+    {"regArray",    (PyCFunction)fpgamap_reg_array, METH_VARARGS | METH_KEYWORDS, fpgamap_reg_array_docstring},
+    {NULL, NULL, 0, NULL},
+};
+
+PyDoc_STRVAR(fpgamap_docstring,
+"fpgamap(offset=0, size=FPGA_MAP_SIZE)\n\
+--\n\
+\n\
+Return a new map of the FPGA register space starting at offset, and\n\
+covering size bytes of the address space. These maps form the base\n\
+class for all other FPGA register blocks and provide raw access to\n\
+memory.\n\
+\n\
+Parameters\n\
+----------\n\
+offset : `int`, optional\n\
+    Starting offset of the register mapping (zero, by default)\n\
+size : `int`, optional\n\
+    Length of the register mapping (FPGA_MAP_SIZE, by default)");
 
 static int
 fpgamap_init(PyObject *self, PyObject *args, PyObject *kwargs)
@@ -73,201 +511,6 @@ fpgamap_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
     return (PyObject *)self;
 }
 
-/*=====================================*
- * Array and Memory View Methods
- *=====================================*/
-struct fpgamap_arrayview {
-    PyObject_HEAD
-    union {
-        void        *raw;
-        uint32_t    *u32;
-        uint16_t    *u16;
-        uint8_t     *u8;
-    } u;
-    unsigned int    itemsize;
-    Py_ssize_t      itemcount;
-};
-
-static Py_ssize_t
-arrayview_length(PyObject *self)
-{
-    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
-    return view->itemcount;
-}
-
-static PyObject *
-arrayview_getval(PyObject *self, PyObject *key)
-{
-    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
-    unsigned long index = PyLong_AsUnsignedLong(key);
-    if (PyErr_Occurred()) {
-        return NULL;
-    }
-    if (index >= view->itemcount) {
-        PyErr_SetString(PyExc_ValueError, "Register value out of range"); /* TODO: Index out of range probably makes more sense. */
-        return NULL;
-    }
-
-    /* TODO: We should just call fpga_get_uint from here. */
-    switch (view->itemsize) {
-        case 1: return PyLong_FromUnsignedLong(view->u.u8[index]);
-        case 2: return PyLong_FromUnsignedLong(view->u.u16[index]);
-        case 4: return PyLong_FromUnsignedLong(view->u.u32[index]);
-        default:
-            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
-            return NULL;
-    }
-}
-
-static int
-arrayview_setval(PyObject *self, PyObject *key, PyObject *value)
-{
-    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
-    unsigned long val, index;
-
-    index = PyLong_AsUnsignedLong(key);
-    if (PyErr_Occurred()) {
-        return -1;
-    }
-    if (index >= view->itemcount) {
-        PyErr_SetString(PyExc_IndexError, "Array index out of range");
-        return -1;
-    }
-
-    /* TODO: We should just call fpga_set_uint from here. */
-    val = PyLong_AsUnsignedLong(value);
-    if (PyErr_Occurred()) {
-        return -1;
-    }
-    if ((val >> (view->itemsize * 8)) != 0) {
-        PyErr_SetString(PyExc_ValueError, "Register value out of range");
-        return -1;
-    }
-    switch (view->itemsize) {
-        case 1:
-            view->u.u8[index] = val;
-            break;
-        case 2:
-            view->u.u16[index] = val;
-            break;
-        case 4:
-            view->u.u32[index] = val;
-            break;
-        default:
-            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
-            return -1;
-    }
-    return 0;
-}
-
-static int
-arrayview_getbuffer(PyObject *self, Py_buffer *buffer, int flags)
-{
-    struct fpgamap_arrayview *view = (struct fpgamap_arrayview *)self;
-    buffer->buf = view->u.raw;
-    buffer->obj = self;
-    buffer->len = view->itemcount * view->itemsize;
-    buffer->readonly = 0;
-    buffer->itemsize = view->itemsize;
-    switch (view->itemsize) {
-        case 1:
-            buffer->format = (flags & PyBUF_FORMAT) ? "B" : NULL;
-            break;
-        case 2:
-            buffer->format = (flags & PyBUF_FORMAT) ? "H" : NULL;
-            break;
-        case 4:
-            buffer->format = (flags & PyBUF_FORMAT) ? "I" : NULL;
-            break;
-        default:
-            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
-            return -1;
-    }
-    buffer->ndim = 1;
-    buffer->shape = (flags & PyBUF_ND) ? &view->itemcount : NULL;
-    /* Simple n-dimensional array */
-    buffer->strides = NULL;
-    buffer->suboffsets = NULL;
-    buffer->internal = NULL;
-
-    Py_INCREF(self);
-    return 0;
-}
-
-static PyMappingMethods arrayview_as_array = {
-    .mp_length = arrayview_length,
-    .mp_subscript = arrayview_getval,
-    .mp_ass_subscript = arrayview_setval
-};
-
-static PyBufferProcs arrayview_as_buffer = {
-    .bf_getbuffer = arrayview_getbuffer,
-};
-
-static PyTypeObject arrayview_type = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "pychronos.arrayview",
-    .tp_doc = "Memory mapped array view",
-    .tp_basicsize = sizeof(struct fpgamap_arrayview),
-    .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_new = PyType_GenericNew,
-    .tp_as_mapping = &arrayview_as_array,
-    .tp_as_buffer = &arrayview_as_buffer,
-    .tp_iter = pychronos_array_getiter,
-};
-
-/* Getter to return an arrayview object. */
-static PyObject *
-fpga_get_arrayview(PyObject *self, void *closure)
-{
-    struct fpgamap *fmap = (struct fpgamap *)self;
-    struct fpgamap_reginfo *info = closure;
-    struct fpgamap_arrayview *view = PyObject_New(struct fpgamap_arrayview, &arrayview_type);
-    if (view) {
-        unsigned long maxcount = (fmap->rsize - info->offset) / info->size;
-        view->itemsize = info->size;
-        view->itemcount = (info->count < maxcount) ? info->count : maxcount;
-        view->u.raw = (unsigned char *)fmap->regs + info->offset;
-    }
-    return (PyObject *)view;
-}
-
-/* TODO: Should we add a setter to allow something like foo->arrayview = [0x11, 0x22, 0x33, 0x44] */
-
-/* MemoryView Protocol. */
-static int
-fpgamap_getbuffer(PyObject *self, Py_buffer *view, int flags)
-{
-    struct fpgamap *fmap = (struct fpgamap *)self;
-    view->format = (flags & PyBUF_FORMAT) ? "<H" : NULL;
-    return PyBuffer_FillInfo(view, self, fmap->regs, fmap->rsize, 0, flags);
-}
-static PyBufferProcs fpgamap_as_buffer = { .bf_getbuffer = fpgamap_getbuffer };
-
-static PyGetSetDef fpgamap_getset[] = {
-    {"mem8",  fpga_get_arrayview, NULL, "8-bit memory array view",  FPGA_REG_INFO(0, sizeof(uint8_t), ULONG_MAX) },
-    {"mem16", fpga_get_arrayview, NULL, "16-bit memory array view", FPGA_REG_INFO(0, sizeof(uint16_t), ULONG_MAX) },
-    {"mem32", fpga_get_arrayview, NULL, "32-bit memory array view", FPGA_REG_INFO(0, sizeof(uint32_t), ULONG_MAX) },
-    { NULL },
-};
-
-PyDoc_STRVAR(fpgamap_docstring,
-"fpgamap(offset=0, size=FPGA_MAP_SIZE)\n\
---\n\
-\n\
-Return a new map of the FPGA register space starting at offset, and\n\
-covering size bytes of the address space. These maps form the base\n\
-class for all other FPGA register blocks and provide raw access to\n\
-memory.\n\
-\n\
-Parameters\n\
-----------\n\
-offset : `int`, optional\n\
-    Starting offset of the register mapping (zero, by default)\n\
-size : `int`, optional\n\
-    Length of the register mapping (FPGA_MAP_SIZE, by default)");
-
 static PyTypeObject fpgamap_type = {
     PyVarObject_HEAD_INIT(NULL, 0)
     .tp_name = "pychronos.fpgamap",
@@ -277,74 +520,10 @@ static PyTypeObject fpgamap_type = {
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_init = fpgamap_init,
     .tp_new = fpgamap_new,
+    .tp_methods = fpgamap_methods,
     .tp_getset = fpgamap_getset,
     .tp_as_buffer = &fpgamap_as_buffer,
 };
-
-/*=====================================*
- * Register Accessor Methods
- *=====================================*/
-static PyObject *
-fpga_get_uint(PyObject *self, void *closure)
-{
-    struct fpgamap_reginfo *info = closure;
-    switch (info->size) {
-        case sizeof(uint8_t):   return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint8_t));
-        case sizeof(uint16_t):  return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint16_t));
-        case sizeof(uint32_t):  return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint32_t));
-        default:
-            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
-            return NULL;
-    }
-}
-
-static int
-fpga_set_uint(PyObject *self, PyObject *value, void *closure)
-{
-    struct fpgamap_reginfo *info = closure;
-    unsigned long val = PyLong_AsUnsignedLong(value);
-    if (PyErr_Occurred()) {
-        return -1;
-    }
-    if ((val >> (info->size * 8)) != 0) {
-        PyErr_SetString(PyExc_ValueError, "Register value out of range");
-        return -1;
-    }
-    switch (info->size) {
-        case sizeof(uint8_t):
-            *fpgaptr(self, info->offset, uint8_t) = val;
-            break;
-        case sizeof(uint16_t):
-            *fpgaptr(self, info->offset, uint16_t) = val;
-            break;
-        case sizeof(uint32_t):
-            *fpgaptr(self, info->offset, uint32_t) = val;
-            break;
-        default:
-            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
-            return -1;
-    }
-    return 0;
-}
-
-static PyObject *
-fpga_get_const(PyObject *self, void *closure)
-{
-    return PyLong_FromLong((uintptr_t)closure);
-}
-
-static PyObject *
-fpgamap_get_buf(PyObject *self, void *closure)
-{
-    struct fpgamap *fmap = closure;
-    struct fpgamap_reginfo *info = closure;
-    PyObject *args = Py_BuildValue("()");
-    PyObject *kwds = Py_BuildValue("{s:i,s:i}", "offset", fmap->roffset + info->offset, "size", info->size);
-    PyObject *buf = PyObject_Call((PyObject *)&fpgamap_type, args, kwds);
-    Py_DECREF(args);
-    Py_DECREF(kwds);
-    return buf;
-}
 
 /*=====================================*
  * Image Sensor Register Space
@@ -416,94 +595,6 @@ static PyTypeObject sensor_type = {
 /*=====================================*
  * Sequencer Register Space
  *=====================================*/
-struct seqprogram_array {
-    PyObject_HEAD
-    uint64_t *program;
-};
-
-static Py_ssize_t
-seqprogram_array_length(PyObject *self)
-{
-    return 16; /* Some ambiguity as to its length... */
-}
-
-static PyObject *
-seqprogram_array_getval(PyObject *self, PyObject *key)
-{
-    struct seqprogram_array *view = (struct seqprogram_array *)self;
-    unsigned long index = PyLong_AsUnsignedLong(key);
-
-    if (PyErr_Occurred()) {
-        return NULL;
-    }
-    if (index >= seqprogram_array_length(self)) {
-        PyErr_SetString(PyExc_IndexError, "Array index out of range");
-        return NULL;
-    }
-    return PyLong_FromUnsignedLongLong(view->program[index]);
-}
-
-static int
-seqprogram_array_setval(PyObject *self, PyObject *key, PyObject *val)
-{
-    struct seqprogram_array *view = (struct seqprogram_array *)self;
-    unsigned long long pgmcommand;
-    unsigned long index;
-    PyObject *vobject;
-
-    /* Parse the program index. */
-    index = PyLong_AsUnsignedLong(key);
-    if (PyErr_Occurred()) {
-        return -1;
-    }
-    if (index >= seqprogram_array_length(self)) {
-        PyErr_SetString(PyExc_IndexError, "Array index out of range");
-        return -1;
-    }
-
-    /* Convert whatever we got to an integer and write it. */
-    vobject = PyNumber_Long(val);
-    if (!vobject) {
-        return -1;
-    }
-    pgmcommand = PyLong_AsUnsignedLongLong(vobject);
-    Py_DECREF(vobject);
-    if (PyErr_Occurred()) {
-        return -1;
-    }
-    view->program[index] = pgmcommand;
-    return 0;
-}
-
-static PyMappingMethods seqprogram_as_array = {
-    .mp_length = seqprogram_array_length,
-    .mp_subscript = seqprogram_array_getval,
-    .mp_ass_subscript = seqprogram_array_setval
-};
-
-static PyTypeObject seqprogram_arrayview_type = {
-    PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "pychronos.seqprogram",
-    .tp_doc = "Sequencer Program Array View",
-    .tp_basicsize = sizeof(struct seqprogram_array),
-    .tp_itemsize = 0,
-    .tp_flags = Py_TPFLAGS_DEFAULT,
-    .tp_new = PyType_GenericNew,
-    .tp_as_mapping = &seqprogram_as_array,
-    .tp_iter = pychronos_array_getiter,
-};
-
-static PyObject *
-seqprogram_get_arrayview(PyObject *self, void *closure)
-{
-    struct fpgamap *fmap = (struct fpgamap *)self;
-    struct seqprogram_array *view = PyObject_New(struct seqprogram_array, &seqprogram_arrayview_type);
-    if (view) {
-        view->program = (uint64_t *)fmap->regs + ((FPGA_SEQPROGRAM_BASE - FPGA_SEQUENCER_BASE) / sizeof(uint64_t));
-    }
-    return (PyObject *)view;
-}
-
 static PyGetSetDef sequencer_getset[] = {
     {"control",     fpga_get_uint, fpga_set_uint, "Control Register",             FPGA_REG_TYPED(struct fpga_seq, control, uint16_t)},
     {"status",      fpga_get_uint, fpga_set_uint, "Status Register",              FPGA_REG_TYPED(struct fpga_seq, status, uint16_t)},
@@ -515,7 +606,7 @@ static PyGetSetDef sequencer_getset[] = {
     {"mdFifo",      fpga_get_uint, NULL,          "MD FIFO Read Register",        FPGA_REG_SCALAR(struct fpga_seq, md_fifo_read)},
     {"writeAddr",   fpga_get_uint, NULL,          "Current Frame Write Address",  FPGA_REG_SCALAR(struct fpga_seq, write_addr)},
     {"lastAddr",    fpga_get_uint, NULL,          "Last Written Frame Address",   FPGA_REG_SCALAR(struct fpga_seq, last_addr)},
-    {"seqprogram",  seqprogram_get_arrayview, NULL, "Sequencer Program Registers", NULL},
+    {"seqprogram",  fpga_get_arrayview, NULL,     "Sequencer Program Registers",  FPGA_REG_INFO(FPGA_SEQPROGRAM_BASE - FPGA_SEQUENCER_BASE, sizeof(uint64_t), 16)},
     /* Sequencer Constant Definitions */
     {"SW_TRIG",     fpga_get_const, NULL,    "Software Trigger Request", (void *)SEQ_CTL_SOFTWARE_TRIG},
     {"START_REC",   fpga_get_const, NULL,    "Start Recording Request",  (void *)SEQ_CTL_START_RECORDING},
@@ -531,7 +622,7 @@ sequencer_init(PyObject *self, PyObject *args, PyObject *kwds)
 {
     struct fpgamap *fmap = (struct fpgamap *)self;
     fmap->roffset = FPGA_SEQUENCER_BASE;
-    fmap->rsize = sizeof(struct fpga_seq);
+    fmap->rsize = (FPGA_SEQPROGRAM_BASE - FPGA_SEQUENCER_BASE) + (16 * sizeof(uint64_t));
     return fpgamap_init(self, args, kwds);
 }
 
@@ -1155,6 +1246,7 @@ pychronos_init_regs(PyObject *mod)
     int i;
     PyTypeObject *pubtypes[] = {
         &fpgamap_type,
+        &arrayview_type,
         &sensor_type,
         &sequencer_type,
         &trigger_type,
@@ -1165,10 +1257,6 @@ pychronos_init_regs(PyObject *mod)
     };
 
     /* Init the arrayview type */
-    PyType_Ready(&arrayview_type);
-    Py_INCREF(&arrayview_type);
-    PyType_Ready(&seqprogram_arrayview_type);
-    Py_INCREF(&seqprogram_arrayview_type);
     PyType_Ready(&ccm_arrayview_type);
     Py_INCREF(&ccm_arrayview_type);
     PyType_Ready(&wbal_arrayview_type);

@@ -5,6 +5,7 @@ import time
 import os
 import numpy
 
+from sequencer import sequencer, seqcommand
 from sensorApi import liveReadout
 from spd import spd
 
@@ -47,14 +48,14 @@ class camera:
             print("Detected FPGA Version %s.%s" % (config.version, config.subver))
 
         # Setup memory
-        self.ramSizeWords = self.setupMemory() // self.BYTES_PER_WORD
+        self.ramSize = self.setupMemory()
 
         # Setup live display
         sensorRegs = pychronos.sensor()
         sensorRegs.fifoStart = 0x100
         sensorRegs.fifoStop = 0x100
 
-        sequencerRegs = pychronos.sequencer()
+        sequencerRegs = sequencer()
         sequencerRegs.liveAddr[0] = self.LIVE_REGION_START + self.MAX_FRAME_WORDS * 0
         sequencerRegs.liveAddr[1] = self.LIVE_REGION_START + self.MAX_FRAME_WORDS * 1
         sequencerRegs.liveAddr[2] = self.LIVE_REGION_START + self.MAX_FRAME_WORDS * 2
@@ -172,7 +173,7 @@ class camera:
         fSizeWords //= self.FRAME_ALIGN_WORDS
         fSizeWords *= self.FRAME_ALIGN_WORDS
 
-        seq = pychronos.sequencer()
+        seq = sequencer()
         seq.frameSize = fSizeWords
         seq.regionStart = startAddr
         if (frameCount != 0):
@@ -180,7 +181,19 @@ class camera:
             seq.regionStop = startAddr + (frameCount * fSizeWords)
         else:
             # Otherwise, setup the maximum available memory.
-            seq.regionStop = (self.ramSizeWords // fSizeWords) * fSizeWords
+            ramSizeWords = self.ramSize // self.BYTES_PER_WORD
+            seq.regionStop = (ramSizeWords // fSizeWords) * fSizeWords
+
+    def getMemorySize(self):
+        return self.ramSize
+    
+    # Return the length of memory (in frames) minus calibration overhead.
+    def getRecordingMaxFrames(self, fSize):
+        ramSizeWords = self.ramSize // self.BYTES_PER_WORD - self.REC_REGION_START
+        fSizeWords = (fSize.size() + self.BYTES_PER_WORD - 1) // self.BYTES_PER_WORD
+        fSizeWords //= self.FRAME_ALIGN_WORDS
+        fSizeWords *= self.FRAME_ALIGN_WORDS
+        return ramSizeWords // fSizeWords
 
     # Read the serial number - or make it an attribute?
     def getSerialNumber(self):
@@ -335,3 +348,41 @@ class camera:
 
         # Restore the previous exposure settings.
         self.sensor.setExposurePeriod(expPrev)
+
+    def startRecording(self, program):
+        """Program the recording sequencer and start recording.
+
+        Parameters
+        ----------
+        program : `list` of `seqprogram`
+            List of recording sequencer commands to execute for this recording.
+
+        Yields
+        ------
+        float :
+            The sleep time, in seconds, between steps of the recording.
+        
+        Examples
+        --------
+        This function returns a generator iterator with the sleep time between the
+        steps of the recording proceedure. The caller may use this for cooperative
+        multithreading, or can complete the calibration sychronously as follows:
+        
+        for delay in camera.startRecording():
+            time.sleep(delay)
+        """
+        seq = sequencer()
+        # Setup the nextStates into a loop, just in case the caller forgot and then
+        # load the program into the recording sequencer.
+        for i in range(0, len(program)):
+            program[i].nextState = (i + 1) % len(program)
+            seq.program[i] = program[i]
+        
+        # Begin recording.
+        seq.control |= seq.START_REC
+        seq.control &= ~seq.START_REC
+        
+    def stopRecording(self):
+        seq = sequencer()
+        seq.control |= seq.STOP_REC
+        seq.control &= ~seq.STOP_REC

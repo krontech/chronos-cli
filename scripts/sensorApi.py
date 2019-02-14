@@ -1,4 +1,5 @@
 import pychronos
+from sequencer import sequencer
 from abc import ABC, abstractmethod
 
 class frameGeometry:
@@ -37,7 +38,7 @@ class frameGeometry:
 ## for delay in seq.startLiveReadout():
 ##     time.sleep(delay)
 ## frame = seq.liveReadout()
-class liveReadout(pychronos.sequencer):
+class liveReadout(sequencer):
     """Live frame readout class
 
     This helper class is typically used during calibration routines to
