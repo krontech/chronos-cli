@@ -2,27 +2,27 @@
 import pychronos
 
 class ioInterface(pychronos.fpgamap):
-    SOURCES = ['NONE', 'IO1', 'IO2', 'IO3', 'COMB',
-               'SOFTWARE', 'DELAY', 'TOGGLE', 'SHUTTER',
-               'RECORDING', 'DISPFRAME',
-               'STARTREC', 'ENDREC', 'NEXTSEG', 'TIMING_IO',
-               'ALWAYSHIGH']
+    SOURCES = ['none', 'io1', 'io2', 'io3', 'comb',
+               'software', 'delay', 'toggle', 'shutter',
+               'recording', 'dispFrame',
+               'startRec', 'endRec', 'nextSeg', 'timingIo',
+               'alwaysHigh']
     
-    SOURCENUMBERS = {'NONE':0, 'IO1':1, 'IO2':2, 'IO3':3, 'COMB':4,
+    SOURCENUMBERS = {'none':0, 'io1':1, 'io2':2, 'io3':3, 'comb':4,
+                     'software':5, 'delay':6, 'toggle':7, 'shutter':8,
+                     'recording':9, 'dispFrame':10,
+                     'startRec':11, 'endRec':12, 'nextSeg':13, 'timingIo':14,
+                     'alwaysHigh':15}
+    SOURCENUMBERS = {'none':0, 'io1':1, 'io2':2, 'io3':3, 'comb':4,
+                     'software':5, 'delay':6, 'toggle':7, 'shutter':8,
+                     'recording':9, 'dispFrame':10,
+                     'startRec':11, 'endRec':12, 'nextSeg':13, 'timingIo':14,
+                     'alwaysHigh':15,
+                     'NONE':0, 'IO1':1, 'IO2':2, 'IO3':3, 'COMB':4,
                      'SOFTWARE':5, 'DELAY':6, 'TOGGLE':7, 'SHUTTER':8,
                      'RECORDING':9, 'DISPFRAME':10,
                      'STARTREC':11, 'ENDREC':12, 'NEXTSEG':13, 'TIMING_IO':14,
                      'ALWAYSHIGH':15}
-    SOURCENUMBERS = {'NONE':0, 'IO1':1, 'IO2':2, 'IO3':3, 'COMB':4,
-                     'SOFTWARE':5, 'DELAY':6, 'TOGGLE':7, 'SHUTTER':8,
-                     'RECORDING':9, 'DISPFRAME':10,
-                     'STARTREC':11, 'ENDREC':12, 'NEXTSEG':13, 'TIMING_IO':14,
-                     'ALWAYSHIGH':15,
-                     'none':0, 'io1':1, 'io2':2, 'io3':3, 'comb':4,
-                     'software':5, 'delay':6, 'toggle':7, 'shutter':8,
-                     'recording':9, 'dispFrame':10,
-                     'startRec':11, 'endRec':12, 'nextSeg':13, 'timingIo':14,
-                     'alwaysHigh':15 }
 
     # this is to use the same name as in the verilog
     SOURCE_NONE       =  0
@@ -196,28 +196,31 @@ class ioInterface(pychronos.fpgamap):
     cpuIntInvertInput      = __bitprop(0x3E, 2, 8, 1, 'invert flag')
     cpuIntDebounce         = __bitprop(0x3E, 2, 9, 1, 'debounce flag')
 
-    validNames = ['io1', 'io2', 'combOr1', 'combOr2', 'combOr3', 'combAnd', 'combXOr', 'delay', 'toggleSet',
-                  'toggleClear', 'toggleFlip', 'gate', 'start', 'stop', 'shutter', 'cpuInt']
-    
+
+
+    #------------------------------------------------------------------------------------------------------
+    # Source register controls
+    validSourceControlNames = ['io1', 'io2', 'combOr1', 'combOr2', 'combOr3', 'combAnd', 'combXOr', 'delay',
+                               'toggleSet', 'toggleClear', 'toggleFlip', 'gate', 'start', 'stop', 'shutter', 'cpuInt']
+
     def setSourceConfiguration(self, name, structure):
         '''This helper function connects a given source to the signal with the given
         flags
         
-        The 'name' field will be mangled to be '___SourceReg' which must match one 
-        of the register properties on self. This means 'name' must be one of:
-        io1, io2, combOr1, combOr2, combOr3, combAnd, combXOr, delay, toggleSet,
-        toggleClear, toggleFlip, gate, start, stop, shutter or cpuInt
+        The 'name' field must be one of:
+            io1, io2, combOr1, combOr2, combOr3, combAnd, combXOr, delay, toggleSet,
+            toggleClear, toggleFlip, gate, start, stop, shutter or cpuInt
 
         the structure is a dictionary with the following optional fields:
         'source' - a string or integer stating which source is to be connected
-             The following are valid: 'NONE', 'IO1', 'IO2', 'IO3', 'COMB',
-               'SOFTWARE', 'DELAY', 'TOGGLE', 'SHUTTER', 'RECORDING', 'DISPFRAME',
-               'STARTREC', 'ENDREC', 'NEXTSEG', 'TIMING_IO', 'ALWAYSHIGH'
-             Alternatively this can be a value of 0-15
+            The following are valid: 'none', 'io1', 'io2', 'io3', 'comb',
+               'software', 'delay', 'toggle', 'shutter', 'recording', 'dispFrame',
+               'startRec', 'endRec', 'nextSeg', 'timingIo', 'alwaysHigh'
+            Alternatively this can be a value of 0-15
         'invert' - is the input to be inverted
         'debounce' - is the debounce signal enabled
         'driveStrength' - only valid for 'io1' and 'io2' - this sets the drive
-             strength on the IO
+            strength on the IO
         '''
         prop = self.__class__.__dict__.get('%sSourceReg'%(name))
         if not prop:
@@ -226,7 +229,8 @@ class ioInterface(pychronos.fpgamap):
         raw = source if (type(source) == int) else self.SOURCENUMBERS.get(source, 0) 
         raw |= int(structure.get('invert',   0)) << 8
         raw |= int(structure.get('debounce', 0)) << 9
-        raw |= int(structure.get('driveStrength', 0)) << 12
+        if name in ['io1', 'io2']:
+            raw |= int(structure.get('driveStrength', 0)) << 12
         prop.fset(self, raw)
 
     def getSourceConfiguration(self, name):
@@ -241,7 +245,10 @@ class ioInterface(pychronos.fpgamap):
         if (propSource):        structure['source']   = propSource.fget(self)
         if (propInvertInput):   structure['invert']   = propInvertInput.fget(self)
         if (propDebounce):      structure['debounce'] = propDebounce.fget(self)
-        if (propDriveStrength): structure['driveStrength'] = propDriveStrength.fget(self)
+        
+        # special case, io
+        if name in ['io1', 'io2']:
+            if (propDriveStrength): structure['driveStrength'] = propDriveStrength.fget(self)
 
         # special case, tack on the delay config
         if name == 'delay':
@@ -249,8 +256,28 @@ class ioInterface(pychronos.fpgamap):
             for key,value in delayConfig.items():
                 structure[key] = value
         return structure
-        
+
+    #------------------------------------------------------------------------------------------------------
+    # Input specific controls
+    validInputControls = ['io1In', 'io2In']
+
+    def setIoThreshold(self, name, threshold):
+        pass
+    def getIoThreshold(self, name):
+        return 2.5
+    
+
+    def getInputConfiguration(self, name):
+        return {'threshold': self.getIoThreshold(name)}
+
+    def setInputConfiguration(self, name, structure):
+        threshold = structure.get('threshold', 2.5)
+        self.setIoThreshold(name, threshold)
+
+    #------------------------------------------------------------------------------------------------------
     # delay block controls
+    validDelayControls = ['delay']
+    
     delayControl      = __regprop(0x80, 2,       'delay block control bits')
     delayClockEnable  = __bitprop(0x80, 2, 0, 1, 'clock enable')
     delayOutputEnable = __bitprop(0x80, 2, 1, 1, 'output enable')
@@ -307,15 +334,20 @@ class ioInterface(pychronos.fpgamap):
         if type(structure) != dict:
             raise TypeError('structure needs to be a dict')
         for name, value in structure.items():
-            if name in self.validNames:
+            if name in self.validSourceControlNames:
                 self.setSourceConfiguration(name, value)
-            if name == 'delay':
+            elif name in validInputControls:
+                self.setInputConfiguration(name, value)
+
+            if name in validDelayControls: # this is both a valid source control and it's own thing (so no elif)
                 self.configureDelay(value)
 
     def getConfiguration(self):
         structure = {}
-        for name in self.validNames:
+        for name in self.validSourceControlNames:
             structure[name] = self.getSourceConfiguration(name)
+        for name in self.validInputControls:
+            structure[name] = self.getInputConfiguration(name)
         return structure
         
     
