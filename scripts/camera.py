@@ -5,8 +5,7 @@ import time
 import os
 import numpy
 
-from sequencer import sequencer, seqcommand
-from sensorApi import liveReadout
+import regmaps
 from spd import spd
 
 class camera:
@@ -51,11 +50,11 @@ class camera:
         self.ramSize = self.setupMemory()
 
         # Setup live display
-        sensorRegs = pychronos.sensor()
+        sensorRegs = regmaps.sensor()
         sensorRegs.fifoStart = 0x100
         sensorRegs.fifoStop = 0x100
 
-        sequencerRegs = sequencer()
+        sequencerRegs = regmaps.sequencer()
         sequencerRegs.liveAddr[0] = self.LIVE_REGION_START + self.MAX_FRAME_WORDS * 0
         sequencerRegs.liveAddr[1] = self.LIVE_REGION_START + self.MAX_FRAME_WORDS * 1
         sequencerRegs.liveAddr[2] = self.LIVE_REGION_START + self.MAX_FRAME_WORDS * 2
@@ -65,12 +64,12 @@ class camera:
         self.setupRecordRegion(self.geometry, self.REC_REGION_START)
         sequencerRegs.frameSize = self.geometry.size() // self.BYTES_PER_WORD
 
-        displayRegs = pychronos.display()
+        displayRegs = regmaps.display()
         displayRegs.control = displayRegs.COLOR_MODE
         i = 0
         for row in self.sensor.getColorMatrix():
             for val in row:
-                displayRegs.colorMatrix[i] = val
+                displayRegs.colorMatrix[i] = val * displayRegs.COLOR_MATRIX_DIV
                 i += 1
 
         # Load a default calibration
@@ -121,7 +120,7 @@ class camera:
     ## daemon so that it can manage the video framerate switching as
     ## necessary.
     def setupDisplayTiming(self, fSize, framerate=60):
-        displayRegs = pychronos.display()
+        displayRegs = regmaps.display()
         configRegs  = pychronos.config()
 
         hSync = 1
@@ -173,7 +172,7 @@ class camera:
         fSizeWords //= self.FRAME_ALIGN_WORDS
         fSizeWords *= self.FRAME_ALIGN_WORDS
 
-        seq = sequencer()
+        seq = regmaps.sequencer()
         seq.frameSize = fSizeWords
         seq.regionStart = startAddr
         if (frameCount != 0):
@@ -240,26 +239,37 @@ class camera:
         cooperative multithreading, or can complete the calibration sychronously
         as follows:
 
-        for delay in camera.startBlackCal():
+        state = camera.startBlackCal()
+        for delay in state:
             time.sleep(delay)
         """
         # get the resolution from the display properties
         # TODO: We actually want to get it from the sequencer.
-        display = pychronos.display()
+        display = regmaps.display()
         xres = display.hRes
         yres = display.vRes
 
         print("Starting")
 
-        # Readout and average the frames from the live buffer.
-        # TODO: Setup the sequencer and do the same thing with a recording.
+        seq = regmaps.sequencer()
         fAverage = numpy.zeros((yres, xres))
-        reader = liveReadout(xres, yres)
-        for i in range(0, numFrames):
-            yield from reader.startLiveReadout()
-            fAverage += numpy.asarray(reader.result)
-        fAverage /= numFrames
+        if (useLiveBuffer):
+            # Readout and average the frames from the live buffer.
+            for i in range(0, numFrames):
+                yield from seq.startLiveReadout(xres, yres)
+                fAverage += numpy.asarray(seq.liveResult)
+        else:
+            # Take a recording and read the results from the live buffer.
+            program = [regmaps.seqcommand(blockSize=numFrames+1, recTermBlkEnd=True, recTermBlkFull=True)]
+            yield from seq.startRecording([program])
+            addr = seq.regionStart
+            for i in range(0, numFrames):
+                fAverage += numpy.asarray(pychronos.readframe(addr, xres, yres))
+                addr += seq.frameSize
+                yield 0
 
+        fAverage /= numFrames
+        
         # Readout the column gain and linearity calibration.
         colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, display.hRes * 2)
         colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, display.hRes * 2)
@@ -328,7 +338,8 @@ class camera:
         cooperative multithreading, or can complete the calibration sychronously
         as follows:
 
-        for delay in camera.startBlackCal():
+        state = camera.startZeroTimeBlackCal()
+        for delay in state:
             time.sleep(delay)
         """
         # Grab the current frame size and exposure.
@@ -368,10 +379,11 @@ class camera:
         steps of the recording proceedure. The caller may use this for cooperative
         multithreading, or can complete the calibration sychronously as follows:
         
-        for delay in camera.startRecording():
+        state = camera.startRecording()
+        for delay in state:
             time.sleep(delay)
         """
-        seq = sequencer()
+        seq = regmaps.sequencer()
         # Setup the nextStates into a loop, just in case the caller forgot and then
         # load the program into the recording sequencer.
         for i in range(0, len(program)):
@@ -381,8 +393,20 @@ class camera:
         # Begin recording.
         seq.control |= seq.START_REC
         seq.control &= ~seq.START_REC
-        
+
+        # Yield until recording is complete.
+        yield 0.1
+        while (seq.status & seq.ACTIVE_REC) != 0:
+            yield 0.1
+    
+    def softTrigger(self):
+        """Signal a soft trigger event to the recording sequencer."""
+        seq = regmaps.sequencer()
+        seq.control |= seq.SW_TRIG
+        seq.control &= ~seq.SW_TRIG
+
     def stopRecording(self):
-        seq = sequencer()
+        """Terminate a recording if one is in progress."""
+        seq = regmaps.sequencer()
         seq.control |= seq.STOP_REC
         seq.control &= ~seq.STOP_REC
