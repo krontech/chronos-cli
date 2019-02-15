@@ -1,5 +1,3 @@
-import pychronos
-from sequencer import sequencer
 from abc import ABC, abstractmethod
 
 class frameGeometry:
@@ -21,85 +19,8 @@ class frameGeometry:
     def size(self):
         return self.pixels() * self.bitDepth // 8
 
-# Live frame reader class
-## FIXME: This will hang if the camera is currently recording, in which case
-## lastAddr and writeAddr will point to somewhere in the recording region. We
-## can work around it by getting the address from seq.writeAddr or lastAddr
-##
-## FIXME: Does this require locking or other mutual exclusion mechanisms to
-## ensure multiple readout functions don't collide and do bad things?
-##
-## TODO: Would this be better done as a method of the pychronos.sequencer class,
-## in which case the calling convention might be something like, with the pixel
-## counting registers, the hRes and vRes could be made optional by inferring
-## them from the FPGA.
-##
-## seq = pychronos.sequencer()
-## for delay in seq.startLiveReadout():
-##     time.sleep(delay)
-## frame = seq.liveReadout()
-class liveReadout(sequencer):
-    """Live frame readout class
-
-    This helper class is typically used during calibration routines to
-    extract frames without interrupting the live display or recording
-    sequencer. Once created, a live readout operation may be initiated
-    using the startLiveReadout() function, which returns a generator
-    that will yield until frame readout is completed.
-
-    Attributes
-    ----------
-    result: frame or None
-        The result of the frame readout operation, or None if still
-        in progress. 
-
-    Parameters
-    ----------
-    hRes : int
-        The horizontal resolution of image data to read out.
-    vRes : int
-        The vertical resolution of image data to read out.
-    """
-    def __init__(self, hRes, vRes):
-        super().__init__()
-        self.hRes = hRes
-        self.vRes = vRes
-        self.backup = [self.liveAddr[0], self.liveAddr[1], self.liveAddr[2]]
-        self.page = 0
-        self.result = None
-    
-    def startLiveReadout(self):
-        """Begin readout of a frame from the live display buffer.
-
-        This helper function is typically used during calibration routines to
-        extract frames without interrupting the live display or recording
-        sequencer. The frame is returned to the caller via a callback function,
-        with the frame as its argument.
-
-        Returns
-        -------
-        generator (float)
-            Sleep time, in seconds, between steps of the readout proceedure.
-        """
-        # Set all three live buffers to the same address.
-        self.liveAddr[0] = self.backup[self.page]
-        self.liveAddr[1] = self.backup[self.page]
-        self.liveAddr[2] = self.backup[self.page]
-        self.result = None
-
-        # Wait for the sequencer to begin writing to the updated live address.
-        while (self.writeAddr != self.backup[self.page]):
-            yield 0.001 # 1ms
-        
-        # Switch page and readout a frame.
-        self.page ^= 1
-        self.result = pychronos.readframe(self.backup[self.page], self.hRes, self.vRes)
-        self.liveAddr[0] = self.backup[0]
-        self.liveAddr[1] = self.backup[1]
-        self.liveAddr[2] = self.backup[2]
-
 # Abstract Sensor class
-class sensor(ABC):
+class api(ABC):
     def __init__(self):
         super().__init__()
     

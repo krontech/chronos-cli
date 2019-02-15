@@ -1,5 +1,4 @@
 import pychronos
-from collections import OrderedDict
 
 class seqcommand:
     # Block termination flags
@@ -216,6 +215,12 @@ class sequencer(pychronos.fpgamap):
     size : `int`, optional
         Length of the register map (FPGA_MAP_SIZE, by default)"
     """
+    def __init__(self, offset=pychronos.FPGA_SEQUENCER_BASE, size=(0x200 - pychronos.FPGA_SEQUENCER_BASE)):
+        super().__init__(offset, size)
+
+        # Live readout frame results.
+        self.__page = 0
+        self.__result = None
 
     def __regprop(offset, size, docstring):
         return property(fget=lambda self: self.regRead(offset, size),
@@ -251,5 +256,53 @@ class sequencer(pychronos.fpgamap):
         """Sequencer Program Registers"""
         return self.regArray(offset=pychronos.FPGA_SEQPROGRAM_BASE - pychronos.FPGA_SEQUENCER_BASE, size=8, count=16)
 
-    def __init__(self, offset=pychronos.FPGA_SEQUENCER_BASE, size=(0x200 - pychronos.FPGA_SEQUENCER_BASE)):
-        super().__init__(offset, size)
+    @property
+    def liveResult(self):
+        """Result of the frame readout operation, or None if in progress"""
+        return self.__result
+
+    ## FIXME: This will hang if the camera is currently recording, in which case
+    ## lastAddr and writeAddr will point to somewhere in the recording region. We
+    ## can work around it by getting the address from seq.writeAddr or lastAddr
+    ##
+    ## FIXME: Does this require locking or other mutual exclusion mechanisms to
+    ## ensure multiple readout functions don't collide and do bad things?
+    def startLiveReadout(self, hRes, vRes):
+        """Begin readout of a frame from the live display buffer.
+
+        This helper function is typically used during calibration routines to
+        extract frames without interrupting the live display or recording
+        sequencer. The frame is returned to the caller via a callback function,
+        with the frame as its argument.
+
+        Parameters
+        ----------
+        hRes : int
+            The horizontal resolution of image data to read out.
+        vRes : int
+            The vertical resolution of image data to read out.
+
+        Returns
+        -------
+        generator (float)
+            Sleep time, in seconds, between steps of the readout proceedure.
+        """
+        backup = [self.liveAddr[0], self.liveAddr[1], self.liveAddr[2]]
+
+        # Set all three live buffers to the same address.
+        self.liveAddr[0] = backup[self.__page]
+        self.liveAddr[1] = backup[self.__page]
+        self.liveAddr[2] = backup[self.__page]
+        self.__result = None
+
+        # Wait for the sequencer to begin writing to the updated live address.
+        while (self.writeAddr != backup[self.__page]):
+            yield 0.001 # 1ms
+        
+        # Switch page and readout a frame.
+        self.__page ^= 1
+        self.__result = pychronos.readframe(backup[self.__page], hRes, vRes)
+        self.liveAddr[0] = backup[0]
+        self.liveAddr[1] = backup[1]
+        self.liveAddr[2] = backup[2]
+    

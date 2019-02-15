@@ -5,10 +5,11 @@ import math
 import copy
 import numpy
 
-from sensorApi import sensor, frameGeometry, liveReadout
-import lux1310wt
+from regmaps import sequencer
+from sensors import api, frameGeometry
+from . import lux1310wt
 
-class lux1310(sensor):
+class lux1310(api):
     # Image sensor geometry constraints
     MAX_HRES = 1280
     MAX_VRES = 1024
@@ -343,10 +344,10 @@ class lux1310(sensor):
     def autoAdcOffsetIteration(self, fSize, numFrames=4):
         # Read out the calibration frames.
         fAverage = numpy.zeros((fSize.vDarkRows * fSize.hRes // self.ADC_CHANNELS, self.ADC_CHANNELS), dtype=numpy.uint32)
+        seq = sequencer()
         for x in range(0, numFrames):
-            reader = liveReadout(fSize.hRes, fSize.vDarkRows)
-            yield from reader.startLiveReadout()
-            fAverage += numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
+            yield from seq.startLiveReadout(fSize.hRes, fSize.vDarkRows)
+            fAverage += numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
         
         # Train the ADC offsets for a target of Average = Footroom + StandardDeviation
         fAverage /= numFrames
@@ -384,9 +385,9 @@ class lux1310(sensor):
         tRefresh += (1/60)
         pixFullScale = (1 << fSize.bitDepth)
 
+        seq = sequencer()
         colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, 0x1000)
         colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, 0x1000)
-        reader = liveReadout(fSize.hRes, numRows)
 
         # Disable the FPGA timing engine.
         prev = self.fpga.intTime
@@ -404,8 +405,8 @@ class lux1310(sensor):
             yield tRefresh
             
             # Read a frame out of the live display.
-            yield from reader.startLiveReadout()
-            frame = numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
+            yield from seq.startLiveReadout(fSize.hRes, numRows)
+            frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
 
             # Compute the column averages and find the maximum value
             highColumns = numpy.average(frame, 0)
@@ -423,8 +424,8 @@ class lux1310(sensor):
             yield tRefresh
 
             # Read a frame out of the live display.
-            yield from reader.startLiveReadout()
-            frame = numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
+            yield from seq.startLiveReadout(fSize.hRes, numRows)
+            frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
 
             # Compute the column averages and find the minimum value
             lowColumns = numpy.average(frame, 0)
@@ -441,8 +442,8 @@ class lux1310(sensor):
         yield tRefresh
 
         # Read a frame out of the live display.
-        yield from reader.startLiveReadout()
-        frame = numpy.reshape(reader.result, (-1, self.ADC_CHANNELS))
+        yield from seq.startLiveReadout(fSize.hRes, numRows)
+        frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
         midColumns = numpy.average(frame, 0)
 
         #print("ADC Columns low (%s): %s" % (vlow, lowColumns))
