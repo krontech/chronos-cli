@@ -1,10 +1,39 @@
 # JEDEC Serial Presence Detect
 import os, fcntl
 
-class spd:
+def read(id=0, bus="/dev/i2c-1"):
+    """Attempt to read the JEDEC Serial Presence Detect data.
+
+    Parameters
+    ----------
+    id : `int`, optional
+        The slot identifier to be read (default: zero)
+    bus : `str`, optional
+        The path to the I2C bus to read from (default: "/dev/i2c-1")
+    
+    Returns
+    -------
+    `spd` : Class containing the JEDEC SPD data.
+    """
     ## From linux/i2c-dev.h to set slave address.
     I2C_SLAVE = 0x0703
 
+    # Write zero to set the byte offset for EEPROM readout.
+    wbuf = bytearray([0])
+    fd = os.open(bus, os.O_RDWR)
+    fcntl.ioctl(fd, I2C_SLAVE, (0x50 + id))
+
+    # Set offset and read SPD data.
+    try:
+        os.write(fd, bytearray([0]))
+        data = os.read(fd, 128)
+    except:
+        os.close(fd)
+        return None
+    os.close(fd)
+    return spd(data)
+
+class spd:
     ## SPD Constants and enumerations
     SPD_TYPE_SDRAM = 4
     SPD_TYPE_DDR = 7
@@ -15,15 +44,8 @@ class spd:
     SPD_MODULE_SODIMM = 3
     SPD_MODULE_LRDIMM = 11
 
-    def __init__(self, id=0, bus="/dev/i2c-1"):
-        wbuf = bytearray([0])
-        fd = os.open(bus, os.O_RDWR)
-        fcntl.ioctl(fd, self.I2C_SLAVE, (0x50 + id))
-
-        # Set offset and read SPD data.
-        os.write(fd, bytearray([0]))
-        self.data = os.read(fd, 128)
-        os.close(fd)
+    def __init__(self, data):
+        self.data = data
     
     def __bignum(self, number, units):
         bits = number.bit_length() // 10
