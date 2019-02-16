@@ -6,7 +6,7 @@ import os
 import numpy
 
 import regmaps
-from spd import spd
+import spd
 
 class camera:
     BYTES_PER_WORD = 32
@@ -22,7 +22,14 @@ class camera:
 
     def __init__(self, sensor):
         self.sensor = sensor
-    
+        self.dimms = [0, 0]
+
+        # Probe the SODIMMs
+        for slot in range(0, len(self.dimms)):
+            spdData = spd.read(slot)
+            if (spdData):
+                self.dimms[slot] = spdData.size
+
     def reset(self, bitstream=None):
         """Reset the camera and initialize the FPGA and image sensor.
 
@@ -47,7 +54,7 @@ class camera:
             print("Detected FPGA Version %s.%s" % (config.version, config.subver))
 
         # Setup memory
-        self.ramSize = self.setupMemory()
+        self.setupMemory()
 
         # Setup live display
         sensorRegs = regmaps.sensor()
@@ -84,37 +91,18 @@ class camera:
         self.sensor.setResolution(self.geometry)
 
     def setupMemory(self):
-        dimmSizes = [0, 0]
         configRegs = pychronos.config()
 
-        # Probe the SODIMMs and initialize the RAM.
-        try:
-            dimmSpd = spd(0)
-            dimmSizes[0] = dimmSpd.size
-            print("Detected %s GB DIMM in slot 0" % (dimmSpd.size >> 30))
-        except:
-            pass
-        
-        try:
-            dimmSpd = spd(1)
-            dimmSizes[1] = dimmSpd.size
-            print("Detected %s GB DIMM in slot 1" % (dimmSpd.size >> 30))
-        except:
-            pass
-
         # We require at least one DIMM to be present.
-        if ((dimmSizes[0] + dimmSizes[1]) == 0):
+        if ((self.dimms[0] + self.dimms[1]) == 0):
             raise RuntimeError("Memory configuration failed, no DIMMs detected")
 
-        if (dimmSizes[1] > dimmSizes[0]):
+        if (self.dimms[1] > self.dimms[0]):
             # Swap DIMMs to put the largest one first.
             configRegs.mmuConfig = configRegs.MMU_INVERT_CS
-        elif (dimmSizes[0] < (16 << 30)):
+        elif (self.dimms[0] < (16 << 30)):
             # Stuff DIMMs together if less than 16GB
             configRegs.mmuConfig = configRegs.MMU_SWITCH_STUFFED
-
-        # Return the total memory size
-        return (dimmSizes[0] + dimmSizes[1])
 
     ## TODO: This function needs to get moved into the video pipeline
     ## daemon so that it can manage the video framerate switching as
@@ -180,19 +168,38 @@ class camera:
             seq.regionStop = startAddr + (frameCount * fSizeWords)
         else:
             # Otherwise, setup the maximum available memory.
-            ramSizeWords = self.ramSize // self.BYTES_PER_WORD
+            ramSizeWords = self.getMemorySize() // self.BYTES_PER_WORD
             seq.regionStop = (ramSizeWords // fSizeWords) * fSizeWords
 
     def getMemorySize(self):
-        return self.ramSize
+        return self.dimms[0] + self.dimms[1]
     
     # Return the length of memory (in frames) minus calibration overhead.
     def getRecordingMaxFrames(self, fSize):
-        ramSizeWords = self.ramSize // self.BYTES_PER_WORD - self.REC_REGION_START
+        ramSizeWords = self.getMemorySize() // self.BYTES_PER_WORD - self.REC_REGION_START
         fSizeWords = (fSize.size() + self.BYTES_PER_WORD - 1) // self.BYTES_PER_WORD
         fSizeWords //= self.FRAME_ALIGN_WORDS
         fSizeWords *= self.FRAME_ALIGN_WORDS
         return ramSizeWords // fSizeWords
+    
+    def setRecordingConfig(self, fSize, fPeriod=None, expPeriod=None):
+        if (not self.sensor.isValidResolution(fSize)):
+            raise ValueError("Unsupported resolution setting")
+        
+        # Default to maximum framerate if not provided.
+        if (fPeriod is None):
+            minPeriod, maxPeriod = self.sensor.getPeriodRange(fSize)
+            fPeriod = minPeriod
+        
+        self.sensor.setResolution(fSize, fPeriod)
+        self.setupRecordRegion(fSize, self.REC_REGION_START)
+        if (expPeriod is not None):
+            self.sensor.setExposurePeriod(expPeriod)
+
+        ## TODO: Attempt to load calibration files, if present.
+        ## DEBUG: This should go elsewhere.
+        self.setupDisplayTiming(fSize)
+        os.system("killall -HUP cam-pipeline")
 
     # Read the serial number - or make it an attribute?
     def getSerialNumber(self):
