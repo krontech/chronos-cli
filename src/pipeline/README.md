@@ -138,9 +138,9 @@ this method, the pipeline will enter record mode to write those frames to a file
 | `"framerate"`     | `uint`    | The desired framerate of the encoded video file, in frames per second.
 | `"bitrate"`       | `uint`    | The maximum encoded bitrate for compressed formats, in bits per second.
 
-The `format` field accepts a FOURCC code defining the output video format, supported values include:
+The `format` field accepts a string to enumerate the output video format, supported values include:
 
-| FOURCC Code           | Description
+| Format                | Description
 |:----------------------|:---------------------
 | `"h264"` or `"x264"`  | H.264 compressed video saved in an MPEG-4 container.
 | `"dng"`               | Directory of CinemaDNG files, containing the raw sensor data.
@@ -148,7 +148,6 @@ The `format` field accepts a FOURCC code defining the output video format, suppo
 | `"tiffraw"`           | Directory of 16-bit TIFF files containing the raw sensor data.
 | `"byr2"` or `"y16"`   | Raw sensor data padded to 16-bit little-endian encoding.
 | `"y12b"`              | Raw sensor data in packed 12-bit little-endian encoding.
-| `"refimg"`            | Take the average of 16 frames and store the result in `"y16"` encoding.
 
 The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
 for all other encoding formats.

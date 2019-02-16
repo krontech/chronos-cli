@@ -280,10 +280,10 @@ class lux1310(api):
         # Convert from LUX1310 sensor clocks to FPGA timing clocks.
         return (tFrame * self.LUX1310_TIMING_HZ) // self.LUX1310_SENSOR_HZ
     
-    def getPeriodRange(self, size):
+    def getPeriodRange(self, fSize):
         # TODO: Need to validate the frame size.
         # TODO: Probably need to enforce some maximum frame period.
-        clocks = self.getMinFrameClocks(size)
+        clocks = self.getMinFrameClocks(fSize)
         return (clocks / self.LUX1310_TIMING_HZ, 0)
     
     def getCurrentPeriod(self):
@@ -293,13 +293,10 @@ class lux1310(api):
         # TODO: Sanity-check the frame period.
         self.fpga.framePeriod = math.ceil(fPeriod * self.LUX1310_TIMING_HZ)
     
-    def getExposureRange(self, size):
-        # TODO: Does this also need the frame period or can we abstract
-        # that away somehow with something like shutter angle and overhead
-        # like the old D-Bus daemon docs did.
-
+    def getExposureRange(self, fSize, fPeriod):
         # Defaulting to 1us minimum exposure and infinite maximum exposure.
-        return (1.0 / 1000000, 0)
+        # TODO: Need a better handle on the exposure overhead.
+        return (1.0 / 1000000, fPeriod - (500 / self.LUX1310_TIMING_HZ))
 
     def getCurrentExposure(self):
         return self.fpga.intTime / self.LUX1310_TIMING_HZ

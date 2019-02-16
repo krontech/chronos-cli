@@ -132,6 +132,8 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
+    /* Configure for RGB Demosaiced Video. */
+    state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     return state->pipeline;
 } /* cam_pipeline */
 
@@ -230,6 +232,9 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
+
+        /* Configure for RGB Demosaiced Video. */
+        state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     }
     /*=====================================================
      * Setup the Pipeline for saving CinemaDNG
@@ -252,8 +257,12 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
 
         /* Create the raw video sink */
         if (args->mode == PIPELINE_MODE_DNG) {
+            /* Configure for Raw 16-bit padded video data. */
             sinkpad = cam_dng_sink(state, args);
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
         } else {
+            /* Configure for Raw 12-bit padded video data. */
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
             sinkpad = cam_tiffraw_sink(state, args);
         }
         if (!sinkpad) {
@@ -292,6 +301,9 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
+
+        /* Configure for Raw 12-bit padded video data. */
+        state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
     }
     /*=====================================================
      * Setup the Pipeline for saving raw RGB pixel data.
@@ -321,6 +333,9 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
+
+        /* Configure for RGB Demosaiced Video. */
+        state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     }
     /* Otherwise, this recording mode is not supported. */
     else {
@@ -681,24 +696,13 @@ main(int argc, char * argv[])
         unsigned int i;
 
         /* Pause playback while we get setup. */
-        state->done = NULL;
         state->next = state->args.mode;
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
         playback_goto(state, PIPELINE_MODE_PAUSE);
 
         /* File saving modes should fail gracefully back to playback. */
-        if (args.mode == PIPELINE_MODE_BLACKREF) {
-            /* Return to live display after taking a calibration reference image. */
-            memset(&state->args, 0, sizeof(state->args));
-            if (!cam_blackref(state, &args)) {
-                /* Throw an EOF and revert to livedisplay. */
-                dbus_signal_eof(state, state->error);
-                continue;
-            }
-        }
-        /* File saving modes should fail gracefully back to playback. */
-        else if (PIPELINE_IS_SAVING(args.mode)) {
+        if (PIPELINE_IS_SAVING(args.mode)) {
             /* Return to playback mode after saving. */
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
@@ -716,7 +720,7 @@ main(int argc, char * argv[])
             }
         }
 
-        /* Install an pipeline error handler. */
+        /* Install a pipeline error handler. */
         bus = gst_pipeline_get_bus(GST_PIPELINE(state->pipeline));
         event = gst_event_new_flush_start();
         gst_element_send_event(state->pipeline, event);
@@ -730,9 +734,6 @@ main(int argc, char * argv[])
         g_main_loop_run(state->mainloop);
 
         /* Stop the pipeline gracefully */
-        if (state->done) {
-            state->done(state, &args);
-        }
         playback_goto(state, PIPELINE_MODE_PAUSE);
         gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
         for (i = 0; i < 1000; i++) {

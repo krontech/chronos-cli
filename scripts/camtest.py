@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 from camera import camera
 from sensors import lux1310
+from sensors import frameGeometry
 from regmaps import seqcommand
 
 import os
@@ -8,27 +9,81 @@ import time
 import select
 import subprocess
 import json
+import argparse
+
+def resolution(value):
+    # Try common names.
+    if (value == "720p"):
+        return (1280, 720)
+    if (value == "1080p"):
+        return (1920, 1080)
+
+    # Otherwise, parse it as HRESxVRES
+    split = value.split('x')
+    return (int(split[0]), int(split[1]))
+
+# Do argument parsing
+parser = argparse.ArgumentParser(description="Camera test program")
+parser.add_argument('--framerate', metavar='FPS', type=int, nargs='?',
+                    help="Video recording framerate")
+parser.add_argument('--resolution', metavar='RES', type=resolution, nargs='?',
+                    help="Video recording resolution")
+parser.add_argument('--offset', metavar='OFFS', type=resolution, nargs='?',
+                    help="Video region of interest offset")
+parser.add_argument('--blackrows', metavar='ROWS', type=int, nargs='?', default=0,
+                    help="Number of black rows to readout")
+parser.add_argument('--reclength', metavar='FRAMES', type=int, nargs='?',
+                    help="Number of frames to record")
+parser.add_argument('--bitstream', metavar='FILE', type=str, nargs=1,
+                    help="FPGA bitstream file", default="/var/camera/FPGA.bit")
+args = parser.parse_args()
 
 # Some constants that ought to go into a board-specific dict.
-FPGA_BITSTREAM = "/var/camera/FPGA.bit"
 GPIO_ENCA = "/sys/class/gpio/gpio20/value"
 GPIO_ENCB = "/sys/class/gpio/gpio26/value"
 GPIO_ENCSW = "/sys/class/gpio/gpio27/value"
+GPIO_RECSW = "/sys/class/gpio/gpio66/value"
 REC_LED_FRONT = "/sys/class/gpio/gpio41/value"
 REC_LED_BACK = "/sys/class/gpio/gpio25/value"
 
+# Helper to set the record LED
+def setRecLed(enable):
+    f = open(REC_LED_FRONT, "w")
+    f.write("1" if enable else "0")
+    f = open(REC_LED_BACK, "w")
+    f.write("1" if enable else "0")
+
 # Initialize the Camera and image sensor
 cam = camera(lux1310())
-cam.reset(FPGA_BITSTREAM)
+cam.reset(args.bitstream)
+setRecLed(False)
+os.system("cam-json -v flush") # clear out any old recordings
+
+# Configure the resolution
+fSize = cam.sensor.getMaxGeometry()
+hMaxRes = fSize.hRes
+vMaxRes = fSize.vRes
+fSize.vDarkRows = args.blackrows
+if (args.resolution):
+    fSize.hRes, fSize.vRes = args.resolution
+if (args.offset):
+    fSize.hOffset, fSize.vOffset = args.offset
+else:
+    fSize.hOffset = (hMaxRes - fSize.hRes) // 2
+    fSize.vOffset = (vMaxRes - fSize.vRes) // 2
+
+fMinPeriod, fMaxPeriod = cam.sensor.getPeriodRange(fSize)
+fPeriod = fMinPeriod
+if (args.framerate):
+    fPeriod = 1/args.framerate
+cam.setRecordingConfig(fSize)
+time.sleep(0.1) # FIXME: This needs to go into the sensor class.
 
 # Perform initial calibration
 for delay in cam.sensor.startAnalogCal():
     time.sleep(delay)
 for delay in cam.startZeroTimeBlackCal():
     time.sleep(delay)
-
-# Grab the current frame size
-fSize = cam.sensor.getCurrentGeometry()
 
 # Quick and dirty class to help out with GPIO access
 class gpio:
@@ -60,27 +115,28 @@ class gpio:
 enca = gpio(GPIO_ENCA)
 encb = gpio(GPIO_ENCB)
 encsw = gpio(GPIO_ENCSW)
+recsw = gpio(GPIO_RECSW)
 
 ## Read the encoder wheel for instructions.
 p = select.epoll()
 p.register(enca.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
 p.register(encb.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
 p.register(encsw.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
+p.register(recsw.fd, select.EPOLLIN | select.EPOLLET | select.EPOLLPRI)
 while True:
-    p.poll(-1)
+    p.poll(0.01)
 
     delta = 0
     enca.update()
     encb.update()
     encsw.update()
+    recsw.update()
 
     # On encoder motion, change the exposure timing.
     if (encb.changed() and not enca.value):
         fPeriod = cam.sensor.getCurrentPeriod()
         exposure = cam.sensor.getCurrentExposure()
-        expMin, expMax = cam.sensor.getExposureRange(fSize)
-        if ((expMax == 0) or (expMax > fPeriod)):
-            expMax = fPeriod
+        expMin, expMax = cam.sensor.getExposureRange(fSize, fPeriod)
         
         # Encoder decrease
         if encb.rising():
@@ -100,38 +156,35 @@ while True:
         except:
             print("Unable to set exposure")
     
-    # Start recording on encoder switch depress
+    # Start recording on button press.
+    if (recsw.falling()):
+        break
+
+    # TODO: Something useful on encoder switch press?
     if (encsw.rising()):
         break
 
-# Start recording in gated burst.
+# Start recording
 print("Starting recording")
 os.system("cam-json -v flush")
-# Turn on the record LEDs (active low)
-f = open(REC_LED_FRONT, "w")
-f.write("0")
-f = open(REC_LED_BACK, "w")
-f.write("0")
+setRecLed(True)
+
+cmd = seqcommand(blockSize=cam.getRecordingMaxFrames(fSize), blkTermRising=True)
+if (args.reclength):
+    cmd.blockSize = args.reclength
+    cmd.blkTermFull = True
+    cmd.recTermBlockEnd = True
 
 # Launch the recording proceedure.
-program = [ seqcommand(blockSize=cam.getRecordingMaxFrames(fSize), blkTermRising=True) ]
-for delay in cam.startRecording(program):
-    encsw.update()
-    if (encsw.falling()):
-        break
-    else:
-        time.sleep(delay)
+for delay in cam.startRecording([cmd]):
+    recsw.update()
+    if (recsw.falling()):
+        cam.stopRecording()
+    time.sleep(delay)
 
 # End recording and begin filesave on encoder switch release.
-cam.stopRecording()
-time.sleep(1)
 print("Terminating recording")
-
-# Turn off the record LEDs (active low)
-f = open(REC_LED_FRONT, "w")
-f.write("1")
-f = open(REC_LED_BACK, "w")
-f.write("1")
+setRecLed(False)
 
 # Get some info on how much was recorded.
 status = json.loads(subprocess.check_output(["cam-json", "-v", "status"]).decode("utf-8"))
