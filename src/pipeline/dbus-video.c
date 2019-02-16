@@ -113,7 +113,7 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
     if (loopcount) {
         playback_loop(state, position, timer_rate, delta, loopcount);
     } else {
-        playback_set(state, position, timer_rate, delta);
+        playback_play(state, position, timer_rate, delta);
     }
     state->args.mode = PIPELINE_MODE_PLAY;
     *data = cam_dbus_video_status(state);
@@ -255,10 +255,6 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
                 (strcasecmp(format, "y12b") == 0)) {
         /* 12-bit samples packed (2 pixels stored in 3 bytes) */
         state->args.mode = PIPELINE_MODE_RAW12;
-    }
-    else if (strcasecmp(format, "refimg") == 0) {
-        /* Take a reference image by averaging the next 16 frames. */
-        state->args.mode = PIPELINE_MODE_BLACKREF;
     }
     /* Otherwise, this encoding format is not supported. */
     else {

@@ -103,7 +103,6 @@ cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -pthread
 cam_pipeline_LDADD += -ljpeg -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
 cam_pipeline_SOURCES += pipeline/dbus-video.c
-cam_pipeline_SOURCES += pipeline/blackref.c
 cam_pipeline_SOURCES += pipeline/dng.c
 cam_pipeline_SOURCES += pipeline/h264.c
 cam_pipeline_SOURCES += pipeline/hdmi.c

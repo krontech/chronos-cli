@@ -14,6 +14,8 @@
  *  You should have received a copy of the GNU General Public License       *
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.   *
  ****************************************************************************/
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -25,6 +27,13 @@
 
 #include "pipeline.h"
 
+static void playback_rate_init(struct pipeline_state *state);
+static void playback_rate_update(struct pipeline_state *state);
+
+/*===============================================
+ * Timer for Framerate Control and Watchdog
+ *===============================================
+ */
 /*
  * Re-arm the playback timer in single-shot mode. By blocking the delivery
  * of SIGARLM, this allows clock stretching to keep time with the FPGA when
@@ -51,6 +60,7 @@ playback_timer_rearm(struct pipeline_state *state)
     }
 }
 
+/* Disable the playback timer entirely. */
 static void
 playback_timer_disarm(struct pipeline_state *state)
 {
@@ -61,6 +71,21 @@ playback_timer_disarm(struct pipeline_state *state)
     timer_settime(state->playtimer, 0, &ts, NULL);
 }
 
+/* (Re)schedule the playback timer as a watchdog. */
+static void
+playback_timer_watchdog(struct pipeline_state *state)
+{
+    struct itimerspec ts = {
+        .it_interval = {0,0},
+        .it_value = {5, 0}
+    };
+    timer_settime(state->playtimer, 0, &ts, NULL);
+}
+
+/*===============================================
+ * Frame Playback and Seeking
+ *===============================================
+ */
 static void
 playback_frame_advance(struct pipeline_state *state, int delta)
 {
@@ -103,9 +128,110 @@ playback_frame_advance(struct pipeline_state *state, int delta)
         }
         count += state->segsize;
     }
+
+    /* Play the frame */
     state->fpga->display->manual_sync = 1;
 }
 
+/* Signal handler for the playback timer. */
+static void
+playback_signal(int signo, siginfo_t *info, void *ucontext)
+{
+    struct pipeline_state *state = cam_pipeline_state();
+    sigset_t sigset;
+
+    /* no-op unless we're in playback mode. */
+    if (state->mode != PIPELINE_MODE_PLAY) {
+        return;
+    }
+    playback_timer_rearm(state);
+    switch (signo) {
+        case SIGUSR1:
+            if (info->si_code == SI_QUEUE) {
+                playback_frame_advance(state, info->si_int);
+            } else {
+                playback_frame_advance(state, 1);
+            }
+            break;
+
+        case SIGUSR2:
+            if (info->si_code != SI_QUEUE) {
+                state->position = 0;
+            } else if (info->si_int >= 0) {
+                state->position = info->si_int;
+            } else {
+                /* TODO: Handle special commands via negative numbers. */
+                state->position = 0;
+            }
+            playback_frame_advance(state, 0);
+            break;
+
+        default:
+            playback_frame_advance(state, state->playdelta);
+            break;
+    }
+    
+    /* Block delivery of our signal until the frame has been delivered. */
+    sigemptyset(&sigset);
+    sigaddset(&sigset, SIGALRM);
+    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
+}
+
+/* Frame sync interrupt handler. */
+static void
+playback_fsync(struct pipeline_state *state)
+{
+    /* Paused and live display mode: do nothing. */
+    if ((state->mode == PIPELINE_MODE_PAUSE) || (state->mode == PIPELINE_MODE_LIVE)) {
+        return;
+    }
+    /* Playback mode: unblock the timer to allow the next frame */
+    else if (state->mode == PIPELINE_MODE_PLAY) {
+        sigset_t sigset;
+        sigemptyset(&sigset);
+        sigaddset(&sigset, SIGALRM);
+        pthread_sigmask(SIG_UNBLOCK, &sigset, NULL);
+    }
+    /* Recording Modes: Preroll and then begin playback. */
+    else if (state->preroll) {
+        state->fpga->display->manual_sync = 1;
+        fprintf(stderr, "Prerolling... %d\n", state->preroll);
+        state->preroll--;
+        if (!state->preroll) {
+            state->buflevel = 10;
+            state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
+            playback_rate_init(state);
+            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+        }
+    }
+    /* If the buffer level was high - play the next frame immediately. */
+    /* This tends to improve throughput by pipelining the OMX round trips. */
+    else if (state->buflevel > 2) {
+        playback_rate_update(state);
+        playback_frame_advance(state, 1);
+        if (state->source) {
+            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+        }
+    }
+    /* Otherwise, wait for more buffers to become available and then play the next frame. */
+    else {
+        /* Wait for flow control issues to clear. */
+        while (state->source) {
+            state->buflevel = 10;
+            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+            if (state->buflevel > 1) break;
+            usleep(10000);
+        }
+        playback_rate_update(state);
+        playback_frame_advance(state, 1);
+    }
+    return;
+}
+
+/*===============================================
+ * Recording Region Management
+ *===============================================
+ */
 /* Test if two regions overlap each other.  */
 static int
 playback_region_overlap(struct playback_region *a, struct playback_region *b)
@@ -137,15 +263,6 @@ playback_region_totals(struct pipeline_state *state)
     }
     state->totalframes = nframes;
     state->totalsegs = nsegs;
-}
-
-/* Wrapper to call dbus asynchronously from the main thread. */
-static gboolean
-playback_signal_segment(gpointer data)
-{
-    struct pipeline_state *state = data;
-    dbus_signal_segment(state);
-    return FALSE;
 }
 
 static int
@@ -198,14 +315,7 @@ playback_region_add(struct pipeline_state *state)
     /* Update the total recording region size and reset back to the start. */
     state->position = 0;
     playback_region_totals(state);
-
-    /* Emit a signal from the main loop. */
-    GSource *segsource = g_idle_source_new();
-    if (segsource) {
-        g_source_set_callback(segsource, playback_signal_segment, state, NULL);
-        g_source_attach(segsource, g_main_loop_get_context(state->mainloop));
-    }
-    return 0;
+    return 1;
 }
 
 /* Flush recording segment data. */
@@ -216,53 +326,13 @@ playback_region_flush(struct pipeline_state *state)
         playback_region_delete(state, state->region_head);
     }
     state->totalframes = 0;
-    playback_set(state, 0, LIVE_MAX_FRAMERATE, 0);
+    playback_play(state, 0, LIVE_MAX_FRAMERATE, 0);
 }
 
-/* Signal handler for the playback timer. */
-static void
-playback_signal(int signo, siginfo_t *info, void *ucontext)
-{
-    struct pipeline_state *state = cam_pipeline_state();
-    sigset_t sigset;
-
-    /* no-op unless we're in playback mode. */
-    if (state->mode != PIPELINE_MODE_PLAY) {
-        return;
-    }
-    playback_timer_rearm(state);
-    switch (signo) {
-        case SIGUSR1:
-            if (info->si_code == SI_QUEUE) {
-                playback_frame_advance(state, info->si_int);
-            } else {
-                playback_frame_advance(state, 1);
-            }
-            break;
-
-        case SIGUSR2:
-            if (info->si_code != SI_QUEUE) {
-                state->position = 0;
-            } else if (info->si_int >= 0) {
-                state->position = info->si_int;
-            } else {
-                /* TODO: Handle special commands via negative numbers. */
-                state->position = 0;
-            }
-            playback_frame_advance(state, 0);
-            break;
-
-        default:
-            playback_frame_advance(state, state->playdelta);
-            break;
-    }
-    
-    /* Block delivery of our signal until the frame has been delivered. */
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGALRM);
-    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
-}
-
+/*===============================================
+ * Playback State Changes
+ *===============================================
+ */
 /* This would typically be called from outside the playback thread to change operation. */
 void
 playback_goto(struct pipeline_state *state, unsigned int mode)
@@ -324,24 +394,12 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             state->fpga->display->control = control;
             state->fpga->display->manual_sync = 1;
             break;
-        
-        case PIPELINE_MODE_BLACKREF:
-            state->mode = PIPELINE_MODE_BLACKREF;
-            state->playrate = 0;
-            state->position = 0;
-            playback_timer_disarm(state);
-
-            /* Clear sync inhibit to enable automatic video output. */
-            /* Enable black cal mode to bybass calibration. */
-            state->fpga->display->control = DISPLAY_CTL_BLACK_CAL_MODE;
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_BYPASS_FPN | DISPLAY_PIPELINE_RAW_16BPP | DISPLAY_PIPELINE_RAW_16PAD;
-            break;
     }
 } /* playback_goto */
 
 /* Switch to playback mode, with the desired position and playback rate. */
 void
-playback_set(struct pipeline_state *state, unsigned long frame, unsigned int rate, int mul)
+playback_play(struct pipeline_state *state, unsigned long frame, unsigned int rate, int mul)
 {
     uint32_t control = state->fpga->display->control;
 
@@ -381,6 +439,22 @@ playback_loop(struct pipeline_state *state, unsigned long start, unsigned int ra
     playback_timer_rearm(state);
 }
 
+/* Initialize the estimated frame rate. */
+static void
+playback_rate_init(struct pipeline_state *state)
+{
+    int i;
+    const unsigned long usec = 1000000 / LIVE_MAX_FRAMERATE;
+
+    clock_gettime(CLOCK_MONOTONIC, &state->frametime);
+    state->frameidx = 0;
+    state->frameisum = 0;
+    for (i = 0; i < FRAMERATE_IVAL_BUCKETS; i++) {
+        state->frameival[i] = usec;
+        state->frameisum += usec;
+    }
+}
+
 /* Update the estimated frame rate with another frame interval time. */
 static void
 playback_rate_update(struct pipeline_state *state)
@@ -402,130 +476,137 @@ playback_rate_update(struct pipeline_state *state)
     state->frameidx = (state->frameidx + 1) % FRAMERATE_IVAL_BUCKETS;
 }
 
-/* Initialize the estimated frame rate. */
-static void
-playback_rate_init(struct pipeline_state *state)
+/*===============================================
+ * Playback Module Threading
+ *===============================================
+ */
+/* Wrapper to generate dbus signals from the main thread. */
+static gboolean
+playback_signal_segment(gpointer data)
 {
-    int i;
-    const unsigned long usec = 1000000 / LIVE_MAX_FRAMERATE;
-
-    clock_gettime(CLOCK_MONOTONIC, &state->frametime);
-    state->frameidx = 0;
-    state->frameisum = 0;
-    for (i = 0; i < FRAMERATE_IVAL_BUCKETS; i++) {
-        state->frameival[i] = usec;
-        state->frameisum += usec;
-    }
+    struct pipeline_state *state = data;
+    dbus_signal_segment(state);
+    return FALSE;
 }
 
-/* Frame GPIO callback events. */
-static void
-playback_fsync(struct pipeline_state *state, int fd)
+/*
+ * Configure the frame sync GPIO for bi-directional edge detection, either
+ * returns a correctly configured file descriptor, or less than zero on
+ * error.
+ */
+static int
+playback_setup_fsync(const char *value)
 {
-    sigset_t sigset;
-    char buf[2];
+    FILE *fp;
+    char path[PATH_MAX];
+    int dirlen;
 
-    /* Read the current state of the GPIO. */
-    lseek(fd, 0, SEEK_SET);
-    read(fd, buf, sizeof(buf));
+    /* Get the length of the directory name for the GPIO value. */
+    dirlen = strlen(value);
+    if (dirlen > sizeof(path)) {
+        errno = EINVAL;
+        return -1;
+    }
+    while ((dirlen > 0) && (value[dirlen] != '/')) dirlen--;
 
-    /* Paused and live display mode: do nothing. */
-    if ((state->mode == PIPELINE_MODE_PAUSE) || (state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_BLACKREF)) {
-        return;
+    /* Configure direction. */
+    memcpy(path, value, dirlen);
+    strcpy(path+dirlen, "direction");
+    fp = fopen(path, "w");
+    if (fp) {
+        fputs("in", fp);
+        fclose(fp);
     }
-    /* Playback mode: unblock the timer to allow the next frame */
-    else if (state->mode == PIPELINE_MODE_PLAY) {
-        sigemptyset(&sigset);
-        sigaddset(&sigset, SIGALRM);
-        pthread_sigmask(SIG_UNBLOCK, &sigset, NULL);
+
+    /* Configure Edge detection */
+    memcpy(path, value, dirlen);
+    strcpy(path+dirlen, "edge");
+    fp = fopen(path, "w");
+    if (fp) {
+        fputs("rising", fp);
+        fclose(fp);
     }
-    /* Recording Modes: Preroll and then begin playback. */
-    else if (state->preroll) {
-        state->fpga->display->manual_sync = 1;
-        fprintf(stderr, "Prerolling... %d\n", state->preroll);
-        state->preroll--;
-        if (!state->preroll) {
-            state->buflevel = 10;
-            state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
-            playback_rate_init(state);
-            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
-        }
-    }
-    /* If the buffer level was high - play the next frame immediately. */
-    /* This tends to improve throughput by pipelining the OMX round trips. */
-    else if (state->buflevel > 2) {
-        playback_rate_update(state);
-        playback_frame_advance(state, 1);
-        if (state->source) {
-            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
-        }
-    }
-    /* Otherwise, wait for more buffers to become available and then play the next frame. */
-    else {
-        /* Wait for flow control issues to clear. */
-        while (state->source) {
-            state->buflevel = 10;
-            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
-            if (state->buflevel > 1) break;
-            usleep(10000);
-        }
-        playback_rate_update(state);
-        playback_frame_advance(state, 1);
-    }
-    return;
+
+    /* And finally, open the GPIO file descriptor */
+    return open(value, O_RDONLY | O_NONBLOCK);
 }
 
 /* Thread for managing the playback frames, this *MUST* run from a separate thread or
- * the GST/OMX elements may get stuck in a deadlock. */
+ * the GST/OMX elements are likely to get stuck in a deadlock. */
 static void *
 playback_thread(void *arg)
 {
     struct pipeline_state *state = (struct pipeline_state *)arg;
     struct pollfd pfd;
     sigset_t mask;
-    const int msec = 100;
-    int fsync_fd;
-    int err;
+    int newsegs;
+    int fsync;
 
-    /* Open the frame sync GPIO. */
-    /* TODO: Handle errors? */
-    fsync_fd = ioport_open(state->iops, "frame-irq", O_RDONLY | O_NONBLOCK);
+    /* Open the frame sync GPIO or give up and fail. */
+    fsync = playback_setup_fsync(ioport_find_by_name(state->iops, "frame-irq"));
+    if (fsync < 0) {
+        fprintf(stderr, "Failed to setup frame sync GPIO: %s\n", strerror(errno));
+        return NULL;
+    }
 
-    /* Unblock our desired signals. */
+    /* Block the playback signals */
     sigemptyset(&mask);
     sigaddset(&mask, SIGALRM);
     sigaddset(&mask, SIGUSR1);
     sigaddset(&mask, SIGUSR2);
-    pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
+    pthread_sigmask(SIG_BLOCK, &mask, NULL);
 
-    pfd.fd = fsync_fd;
+    /* Wait for frame sync and check for new recording segments. */
+    pfd.fd = fsync;
     pfd.events = POLLPRI | POLLERR;
     pfd.revents = 0;
+    sigemptyset(&mask);
     while (1) {
-        err = poll(&pfd, 1, -1);
-        if (err < 0) {
-            if (errno == EINTR) continue;
-            break;
+        struct timespec ts = {0, 100 * 1000 * 1000};
+        int ready = ppoll(&pfd, 1, &ts, &mask);
+        if (ready < 0) {
+            if (errno != EINTR) break;
+            continue;
         }
 
-        /* Grab new regions from the recording sequencer. */
+        /* Check for new regions from the recording sequencer. */
+        newsegs = 0;
         while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
-            playback_region_add(state);
+            if (playback_region_add(state) > 0) newsegs++;
+        }
+        /* Emit a signal from the main loop if there were new segments.  */
+        if (newsegs) {
+            GSource *segsource = g_idle_source_new();
+            if (segsource) {
+                g_source_set_callback(segsource, playback_signal_segment, state, NULL);
+                g_source_attach(segsource, g_main_loop_get_context(state->mainloop));
+            }
         }
 
         /* Read the current state of the GPIO. */
         if (pfd.revents) {
-            playback_fsync(state, fsync_fd);
+            char buf[2];
+            lseek(fsync, 0, SEEK_SET);
+            read(fsync, buf, sizeof(buf));
+
+            playback_fsync(state);
         }
     }
+
+    /* Cleanup */
+    playback_region_flush(state);
+    close(fsync);
 }
 
+/*===============================================
+ * Playback Module Setuo
+ *===============================================
+ */
 void
 playback_init(struct pipeline_state *state)
 {
     struct sigevent sigev;
     struct sigaction sigact;
-    pthread_t playback_handle;
 
     /*
      * TODO: Should be made private to the playback thread
@@ -551,7 +632,7 @@ playback_init(struct pipeline_state *state)
     sigprocmask(SIG_BLOCK, &sigact.sa_mask, NULL);
 
     /* Start the playback thread. */
-    pthread_create(&playback_handle, NULL, playback_thread, state);
+    pthread_create(&state->playthread, NULL, playback_thread, state);
 
     /* Start off in live display mode */
     state->mode = PIPELINE_MODE_LIVE;

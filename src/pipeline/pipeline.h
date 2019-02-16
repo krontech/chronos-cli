@@ -60,7 +60,6 @@ struct playback_region {
 #define PIPELINE_MODE_DNG       6
 #define PIPELINE_MODE_TIFF      7   /* Processed 8-bit TIFF format. */
 #define PIPELINE_MODE_TIFF_RAW  8   /* Linear RAW 16-bit TIFF format. */
-#define PIPELINE_MODE_BLACKREF  9   /* Save a black reference image. */
 
 #define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
 
@@ -123,9 +122,9 @@ struct pipeline_state {
     unsigned long   vres;
 
     /* Frame information */
+    long            position;       /* Last played frame number, or negative for live display. */
     unsigned long   totalframes;    /* Total number of frames when in playback mode. */
     unsigned long   totalsegs;      /* Total number of recording segments captured. */
-    unsigned long   position;       /* Last played frame number when in playback mode. */
     unsigned long   segment;        /* Current segment number */
     unsigned long   segframe;       /* Frame number within the current segment. */
     unsigned long   segsize;        /* Segment size (in frames) */
@@ -136,6 +135,7 @@ struct pipeline_state {
     int             playdelta;      /* Change (in frames) to apply at each playback timer expiry. */
     unsigned long   loopstart;      /* Starting frame to play from when in playback mode. */
     unsigned long   loopend;        /* Ending frame to play from when in playback mode. */
+    pthread_t       playthread;     /* Thread handle for the playback frame manager. */
     struct playback_region *region_head;
     struct playback_region *region_tail;
 
@@ -161,9 +161,6 @@ struct pipeline_state {
 struct pipeline_state *cam_pipeline_state(void);
 void cam_pipeline_restart(struct pipeline_state *state);
 
-/* Pipeline for taking black reference images. */
-GstElement *cam_blackref(struct pipeline_state *state, struct pipeline_args *args);
-
 /* Allocate pipeline segments, returning the first pad to be linked. */
 GstPad *cam_screencap(struct pipeline_state *state);
 GstPad *cam_lcd_sink(struct pipeline_state *state, const struct display_config *config);
@@ -185,7 +182,7 @@ void dbus_signal_segment(struct pipeline_state *state);
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);
 void playback_goto(struct pipeline_state *state, unsigned int mode);
-void playback_set(struct pipeline_state *state, unsigned long frame, unsigned int rate, int delta);
+void playback_play(struct pipeline_state *state, unsigned long frame, unsigned int rate, int delta);
 void playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int delta, unsigned long count);
 void playback_region_flush(struct pipeline_state *state);
 
