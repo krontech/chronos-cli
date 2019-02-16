@@ -15,6 +15,7 @@ import logging
 from camera import camera
 from sensors import lux1310, frameGeometry
 from regmaps import seqcommand
+import regmaps
 import pychronos
 
 from ioInterface import ioInterface
@@ -68,6 +69,11 @@ class controlApi(objects.DBusObject):
                           Method('getCalCapabilities',       arguments='',      returns='a{sv}'),
                           Method('calibrate',                arguments='a{sv}', returns='a{sv}'),
 
+                          Method('getColorMatrix',           arguments='',      returns='ad'),
+                          Method('setColorMatrix',           arguments='ad',    returns='ad'),
+                          Method('getWhiteBalance',          arguments='',      returns='a{sv}'),
+                          Method('setWhiteBalance',          arguments='a{sv}', returns='a{sv}'),
+
                           Method('getSequencerCapabilities', arguments='',      returns='a{sv}'),
                           Method('getSequencerProgram',      arguments='a{sv}', returns='a{sv}'),
                           Method('setSequencerProgram',      arguments='a{sv}', returns='a{sv}'),
@@ -77,7 +83,7 @@ class controlApi(objects.DBusObject):
     dbusInterfaces = [iface]
 
     ERROR_NOT_IMPLEMENTED_YET = 9999
-
+    VALUE_ERROR               = 1
    
     
     def __init__(self, objectPath, conn, camera):
@@ -86,9 +92,14 @@ class controlApi(objects.DBusObject):
         self.currentState = 'idle'
 
         self.camera = camera
-        self.io = ioInterface() 
+        self.io = ioInterface()
+        self.display = regmaps.display()
 
         self.reinitSystem({'reset':True, 'sensor':True})
+
+        self.display.whiteBalance[0] = int(1.5226 * 4096)
+        self.display.whiteBalance[1] = int(1.0723 * 4096)
+        self.display.whiteBalance[2] = int(1.5655 * 4096)
 
 
     def emitStateChanged(self, reason=None, details=None):
@@ -211,15 +222,16 @@ class controlApi(objects.DBusObject):
 
         # set up video
         self.camera.sensor.setResolution(geom)
-        self.camera.setupDisplayTiming(geom)
         self.camera.sensor.setFramePeriod(framePeriod)
         self.camera.sensor.setExposurePeriod(exposurePeriod)
+        self.camera.setupRecordRegion(geom, self.camera.REC_REGION_START)
+        self.camera.setupDisplayTiming(geom)
 
         # tell video pipeline to restart
         reactor.callLater(0.0, self.pokeCamPipelineToRestart)
 
         # start a calibration loop
-        reactor.callLater(0.0, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
+        reactor.callLater(0.05, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
 
         # get the current config so we can return the real values
         appliedGeometry = self.dbusGetSensorSettings()
@@ -287,6 +299,49 @@ class controlApi(objects.DBusObject):
 
 
     #===============================================================================================
+    #Method('getColorMatrix',           arguments='',      returns='a{sv}'),
+    #Method('setColorMatrix',           arguments='a{sv}', returns='a{sv}'),
+    #Method('getWhiteBalance',          arguments='',      returns='a{sv}'),
+    #Method('setWhiteBalance',          arguments='a{sv}', returns='a{sv}'),
+    
+    @dbusMethod(krontechControl, 'getColorMatrix')
+    def dbusGetColorMatrix(self):
+        colorMatrix = [self.display.colorMatrix[0]/4096.0,self.display.colorMatrix[1]/4096.0,self.display.colorMatrix[2]/4096.0,
+                       self.display.colorMatrix[3]/4096.0,self.display.colorMatrix[4]/4096.0,self.display.colorMatrix[5]/4096.0,
+                       self.display.colorMatrix[6]/4096.0,self.display.colorMatrix[7]/4096.0,self.display.colorMatrix[8]/4096.0]
+        logging.info('colorMatrix: %s', str(colorMatrix))
+        return colorMatrix
+    
+    @dbusMethod(krontechControl, 'setColorMatrix')
+    def dbusSetColorMatrix(self, args):
+        # TODO: implement setting colorMatrix
+        return self.dbusGetColorMatrix()
+
+    @dbusMethod(krontechControl, 'getWhiteBalance')
+    def dbusGetWhiteBalance(self):
+        red   = self.display.whiteBalance[0] / 4096.0
+        green = self.display.whiteBalance[1] / 4096.0
+        blue  = self.display.whiteBalance[2] / 4096.0
+        whiteBalance = {'red':red, 'green':green, 'blue':blue}
+        logging.info('whiteBalance: %s (type:%s)', str(whiteBalance), str(type(whiteBalance)))
+        return whiteBalance
+
+    @dbusMethod(krontechControl, 'setWhiteBalance')
+    def dbusSetWhiteBalance(self, args):
+        red   = args.get('red')
+        green = args.get('green')
+        blue  = args.get('blue')
+        if not red or not green or not blue:
+            return {'failed':'args does not contain all of red, green and blue values', 'id':self.VALUE_ERROR}
+        
+        self.display.whiteBalance[0] = int(red   * 4096)
+        self.display.whiteBalance[1] = int(green * 4096)
+        self.display.whiteBalance[2] = int(blue  * 4096)
+        return self.dbusGetWhiteBalance()
+
+    
+
+    #===============================================================================================
     #Method('getSequencerCapabilities', arguments='',      returns='a{sv}'),
     #Method('getSequencerProgram',      arguments='a{sv}', returns='a{sv}'),
     #Method('setSequencerProgram',      arguments='a{sv}', returns='a{sv}'),
@@ -307,11 +362,43 @@ class controlApi(objects.DBusObject):
 
     @dbusMethod(krontechControl, 'startRecord')
     def dbusStartRecord(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        if self.currentState != 'idle':
+            return {'failed':'busy', 'state':self.currentState}
+        
+        self.currentState = 'recording'
+        reactor.callLater(0.0, self.startRecord, args)
+        
+        return {'success':'started recording'}
 
+        
     @dbusMethod(krontechControl, 'stopRecord')
     def dbusStopRecord(self, args):
         return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+
+
+    @inlineCallbacks
+    def startRecord(self, args):
+        self.emitStateChanged()
+
+        nFrames       = args.get('nFrames', self.camera.getRecordingMaxFrames(fSize))
+        recTermMemory = args.get('recTermMemory', True) # this should probably be false
+        blkTermFull   = args.get('blkTermFull', True) # maybe this shold be false?
+        
+        # TODO: make this use args
+        program = [ seqcommand(blockSize=nFrames,
+                               blkTermRising=True,
+                               recTermBlockEnd=True,
+                               blkTermFull=blkTermFull,
+                               recTermMemory=recTermMemory) ]
+
+        for delay in self.camera.startRecording(program):
+            yield asleep(delay)
+
+        self.camera.stopRecording()
+        
+        self.currentState = 'idle'
+        self.emitStateChanged(reason='recording complete')
+        
 
 
 
