@@ -233,9 +233,10 @@ class lux1310(api):
             raise ValueError("Invalid frame resolution")
         
         # Select the minimum frame period if not specified.
+        minPeriod, maxPeriod = self.getPeriodRange(size)
         if (not fPeriod):
             fClocks = self.getMinFrameClocks(size)
-        elif ((fPeriod * self.LUX1310_TIMING_HZ) >= self.getMinFramePeriod(size)):
+        elif ((fPeriod * self.LUX1310_TIMING_HZ) >= minPeriod):
             fClocks = fPeriod * self.LUX1310_TIMING_HZ
         else:
             raise ValueError("Frame period too short")
