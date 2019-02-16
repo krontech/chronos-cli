@@ -3,7 +3,7 @@ API_VERISON_STRING = '0.1'
 
 import numpy
 
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, utils
 from twisted.internet.defer import inlineCallbacks
 
 from txdbus           import client, objects, error
@@ -12,11 +12,37 @@ from txdbus.objects   import dbusMethod
 
 import logging
 
-import camera
-import lux1310
+from camera import camera
+from sensors import lux1310, frameGeometry
+from regmaps import seqcommand
+import pychronos
+
+from ioInterface import ioInterface
+
+def asleep(secs):
+    """
+    @brief Do a reactor-safe sleep call. Call with yield to block until done.
+    @param secs Time, in seconds
+    @retval Deferred whose callback will fire after time has expired
+    """
+    d = defer.Deferred()
+    reactor.callLater(secs, d.callback, None)
+    return d
+
+#-----------------------------------------------------------------
+# Some constants that ought to go into a board-specific dict.
+FPGA_BITSTREAM = "/var/camera/FPGA.bit"
+GPIO_ENCA = "/sys/class/gpio/gpio20/value"
+GPIO_ENCB = "/sys/class/gpio/gpio26/value"
+GPIO_ENCSW = "/sys/class/gpio/gpio27/value"
+REC_LED_FRONT = "/sys/class/gpio/gpio41/value"
+REC_LED_BACK = "/sys/class/gpio/gpio25/value"
+#-----------------------------------------------------------------
 
 krontechControl     =  'com.krontech.chronos.control'
 krontechControlPath = '/com/krontech/chronos/control'
+
+
 
 
 
@@ -25,7 +51,7 @@ class controlApi(objects.DBusObject):
                           Method('getCameraData',            arguments='',      returns='a{sv}'),
                           Method('getSensorData',            arguments='',      returns='a{sv}'),
                           Method('status',                   arguments='',      returns='a{sv}'),
-                          Signal('statusHasChanged',         arguments=''),
+                          Signal('statusHasChanged',         arguments='a{sv}'),
 
                           Method('reinitSystem',             arguments='a{sv}', returns='a{sv}'),
 
@@ -35,7 +61,7 @@ class controlApi(objects.DBusObject):
                           Method('setSensorSettings',        arguments='a{sv}', returns='a{sv}'),
 
                           Method('getIoCapabilities',        arguments='',      returns='a{sv}'),
-                          Method('getIoMapping',             arguments='a{sv}', returns='a{sv}'),
+                          Method('getIoMapping',             arguments='',      returns='a{sv}'),
                           Method('setIoMapping',             arguments='a{sv}', returns='a{sv}'),
                           Signal('ioEvent',                  arguments='a{sv}'),
                           
@@ -51,19 +77,32 @@ class controlApi(objects.DBusObject):
     dbusInterfaces = [iface]
 
     ERROR_NOT_IMPLEMENTED_YET = 9999
+
+   
     
-    
-    def __init__(self, objectPath, conn):
+    def __init__(self, objectPath, conn, camera):
         self.conn = conn
         super().__init__(objectPath)
         self.currentState = 'idle'
-        
-        self.camera = camera.camera(lux1310.lux1310())
+
+        self.camera = camera
+        self.io = ioInterface() 
+
+        self.reinitSystem({'reset':True, 'sensor':True})
 
 
-    def emitStateChanged(self, reason=None):
-        pass
+    def emitStateChanged(self, reason=None, details=None):
+        data = {'state':self.currentState}
+        if reason:
+            data['reason'] = reason
+        if details:
+            data['details'] = details
+        self.emitSignal('statusHasChanged', (data))
         
+
+    def pokeCamPipelineToRestart(self):
+        utils.getProcessOutput('killall', ['-HUP', 'cam-pipeline'])
+
     #===============================================================================================
     #Method('getCameraData',            arguments='',      returns='a{sv}'),
     #Method('getSensorData',            arguments='',      returns='a{sv}'),
@@ -107,19 +146,21 @@ class controlApi(objects.DBusObject):
         self.currentState = 'reinitializing'
         return {'state':self.currentState}
 
-    @inlineCallbacks
     def reinitSystem(self, args):
-        emitStateChanged()
+        self.emitStateChanged()
         reinitAll = args.get('all', False)
         if args.get('fpga') or reinitAll:
             reinitAll = True
-            self.camera = camera.camera(lux1310.lux1310())
+            self.camera.reset(FPGA_BITSTREAM)
 
+        if args.get('reset'):
+            self.camera.reset()
+            
         if args.get('sensor') or reinitAll:
-            self.camera.sensor.boot()
+            self.camera.sensor.reset()
 
         self.currentState = 'idle'
-        emitStateChanged()
+        self.emitStateChanged(reason='(re)initialization complete')
 
     #===============================================================================================
     #Method('getSensorCapabilities',    arguments='',      returns='a{sv}'),
@@ -133,15 +174,57 @@ class controlApi(objects.DBusObject):
 
     @dbusMethod(krontechControl, 'getSensorSettings')
     def dbusGetSensorSettings(self):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        returnGeom = dict(vars(self.camera.sensor.getCurrentGeometry()))
+        returnGeom['framePeriod'] = self.camera.sensor.getCurrentPeriod()
+        returnGeom['frameRate']   = 1.0 / returnGeom['framePeriod']
+        returnGeom['exposure']    = self.camera.sensor.getCurrentExposure()
+        return returnGeom
 
     @dbusMethod(krontechControl, 'getSensorLimits')
     def dbusGetSensorLimits(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        minPeriod, maxPeriod = self.camera.sensor.getPeriodRange(self.camera.sensor.getCurrentGeometry())
+        return {'minPeriod':minPeriod, 'maxPeriod':maxPeriod}
 
     @dbusMethod(krontechControl, 'setSensorSettings')
     def setSensorSettings(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        geom = self.camera.sensor.getCurrentGeometry()
+        geom.hRes      = args.get('hRes',      geom.hRes)
+        geom.vRes      = args.get('vRes',      geom.vRes)
+        geom.hOffset   = args.get('hOffset',   geom.hOffset)
+        geom.vOffset   = args.get('vOffset',   geom.vOffset)
+        geom.vDarkRows = args.get('vDarkRows', geom.vDarkRows)
+        geom.bitDepth  = args.get('bitDepth',  geom.bitDepth)
+
+        # set default value
+        framePeriod, _ = self.camera.sensor.getPeriodRange(geom)
+
+        # check if we have a frameRate field and if so convert it to framePeriod
+        frameRate = args.get('frameRate')
+        if frameRate:
+            framePeriod = 1.0 / frameRate
+
+        # if we have a framePeriod explicit field, override frameRate or default value
+        framePeriod = args.get('framePeriod', framePeriod)
+
+        # set exposure or use a default of 95% framePeriod
+        exposurePeriod = args.get('exposure', framePeriod * 0.95) # self.camera.sensor.getExposureRange(geom))
+
+        # set up video
+        self.camera.sensor.setResolution(geom)
+        self.camera.setupDisplayTiming(geom)
+        self.camera.sensor.setFramePeriod(framePeriod)
+        self.camera.sensor.setExposurePeriod(exposurePeriod)
+
+        # tell video pipeline to restart
+        reactor.callLater(0.0, self.pokeCamPipelineToRestart)
+
+        # start a calibration loop
+        reactor.callLater(0.0, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
+
+        # get the current config so we can return the real values
+        appliedGeometry = self.dbusGetSensorSettings()
+        reactor.callLater(0.0, self.emitStateChanged, reason='resolution changed', details={'geometry':appliedGeometry})
+        return appliedGeometry
 
     #===============================================================================================
     #Method('getIoCapabilities',        arguments='',      returns='a{sv}'),
@@ -155,11 +238,12 @@ class controlApi(objects.DBusObject):
 
     @dbusMethod(krontechControl, 'getIoMapping')
     def dbusGetIoMapping(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        return self.io.getConfiguration()
 
     @dbusMethod(krontechControl, 'setIoMapping')
     def dbusSetIoMapping(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        self.io.setConfiguration(args)
+        return self.io.getConfiguration()
 
     #===============================================================================================
     #Method('getCalCapabilities',       arguments='',      returns='a{sv}'),
@@ -171,7 +255,35 @@ class controlApi(objects.DBusObject):
 
     @dbusMethod(krontechControl, 'calibrate')
     def dbusCalibrate(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        reactor.callLater(0.0, self.startCalibration, args)
+        self.currentState = 'calibrating'
+        return {'success':'started calibration'}
+
+    
+    @inlineCallbacks
+    def startCalibration(self, args):
+        self.emitStateChanged()
+
+        blackCal = args.get('blackCal') or args.get('fpn') or args.get('basic')
+        zeroTimeBlackCal = args.get('zeroTimeBlackCal') or args.get('basic')
+        analogCal = args.get('analogCal') or args.get('analog')
+
+        if analogCal:
+            logging.info('starting analog calibration')
+            for delay in self.camera.sensor.startAnalogCal():
+                yield asleep(delay)
+
+        if zeroTimeBlackCal:
+            logging.info('starting zero time black calibration')
+            for delay in self.camera.startZeroTimeBlackCal():
+                yield asleep(delay)
+        elif blackCal:
+            logging.info('starting standard black calibration')
+            for delay in self.camera.startBlackCal():
+                yield asleep(delay)
+                
+        self.currentState = 'idle'
+        self.emitStateChanged(reason='calibration complete')
 
 
     #===============================================================================================
@@ -203,11 +315,6 @@ class controlApi(objects.DBusObject):
 
 
 
-    
-    
-
-                          
-
 
 
 
@@ -217,13 +324,37 @@ class controlApi(objects.DBusObject):
 
 @inlineCallbacks
 def main():
+    cam = camera(lux1310())
+
+    try:
+        output = yield utils.getProcessOutput('python',['testFpga.py'], errortoo=True)
+        if output and float(output) >= 3.19 and float(output) < 4.0:
+            logging.info('FPGA State: All good. Current version: %0.2f', float(output))
+        else:
+            if output:
+                logging.info('FPGA State: needs programming, version: %0.2f', float(output))
+            else:
+                logging.info('FPGA State: needs programming, unable to read from device')
+            logging.info('======== resetting FPGA ==========')
+            cam.reset(FPGA_BITSTREAM)
+            
+            output = yield utils.getProcessOutput('python',['testFpga.py'], errortoo=True)
+            if output and float(output) >= 3.19 and float(output) < 4.0:
+                logging.info('FPGA State: All good. Current version: %0.2f', float(output))
+            else:
+                logging.error('failed to bring up FPGA')
+                reactor.stop()
+    except Exception as e:
+        logging.error(e)
+        reactor.stop()
+        
     try:
         conn = yield client.connect(reactor, 'system')
-        conn.exportObject(controlApi(krontechControlPath, conn) )
+        conn.exportObject(controlApi(krontechControlPath, conn, cam) )
         yield conn.requestBusName(krontechControl)
-        print('Object exported on bus name "%s" with path "%s"' % (krontechControl, krontechControlPath))
+        logging.info('Object exported on bus name "%s" with path "%s"', krontechControl, krontechControlPath)
     except error.DBusException as e:
-        print('Failed to export object: ', e)
+        logging.error('Failed to export object: %s', e)
         reactor.stop()
 
 
