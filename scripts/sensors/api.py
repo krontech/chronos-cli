@@ -94,9 +94,14 @@ class api(ABC):
     # Frame Timing Configuration Functions
     #--------------------------------------------
     @abstractmethod
-    def getPeriodRange(self, size):
+    def getPeriodRange(self, fSize):
         """Return a tuple with the minimum and maximum frame periods at a given frame size
         
+        Parameters
+        ----------
+        fSize : `frameGeometry`
+            The frame size for which the frame period limits are being requested.
+
         Returns
         -------
         (float, float) : A tuple of (min, max) frame periods in seconds, or zero to
@@ -116,13 +121,26 @@ class api(ABC):
     
     @abstractmethod
     def setFramePeriod(self, fPeriod):
-        """Configure the frame period of the image sensor"""
+        """Configure the frame period of the image sensor
+        
+        Parameters
+        ----------
+        fPeriod : `float`
+            The frame period to configure on the image sensor.
+        """
         pass
 
     @abstractmethod
-    def getExposureRange(self, size, period):
+    def getExposureRange(self, fSize, fPeriod):
         """Return a tuple with the minimum and maximum exposure at a given frame size
         
+        Parameters
+        ----------
+        fSize : `frameGeometry`
+            The frame size at which the exposure range is being requested.
+        fPeriod : `float`
+            The frame period for which the exposure range is being requested.
+
         Returns
         -------
         (float, float) : A tuple of (min, max) exposure periods in seconds, or zero to

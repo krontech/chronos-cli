@@ -352,7 +352,7 @@ class camera:
         # Grab the current frame size and exposure.
         fSize = self.sensor.getCurrentGeometry()
         expPrev = self.sensor.getCurrentExposure()
-        expMin, expMax = self.sensor.getExposureRange(fSize)
+        expMin, expMax = self.sensor.getExposureRange(fSize, self.sensor.getCurrentPeriod())
 
         # Reconfigure for the minum exposure supported by the sensor.
         self.sensor.setExposurePeriod(expMin)
@@ -417,3 +417,86 @@ class camera:
         seq = regmaps.sequencer()
         seq.control |= seq.STOP_REC
         seq.control &= ~seq.STOP_REC
+
+    def startWhiteBalance(self, hStart=None, vStart=None):
+        """Begin the white balance proceedure
+
+        Take a white reference sample from the live video stream, and compute the
+        white balance coefficients for the current lighting conditions.
+
+        Parameters
+        ----------
+        hStart : `int`, optional
+            Horizontal position at which the white reference should be taken.
+        vStart : `int`, optional
+            Veritcal position at which the white reference should be taken.
+        
+        Yields
+        ------
+        float :
+            The sleep time, in seconds, between steps of the white balance proceedure.
+        
+        Examples
+        --------
+        This function returns a generator iterator with the sleep time between the
+        steps of the white balance proceedure. The caller may use this for cooperative
+        multithreading, or can complete the calibration sychronously as follows:
+
+        state = camera.startWhiteBalance()
+        for delay in state:
+            time.sleep(delay)
+        """
+        hSamples = 32
+        vSamples = 32
+        fSize = self.sensor.getCurrentGeometry()
+        if (hStart is None):
+            hStart = (fSize.hRes - hSamples) // 2
+        if (vStart is None):
+            vStart = (fSize.vRes - vSamples) // 2
+        
+        # Grab a frame from the live buffer.
+        # TODO: We only really need to read out a subset of the frame, but
+        # dealing with the word alignment is sucky.
+        seq = regmaps.sequencer()
+        yield from seq.startLiveReadout(fSize.hRes, fSize.vRes)
+        frame = numpy.asarray(seq.liveResult)
+
+        # Apply calibration to the averaged frames.
+        colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, fSize.hRes * 2)
+        colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, fSize.hRes * 2)
+        colOffsetRegs = pychronos.fpgamap(pychronos.FPGA_COL_OFFSET_BASE, fSize.hRes * 2)
+        gain = numpy.asarray(colGainRegs.mem16, dtype=numpy.uint16) / (1 << 12)
+        curve = numpy.asarray(colCurveRegs.mem16, dtype=numpy.int16) / (1 << 21)
+        offsets = numpy.asarray(colOffsetRegs.mem16, dtype=numpy.int16)
+        corrected = (frame * frame * curve) + (frame * gain) + offsets
+        # TODO: Subtract the per-pixel FPN, which a pain in the butt because it's a 12-bit signed.
+        
+        # Sum up each of the R, G and B channels
+        rSum = 0
+        gSum = 0
+        bSum = 0
+        for row in range(vStart, vStart+vSamples):
+            for col in range(hStart, hStart+hSamples):
+                if (row & 1):
+                    # Odd Rows - Blue/Green pixels
+                    if (col & 1):
+                        gSum += corrected[row][col]
+                    else:
+                        bSum += corrected[row][col] * 2
+                else:
+                    # Even Rows - Green/Blue pixels
+                    if (col & 1):
+                        rSum += corrected[row][col] * 2
+                    else:
+                        gSum += corrected[row][col]
+        
+        # Find the highest channel (probably green)
+        maxSum = max(rSum, gSum, bSum)
+        whiteBalance = [maxSum / rSum, maxSum / gSum, maxSum / bSum]
+        print("Computed White Balance = %s" % (whiteBalance))
+
+        # Load it into the display block for immediate use.
+        displayRegs = regmaps.display()
+        displayRegs.whiteBalance[0] = whiteBalance[0] * displayRegs.WHITE_BALANCE_DIV
+        displayRegs.whiteBalance[1] = whiteBalance[1] * displayRegs.WHITE_BALANCE_DIV
+        displayRegs.whiteBalance[2] = whiteBalance[2] * displayRegs.WHITE_BALANCE_DIV
