@@ -10,8 +10,8 @@ from txdbus.objects   import dbusMethod
 import logging
 
 
-krontechRing     =  'com.krontech.chronos'
-krontechRingPath = '/ring'
+krontechRing     =  'com.krontech.chronos.ring'
+krontechRingPath = '/com/krontech/chronos/ring'
 
 
 

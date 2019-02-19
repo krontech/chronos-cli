@@ -60,6 +60,7 @@ class controlApi(objects.DBusObject):
                           Method('getSensorSettings',        arguments='',      returns='a{sv}'),
                           Method('getSensorLimits',          arguments='a{sv}', returns='a{sv}'),
                           Method('setSensorSettings',        arguments='a{sv}', returns='a{sv}'),
+                          Method('setSensorTiming',          arguments='a{sv}', returns='a{sv}'),
 
                           Method('getIoCapabilities',        arguments='',      returns='a{sv}'),
                           Method('getIoMapping',             arguments='',      returns='a{sv}'),
@@ -238,6 +239,29 @@ class controlApi(objects.DBusObject):
         reactor.callLater(0.0, self.emitStateChanged, reason='resolution changed', details={'geometry':appliedGeometry})
         return appliedGeometry
 
+    @dbusMethod(krontechControl, 'setSensorTiming')
+    def setSensorSettings(self, args):
+        # check if we have a frameRate field and if so convert it to framePeriod
+        frameRate = args.get('frameRate')
+        if frameRate:
+            framePeriod = 1.0 / frameRate
+
+        # if we have a framePeriod explicit field, override frameRate or default value
+        framePeriod = args.get('framePeriod', framePeriod)
+
+        # set exposure or use a default of 95% framePeriod
+        exposurePeriod = args.get('exposure', framePeriod * 0.95) # self.camera.sensor.getExposureRange(geom))
+
+        self.camera.sensor.setFramePeriod(framePeriod)
+        self.camera.sensor.setExposurePeriod(exposurePeriod)
+
+        returnData = dict
+        returnData['framePeriod'] = self.camera.sensor.getCurrentPeriod()
+        returnData['frameRate']   = 1.0 / returnGeom['framePeriod']
+        returnData['exposure']    = self.camera.sensor.getCurrentExposure()
+        return returnData
+        
+    
     #===============================================================================================
     #Method('getIoCapabilities',        arguments='',      returns='a{sv}'),
     #Method('getIoMapping',             arguments='a{sv}', returns='a{sv}'),
@@ -373,17 +397,21 @@ class controlApi(objects.DBusObject):
         
     @dbusMethod(krontechControl, 'stopRecord')
     def dbusStopRecord(self, args):
-        return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
+        self.camera.stopRecording()
+        return {'success':'stopped recording'}
 
 
     @inlineCallbacks
     def startRecord(self, args):
         self.emitStateChanged()
 
-        nFrames       = args.get('nFrames', self.camera.getRecordingMaxFrames(fSize))
+        # send flush
+        
+        geometry = self.camera.sensor.getCurrentGeometry()
+        nFrames       = args.get('nFrames', self.camera.getRecordingMaxFrames(geometry))
         recTermMemory = args.get('recTermMemory', True) # this should probably be false
         blkTermFull   = args.get('blkTermFull', True) # maybe this shold be false?
-        
+
         # TODO: make this use args
         program = [ seqcommand(blockSize=nFrames,
                                blkTermRising=True,
