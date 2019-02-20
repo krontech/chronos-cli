@@ -5,7 +5,7 @@ import math
 import copy
 import numpy
 
-from regmaps import sequencer
+from regmaps import sequencer, sensorTiming
 from sensors import api, frameGeometry
 from . import lux1310wt
 
@@ -41,6 +41,10 @@ class lux1310(api):
         self.sci = pychronos.lux1310()
         self.fpga = pychronos.sensor()
         self.wavetables = lux1310wt.wavetables
+        self.timing = sensorTiming.sensorTiming()
+
+        self.timing.enabled = True
+        self.timing.programStandard(90000, 85000)
 
         ## ADC Calibration state
         self.adcOffsets = [0] * self.HRES_INCREMENT
@@ -51,9 +55,11 @@ class lux1310(api):
     # Sensor Configuration and Control API
     #--------------------------------------------
     def reset(self, fSize=None):
+        self.timing.enabled = True
+        self.timing.programStandard(100 * 4000 * 0.9, 100 * 3900 * 0.9)
         # Disable integration while setup is in progress.
-        self.fpga.framePeriod = 100 * 4000
-        self.fpga.intTime = 100 * 4100
+        self.timing.stopTiming(waitUntilStopped=True)
+        
 
         # Initialize the DAC voltage levels.
         self.sci.writeDAC(self.sci.DAC_VABL, 0.3)
@@ -96,7 +102,7 @@ class lux1310(api):
         self.sci.regRdoutDly = 80               # Non-overlapping readout delay
         self.sci.reg[0x7A] = 80                 # Undocumented???
 
-		# Set internal control registers to fine tune the performance of the sensor
+                # Set internal control registers to fine tune the performance of the sensor
         self.sci.regLvDelay = self.LUX1310_LV_DELAY     # Line valid delay to match internal ADC latency
         self.sci.regHblank = self.LUX1310_MIN_HBLANK    # Set horizontal blanking period
 
@@ -135,8 +141,8 @@ class lux1310(api):
         time.sleep(0.01)
 
         # Start the FPGA timing engine.
-        self.fpga.framePeriod = 100*4000
-        self.fpga.intTime = 100*3900
+        self.timing.continueTiming()
+        self.timing.programStandard(100 * 4000 * 0.9, 100 * 3900 * 0.9)
         return True
 
     ## TODO: I think this whole function is unnecessary on the LUX1310 FPGA
@@ -170,7 +176,7 @@ class lux1310(api):
         return fSize
 
     def isValidResolution(self, size):
-	    # Enforce resolution limits.
+            # Enforce resolution limits.
         if ((size.hRes < self.MIN_HRES) or (size.hRes + size.hOffset) > self.MAX_HRES):
             return False
         if ((size.vRes < self.MIN_VRES) or (size.vRes + size.vOffset) > self.MAX_VRES):
@@ -213,6 +219,9 @@ class lux1310(api):
             self.sci.regTimingEn = True
             self.fpga.startDelay = wavetab.abnDelay
             self.fpga.linePeriod = max((size.hRes // self.HRES_INCREMENT) + 2, wavetab.clocks + 3) - 1
+
+            # set the pulsed pattern timing
+            self.timing.setPulsedPattern(wavetab.clocks)
         # Otherwise, the frame period was probably too short for this resolution.
         else:
             raise ValueError("Frame period too short, no suitable wavetable found")
@@ -242,9 +251,7 @@ class lux1310(api):
             raise ValueError("Frame period too short")
 
         # Disable the FPGA timing engine and wait for the current readout to end.
-        self.fpga.intTime = 0
-        time.sleep(0.01)
-        time.sleep(self.fpga.framePeriod / self.LUX1310_TIMING_HZ)
+        self.timing.stopTiming(waitUntilStopped=True)
 
         # Switch to the desired resolution pick the best matching wavetable.
         self.updateReadoutWindow(size)
@@ -252,8 +259,7 @@ class lux1310(api):
         time.sleep(0.01)
 
         # Switch to the minimum frame period and 180-degree shutter after changing resolution.
-        self.fpga.framePeriod = fClocks
-        self.fpga.intTime = fClocks // 2
+        self.timing.programStandard(fClocks, fClocks * 0.95)
     
     #--------------------------------------------
     # Frame Timing Configuration Functions
@@ -287,11 +293,11 @@ class lux1310(api):
         return (clocks / self.LUX1310_TIMING_HZ, 0)
     
     def getCurrentPeriod(self):
-        return self.fpga.framePeriod / self.LUX1310_TIMING_HZ
+        return self.timing.frameTime / self.LUX1310_TIMING_HZ
 
     def setFramePeriod(self, fPeriod):
         # TODO: Sanity-check the frame period.
-        self.fpga.framePeriod = math.ceil(fPeriod * self.LUX1310_TIMING_HZ)
+        self.timing.frameTime = math.ceil(fPeriod * self.LUX1310_TIMING_HZ)
     
     def getExposureRange(self, fSize, fPeriod):
         # Defaulting to 1us minimum exposure and infinite maximum exposure.
@@ -299,11 +305,11 @@ class lux1310(api):
         return (1.0 / 1000000, fPeriod - (500 / self.LUX1310_TIMING_HZ))
 
     def getCurrentExposure(self):
-        return self.fpga.intTime / self.LUX1310_TIMING_HZ
+        return self.timing.integrationTime / self.LUX1310_TIMING_HZ
     
     def setExposurePeriod(self, expPeriod):
         # TODO: Sanity-check the exposure time.
-        self.fpga.intTime = math.ceil(expPeriod * self.LUX1310_TIMING_HZ)
+        self.timing.integrationTime = math.ceil(expPeriod * self.LUX1310_TIMING_HZ)
 
     #--------------------------------------------
     # Sensor Analog Calibration Functions
@@ -317,8 +323,8 @@ class lux1310(api):
         else:
             # CIECAM16/D55
             return [[ 1.9147, -0.5768, -0.2342], 
-			        [-0.3056,  1.3895, -0.0969],
-			        [ 0.1272, -0.9531,  1.6492]]
+                                [-0.3056,  1.3895, -0.0969],
+                                [ 0.1272, -0.9531,  1.6492]]
 
     def setGain(self, gain):
         gainConfig = {  # VRSTB, VRST,  VRSTH,  Sampling Cap, Feedback Cap, Serial Gain
@@ -362,7 +368,7 @@ class lux1310(api):
             self.sci.regAdcOs[col] = self.adcOffsets[col]
 
     def autoAdcOffsetCal(self, fSize, iterations=16):
-        tRefresh = (self.fpga.framePeriod * 3) / self.LUX1310_TIMING_HZ
+        tRefresh = (self.timing.frameTime * 3) / self.LUX1310_TIMING_HZ
         tRefresh += (1/60)
 
         # Clear out the ADC offsets
@@ -379,7 +385,7 @@ class lux1310(api):
     def autoAdcGainCal(self, fSize):
         # Setup some math constants
         numRows = 64
-        tRefresh = (self.fpga.framePeriod * 3) / self.LUX1310_TIMING_HZ
+        tRefresh = (self.timing.frameTime * 3) / self.LUX1310_TIMING_HZ
         tRefresh += (1/60)
         pixFullScale = (1 << fSize.bitDepth)
 
@@ -388,13 +394,11 @@ class lux1310(api):
         colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, 0x1000)
 
         # Disable the FPGA timing engine.
-        prev = self.fpga.intTime
-        self.fpga.intTime = 0
-        yield tRefresh
+        self.timing.stopTiming(waitUntilStopped=True)
 
         # Reload the wavetable for gain calibration
-        self.updateWavetable(fSize, frameClocks=self.fpga.framePeriod, gaincal=True)
-        self.fpga.intTime = prev
+        self.updateWavetable(fSize, frameClocks=self.timing.frameTime, gaincal=True)
+        self.timing.continueTiming()
 
         # Search for a dummy voltage high reference point.
         vhigh = 31
@@ -513,7 +517,7 @@ class lux1310(api):
         # Retrieve the current resolution and frame period.
         fSizePrev = self.getCurrentGeometry()
         fSizeCal = copy.deepcopy(fSizePrev)
-        fPeriod = self.fpga.framePeriod / self.LUX1310_TIMING_HZ
+        fPeriod = self.timing.frameTime / self.LUX1310_TIMING_HZ
 
         # Enable black bars if not already done.
         if (fSizeCal.vDarkRows == 0):
@@ -522,11 +526,9 @@ class lux1310(api):
             fSizeCal.vRes -= fSizeCal.vDarkRows
 
             # Disable the FPGA timing engine and apply the changes.
-            prev = self.fpga.intTime
-            self.fpga.intTime = 0
-            time.sleep(fPeriod * 2)
+            self.timing.stopTiming(waitUntilStopped=True)
             self.updateReadoutWindow(fSizeCal)
-            self.fpga.intTime = prev
+            self.timing.continueTiming()
         
         # Perform ADC offset calibration using the optical black regions.
         yield from self.autoAdcOffsetCal(fSizeCal)
@@ -535,9 +537,8 @@ class lux1310(api):
         yield from self.autoAdcGainCal(fSizeCal)
 
         # Restore the frame period and wavetable.
-        prev = self.fpga.intTime
-        self.fpga.intTime = 0
-        time.sleep(fPeriod * 2)
+        self.timing.stopTiming(waitUntilStopped=True)
         self.updateReadoutWindow(fSizePrev)
-        self.updateWavetable(fSizePrev, frameClocks=self.fpga.framePeriod, gaincal=False)
-        self.fpga.intTime = prev
+        self.updateWavetable(fSizePrev, frameClocks=self.timing.frameTime, gaincal=False)
+        self.timing.continueTiming()
+        

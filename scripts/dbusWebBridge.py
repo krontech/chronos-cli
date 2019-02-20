@@ -1,6 +1,7 @@
 import sys
 
 from twisted.web import server, resource
+from twisted.web.static import File
 from twisted.internet import reactor, defer
 from twisted.python import log
 from twisted.internet.defer import inlineCallbacks
@@ -83,8 +84,13 @@ class Method(resource.Resource):
 
         self.parent.putChild(bytes(methodName, 'utf8'), self)
 
+    def render_GET(self, request):
+        if self.arguments:
+            return b'"data" field required using POST'
+        reactor.callLater(0.0, self.startDbusRequest, request)
+        return server.NOT_DONE_YET
+        
     def render_POST(self, request):
-        name = self.methodName
         if self.arguments:
             rawData = request.args.get(b'data', None)
             if not rawData:
@@ -222,7 +228,14 @@ class dbusPublisher:
         data = json.dumps(signal)
         logging.info('%s: %s', event, data)
         self.subscriber.publishToAll(event, data)
-        
+
+
+class previewImage(resource.Resource):
+    isLeaf = True
+    def render_GET(self, request):
+        request.setHeader('Content-Type', 'image/jpeg')
+        image = open('/tmp/cam-screencap.jpg', 'br').read()
+        return image
     
 @inlineCallbacks
 def main():
@@ -280,6 +293,8 @@ def main():
     Method(video, videoApi, 'recordfile',  arguments=True)
     Method(video, videoApi, 'stop',        arguments=False)
     Method(video, videoApi, 'overlay',     arguments=True)
+
+    root.putChild(b'screenCap.jpg', previewImage())
     
 
 if __name__ == "__main__":
