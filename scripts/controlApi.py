@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 API_VERISON_STRING = '0.1'
 
 import numpy
@@ -449,7 +449,7 @@ def main():
     cam = camera(lux1310())
 
     try:
-        output = yield utils.getProcessOutput('python',['testFpga.py'], errortoo=True)
+        output = yield utils.getProcessOutput('python3',['testFpga.py'], errortoo=True)
         if output and float(output) >= 3.19 and float(output) < 4.0:
             logging.info('FPGA State: All good. Current version: %0.2f', float(output))
         else:

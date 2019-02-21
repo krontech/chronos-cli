@@ -10,6 +10,7 @@ import select
 import subprocess
 import json
 import argparse
+import logging
 
 def resolution(value):
     # Try common names.
@@ -36,7 +37,14 @@ parser.add_argument('--reclength', metavar='FRAMES', type=int, nargs='?',
                     help="Number of frames to record")
 parser.add_argument('--bitstream', metavar='FILE', type=str, nargs=1,
                     help="FPGA bitstream file", default="/var/camera/FPGA.bit")
+parser.add_argument('--debug', default=False, action='store_true',
+                    help="Enable debug logging")
 args = parser.parse_args()
+
+if args.debug:
+    logging.getLogger().setLevel(logging.DEBUG)
+else:
+    logging.getLogger().setLevel(logging.INFO)
 
 # Some constants that ought to go into a board-specific dict.
 GPIO_ENCA = "/sys/class/gpio/gpio20/value"
@@ -57,7 +65,8 @@ def setRecLed(enable):
 cam = camera(lux1310())
 cam.reset(args.bitstream)
 setRecLed(False)
-os.system("cam-json -v flush") # clear out any old recordings
+os.system("cam-json -v flush") # clear out any old recordings.
+os.system("cam-json -v livedisplay") # Switch to live display.
 
 # Configure the resolution
 fSize = cam.sensor.getMaxGeometry()
@@ -191,6 +200,7 @@ status = json.loads(subprocess.check_output(["cam-json", "-v", "status"]).decode
 if (status['totalFrames'] == 0):
     print("No frames recorded - aborting")
     print("Status = %s" % (status))
+print(json.dumps(status, indent=3))
 
 # Save the resulting recording to a file.
 filesaveArgs = {
@@ -202,11 +212,6 @@ filesaveArgs = {
     "bitrate": int(fSize.pixels() * 60 * 0.5)
 }
 subprocess.check_output(["cam-json", "-v", "recordfile", "-"], input=json.dumps(filesaveArgs).encode())
-
-# Print out the first status result.
-time.sleep(1)
-status = json.loads(subprocess.check_output(["cam-json", "-v", "status"]).decode("utf-8"))
-print(json.dumps(status, indent=3))
 
 # Poll the status API until recording is completed.
 while True:

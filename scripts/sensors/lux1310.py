@@ -4,12 +4,11 @@ import time
 import math
 import copy
 import numpy
+import logging
 
 from regmaps import sequencer, sensorTiming
 from sensors import api, frameGeometry
 from . import lux1310wt
-
-import logging
 
 class lux1310(api):
     # Image sensor geometry constraints
@@ -63,7 +62,6 @@ class lux1310(api):
         # Disable integration while setup is in progress.
         self.timing.stopTiming(waitUntilStopped=True)
         
-
         # Initialize the DAC voltage levels.
         self.sci.writeDAC(self.sci.DAC_VABL, 0.3)
         self.sci.writeDAC(self.sci.DAC_VRSTB, 2.7)
@@ -255,6 +253,7 @@ class lux1310(api):
 
         # Disable the FPGA timing engine and wait for the current readout to end.
         self.timing.stopTiming(waitUntilStopped=True)
+        time.sleep(0.01) # Extra delay to allow frame readout to finish. 
 
         # Switch to the desired resolution pick the best matching wavetable.
         self.updateReadoutWindow(size)
@@ -389,17 +388,15 @@ class lux1310(api):
         # Setup some math constants
         numRows = 64
         tRefresh = (self.timing.frameTime * 3) / self.LUX1310_TIMING_HZ
-        tRefresh += (1/60)
         pixFullScale = (1 << fSize.bitDepth)
 
         seq = sequencer()
         colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, 0x1000)
         colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, 0x1000)
 
-        # Disable the FPGA timing engine.
+        # Disable the FPGA timing engine and load the gain calibration wavetable. 
         self.timing.stopTiming(waitUntilStopped=True)
-
-        # Reload the wavetable for gain calibration
+        time.sleep(0.1) # Extra delay to allow frame readout to finish. 
         self.updateWavetable(fSize, frameClocks=self.timing.frameTime, gaincal=True)
         self.timing.continueTiming()
 
@@ -409,11 +406,9 @@ class lux1310(api):
             self.sci.regSelVdumrst = vhigh
             yield tRefresh
             
-            # Read a frame out of the live display.
+            # Read a frame and compute the column averages and minimum.
             yield from seq.startLiveReadout(fSize.hRes, numRows)
             frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
-
-            # Compute the column averages and find the maximum value
             highColumns = numpy.average(frame, 0)
 
             # High voltage should be less than 7/8ths of full scale.
@@ -428,11 +423,9 @@ class lux1310(api):
             self.sci.regSelVdumrst = vlow
             yield tRefresh
 
-            # Read a frame out of the live display.
+            # Read a frame and compute the column averages and minimum.
             yield from seq.startLiveReadout(fSize.hRes, numRows)
             frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
-
-            # Compute the column averages and find the minimum value
             lowColumns = numpy.average(frame, 0)
 
             # Find the minum voltage that does not clip.
@@ -451,9 +444,9 @@ class lux1310(api):
         frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
         midColumns = numpy.average(frame, 0)
 
-        #print("ADC Columns low (%s): %s" % (vlow, lowColumns))
-        #print("ADC Columns mid (%s): %s" % (vmid, midColumns))
-        #print("ADC Columns high (%s): %s" % (vhigh, highColumns))
+        logging.debug("ADC Gain calibration voltages=[%s, %s, %s]" % (vlow, vmid, vhigh))
+        logging.debug("ADC Gain calibration averages=[%s, %s, %s]" %
+                (numpy.average(lowColumns), numpy.average(midColumns), numpy.average(highColumns)))
 
         # Determine which column has the strongest response and sanity-check the gain
         # measurements. If things are out of range, then give up on gain calibration
@@ -463,7 +456,7 @@ class lux1310(api):
             minrange = (pixFullScale // 16)
             diff = highColumns[col] - lowColumns[col]
             if ((highColumns[col] <= (midColumns[col] + minrange)) or (midColumns[col] <= (lowColumns[col] + minrange))):
-                print("Warning! ADC Auto calibration range error")
+                logging.warning("ADC Auto calibration range error")
                 for x in range(0, self.MAX_HRES):
                     colGainRegs.mem16[x] = (1 << self.COL_GAIN_FRAC_BITS)
                     colCurveRegs.mem16[x] = 0
@@ -479,8 +472,8 @@ class lux1310(api):
         predict = lowColumns + (diff * (vmid - vlow) / (vhigh - vlow))
         err2pt = midColumns - predict
 
-        #print("ADC Columns 2-point gain: %s" % (gain2pt))
-        #print("ADC Columns 2-point error: %s" % (err2pt))
+        logging.debug("ADC Columns 2-point gain: %s" % (gain2pt))
+        logging.debug("ADC Columns 2-point error: %s" % (err2pt))
 
         # Add a parabola to compensate for the curvature. This parabola should have
         # zeros at the high and low measurement points, and a curvature to compensate
@@ -502,8 +495,8 @@ class lux1310(api):
         curve3pt = err2pt / ((midColumns - lowColumns) * (highColumns - midColumns))
         gain3pt = gain2pt - curve3pt * (highColumns + lowColumns)
 
-        #print("ADC Columns 3-point gain: %s" % (gain3pt))
-        #print("ADC Columns 3-point curve: %s" % (curve3pt))
+        logging.debug("ADC Columns 3-point gain: %s" % (gain3pt))
+        logging.debug("ADC Columns 3-point curve: %s" % (curve3pt))
 
         # Load and enable the 3-point calibration.
         colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, 0x1000)
@@ -524,28 +517,29 @@ class lux1310(api):
 
         # Enable black bars if not already done.
         if (fSizeCal.vDarkRows == 0):
+            logging.debug("Enabling dark pixel readout")
             fSizeCal.vDarkRows = self.MAX_VDARK // 2
             fSizeCal.vOffset += fSizeCal.vDarkRows
             fSizeCal.vRes -= fSizeCal.vDarkRows
 
             # Disable the FPGA timing engine and apply the changes.
-            logging.debug('about to stop timing')
             self.timing.stopTiming(waitUntilStopped=True)
-            logging.debug('changing readout window')
+            time.sleep(0.01) # Extra delay to allow frame readout to finish. 
             self.updateReadoutWindow(fSizeCal)
-            logging.debug('resuming timing')
             self.timing.continueTiming()
         
         # Perform ADC offset calibration using the optical black regions.
-        logging.debug('autoAdcOffsetCal')
+        logging.debug('Starting ADC offset calibration')
         yield from self.autoAdcOffsetCal(fSizeCal)
 
         # Perform ADC column gain calibration using the dummy voltage.
-        logging.debug('autoAdcGainCal')
+        logging.debug('Starting ADC gain calibration')
         yield from self.autoAdcGainCal(fSizeCal)
 
         # Restore the frame period and wavetable.
+        logging.debug("Restoring sensor configuration")
         self.timing.stopTiming(waitUntilStopped=True)
+        time.sleep(0.01) # Extra delay to allow frame readout to finish. 
         self.updateReadoutWindow(fSizePrev)
         self.updateWavetable(fSizePrev, frameClocks=self.timing.frameTime, gaincal=False)
         self.timing.continueTiming()

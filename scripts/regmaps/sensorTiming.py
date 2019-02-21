@@ -143,7 +143,6 @@ class sensorTiming(pychronos.fpgamap):
         self.pulsedAbnLowPeriod = wavetableLength
         self.pulsedAbnHighPeriod = hSync
 
-
     def stopTiming(self, waitUntilStopped=False, timeout=0.0):
         self.exposureEnabled = 1
         if waitUntilStopped:
@@ -187,7 +186,7 @@ class sensorTiming(pychronos.fpgamap):
         self.programStandard(self.frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
 
     def programShutterGating(self, t2Time=17, timeout=0.01):
-        self.program[0] = self.None + t2Time
+        self.program[0] = self.NONE + t2Time
         self.program.next = self.ABN  | self.TIMING_WAIT_FOR_ACTIVE
         self.program.next = self.IODRIVE | self.NONE | self.TIMING_WAIT_FOR_INACTIVE
         self.program.next = self.TXN  | 0x31

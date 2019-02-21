@@ -219,7 +219,6 @@ class sequencer(pychronos.fpgamap):
         super().__init__(offset, size)
 
         # Live readout frame results.
-        self.__page = 0
         self.__result = None
 
     def __regprop(offset, size, docstring):
@@ -261,10 +260,6 @@ class sequencer(pychronos.fpgamap):
         """Result of the frame readout operation, or None if in progress"""
         return self.__result
 
-    ## FIXME: This will hang if the camera is currently recording, in which case
-    ## lastAddr and writeAddr will point to somewhere in the recording region. We
-    ## can work around it by getting the address from seq.writeAddr or lastAddr
-    ##
     ## FIXME: Does this require locking or other mutual exclusion mechanisms to
     ## ensure multiple readout functions don't collide and do bad things?
     def startLiveReadout(self, hRes, vRes):
@@ -288,21 +283,24 @@ class sequencer(pychronos.fpgamap):
             Sleep time, in seconds, between steps of the readout proceedure.
         """
         backup = [self.liveAddr[0], self.liveAddr[1], self.liveAddr[2]]
-
-        # Set all three live buffers to the same address.
-        self.liveAddr[0] = backup[self.__page]
-        self.liveAddr[1] = backup[self.__page]
-        self.liveAddr[2] = backup[self.__page]
+        address = self.writeAddr
         self.__result = None
 
-        # Wait for the sequencer to begin writing to the updated live address.
-        while (self.writeAddr != backup[self.__page]):
+        # Remove the currently-writing frame from the live buffer, or do
+        # nothing if not writing to the live display region (eg: recording)
+        if address == backup[0]:
+            self.liveAddr[0] = backup[1]
+        elif address == backup[1]:
+            self.liveAddr[1] = backup[2]
+        elif address == backup[2]:
+            self.liveAddr[2] = backup[0]
+        
+        # Wait for the sequencer to begin writing to somewhere else.
+        while (self.writeAddr == address):
             yield 0.001 # 1ms
         
-        # Switch page and readout a frame.
-        self.__page ^= 1
-        self.__result = pychronos.readframe(backup[self.__page], hRes, vRes)
+        # Readout the frame and restore the live display configuration.
+        self.__result = pychronos.readframe(address, hRes, vRes)
         self.liveAddr[0] = backup[0]
         self.liveAddr[1] = backup[1]
         self.liveAddr[2] = backup[2]
-    

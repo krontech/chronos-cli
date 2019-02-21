@@ -1,6 +1,7 @@
 # Compiled objects and binaries.
 .*
 *.o
+__pycache__/
 /config.h
 /src/cam-daemon
 /src/cam-json
