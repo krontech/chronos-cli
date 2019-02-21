@@ -23,6 +23,14 @@ def asleep(secs):
     reactor.callLater(secs, d.callback, None)
     return d
 
+def allowCrossOrigin(request, methods='GET, POST, OPTION', contentType='application/json'):
+    # Append headers to allow cross-origin requests.
+    request.setHeader('Access-Control-Allow-Origin', '*')
+    request.setHeader('Access-Control-Allow-Methods', methods)
+    if ('POST' in methods):
+        request.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+    request.setHeader('Content-Type', contentType)
+    request.setHeader('Access-Control-Max-Age', 2520)
 
 eventList = {'test':'',
              'control/statusHasChanged':'/com/krontech/chronos/control/statusHasChanged',
@@ -92,10 +100,10 @@ class Method(resource.Resource):
         request.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTION')
         request.setHeader('Access-Control-Allow-Headers', 'Content-Type')
         request.setHeader('Access-Control-Max-Age', 2520)
-        request.setHeader('Content-Type', 'application/json')
 
     def render_OPTIONS(self, request):
-        self.allowCrossOrigin(request)
+        allowCrossOrigin(request)
+        request.setHeader('Content-Type', 'application/json')
         request.write('')
         request.finish()
         return server.NOT_DONE_YET
@@ -103,7 +111,8 @@ class Method(resource.Resource):
     def render_GET(self, request):
         if self.arguments:
             return b'"data" field required using POST'
-        self.allowCrossOrigin(request)
+        allowCrossOrigin(request)
+        request.setHeader('Content-Type', 'application/json')
         reactor.callLater(0.0, self.startDbusRequest, request)
         return server.NOT_DONE_YET
         
@@ -113,6 +122,7 @@ class Method(resource.Resource):
         if contentType == "application/json":
             # Expect a JSON object for the POST data.
             data = request.content.getvalue().decode("utf8")
+            request.setHeader('Content-Type', 'application/json')
             reactor.callLater(0.0, self.startDbusRequestWData, request, json.loads(data))
             return server.NOT_DONE_YET
         if self.arguments:
@@ -126,6 +136,7 @@ class Method(resource.Resource):
                 data += line.decode('utf8')
             data = json.loads(data)
 
+            request.setHeader('Content-Type', 'application/json')
             reactor.callLater(0.0, self.startDbusRequestWData, request, data)
             return server.NOT_DONE_YET
         else:
@@ -164,8 +175,8 @@ class Subscribe(resource.Resource):
         self.subscribers = set()
 
     def render_GET(self, request):
+        allowCrossOrigin(request, methods='GET, OPTION')
         request.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
-        request.setHeader('Access-Control-Allow-Origin', '*')
         request.setResponseCode(200)
         self.subscribers.add(request)
         d = request.notifyFinish()
@@ -263,6 +274,7 @@ class previewImage(resource.Resource):
         super().__init__()
 
     def render_GET(self, request):
+        allowCrossOrigin(request, methods='GET, OPTION')
         request.setHeader('Content-Type', 'image/jpeg')
         reactor.callLater(0.0, self.requestPlaybackImage, request)
         return server.NOT_DONE_YET
@@ -283,6 +295,7 @@ class playbackImage(resource.Resource):
         super().__init__()
     
     def render_GET(self, request):
+        allowCrossOrigin(request, methods='GET, OPTION')
         request.setHeader('Content-Type', 'image/jpeg')
         reactor.callLater(0.0, self.requestPlaybackImage, request)
         return server.NOT_DONE_YET
@@ -301,6 +314,7 @@ class playbackImage(resource.Resource):
 class waitForTouch(resource.Resource):
     isLeaf = True
     def render_GET(self, request):
+        allowCrossOrigin(request, methods='GET, OPTION')
         reactor.callLater(0.0, self.runCommand, request)
         return server.NOT_DONE_YET
 
@@ -320,6 +334,7 @@ class waitForTouchThenBlackcal(resource.Resource):
         super().__init__()
     
     def render_GET(self, request):
+        allowCrossOrigin(request, methods='GET, OPTION')
         reactor.callLater(0.0, self.runCommand, request)
         return server.NOT_DONE_YET
         
