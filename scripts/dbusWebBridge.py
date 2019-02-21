@@ -2,7 +2,7 @@ import sys
 
 from twisted.web import server, resource
 from twisted.web.static import File
-from twisted.internet import reactor, defer
+from twisted.internet import reactor, defer, utils
 from twisted.python import log
 from twisted.internet.defer import inlineCallbacks
 
@@ -270,7 +270,43 @@ class playbackImage(resource.Resource):
         image = open('/tmp/cam-screencap.jpg', 'br').read()
         request.write(image)
         request.finish()
+
+
+class waitForTouch(resource.Resource):
+    isLeaf = True
+    def render_GET(self, request):
+        reactor.callLater(0.0, self.runCommand, request)
+        return server.NOT_DONE_YET
+
+    @inlineCallbacks
+    def runCommand(self, request):
+        logging.info('started wait for touch')
+        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py'], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb1"})
+        logging.info('touch happened')
+        request.write(b'{"Touched":true}')
+        request.finish()
+
+class waitForTouchThenBlackcal(resource.Resource):
+    isLeaf = True
+    def __init__(self, controlApi):
+        self.controlApi = controlApi
+        super().__init__()
     
+    def render_GET(self, request):
+        reactor.callLater(0.0, self.runCommand, request)
+        return server.NOT_DONE_YET
+        
+    @inlineCallbacks
+    def runCommand(self, request):
+        logging.info('started wait for touch')
+        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py', 'touch to cal'], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb1"})
+        logging.info('touch happened; calibrating')
+
+        reply = yield self.controlApi.callRemote('calibrate', {"blackCal":True, "analogCal":True})
+        returnData = json.dumps(reply)
+        request.write(bytes('{0}\n'.format(returnData), 'utf8'))
+        request.finish()
+        
 @inlineCallbacks
 def main():
     subscribe = Subscribe()
@@ -332,6 +368,9 @@ def main():
     root.putChild(b'liveImage.jpg', previewImage(videoApi))
     root.putChild(b'playbackImage.jpg', playbackImage(videoApi))
 
+    root.putChild(b'waitForTouch', waitForTouch())
+    root.putChild(b'waitForTouchThenBlackcal', waitForTouchThenBlackcal(controlApi))
+    
 if __name__ == "__main__":
     root = Root()
     logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s [%(funcName)s] %(message)s')
