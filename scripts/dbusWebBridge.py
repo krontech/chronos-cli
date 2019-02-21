@@ -232,10 +232,44 @@ class dbusPublisher:
 
 class previewImage(resource.Resource):
     isLeaf = True
+    def __init__(self, bus):
+        self.bus = bus
+        super().__init__()
+
     def render_GET(self, request):
         request.setHeader('Content-Type', 'image/jpeg')
+        reactor.callLater(0.0, self.requestPlaybackImage, request)
+        return server.NOT_DONE_YET
+
+    @inlineCallbacks
+    def requestPlaybackImage(self, request):
+        reply = yield self.bus.callRemote('livedisplay')
+        yield asleep(1/60)
+
         image = open('/tmp/cam-screencap.jpg', 'br').read()
-        return image
+        request.write(image)
+        request.finish()
+
+class playbackImage(resource.Resource):
+    isLeaf = True
+    def __init__(self, bus):
+        self.bus = bus
+        super().__init__()
+    
+    def render_GET(self, request):
+        request.setHeader('Content-Type', 'image/jpeg')
+        reactor.callLater(0.0, self.requestPlaybackImage, request)
+        return server.NOT_DONE_YET
+
+    @inlineCallbacks
+    def requestPlaybackImage(self, request):
+        frameNum = int(request.args.get(b'frameNum', (0))[0])
+        reply = yield self.bus.callRemote('playback', {"framerate":0, "position":frameNum})
+        yield asleep(1/60)
+
+        image = open('/tmp/cam-screencap.jpg', 'br').read()
+        request.write(image)
+        request.finish()
     
 @inlineCallbacks
 def main():
@@ -294,8 +328,9 @@ def main():
     Method(video, videoApi, 'stop',        arguments=False)
     Method(video, videoApi, 'overlay',     arguments=True)
 
-    root.putChild(b'screenCap.jpg', previewImage())
-    
+    root.putChild(b'screenCap.jpg', previewImage(videoApi))
+    root.putChild(b'liveImage.jpg', previewImage(videoApi))
+    root.putChild(b'playbackImage.jpg', playbackImage(videoApi))
 
 if __name__ == "__main__":
     root = Root()
