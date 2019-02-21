@@ -86,14 +86,37 @@ class Method(resource.Resource):
 
         self.parent.putChild(bytes(methodName, 'utf8'), self)
 
+    def allowCrossOrigin(self, request):
+        # Append headers to allow cross-origin requests.
+        request.setHeader('Access-Control-Allow-Origin', '*')
+        request.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTION')
+        request.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+        request.setHeader('Access-Control-Max-Age', 2520)
+        request.setHeader('Content-Type', 'application/json')
+
+    def render_OPTIONS(self, request):
+        self.allowCrossOrigin(request)
+        request.write('')
+        request.finish()
+        return server.NOT_DONE_YET
+
     def render_GET(self, request):
         if self.arguments:
             return b'"data" field required using POST'
+        self.allowCrossOrigin(request)
         reactor.callLater(0.0, self.startDbusRequest, request)
         return server.NOT_DONE_YET
         
     def render_POST(self, request):
+        contentType = request.getHeader("Content-Type")
+        self.allowCrossOrigin(request)
+        if contentType == "application/json":
+            # Expect a JSON object for the POST data.
+            data = request.content.getvalue().decode("utf8")
+            reactor.callLater(0.0, self.startDbusRequestWData, request, json.loads(data))
+            return server.NOT_DONE_YET
         if self.arguments:
+            # Expect JSON data passed in URL-encoded form.
             rawData = request.args.get(b'data', None)
             if not rawData:
                 request.setResponseCode(400)
@@ -142,6 +165,7 @@ class Subscribe(resource.Resource):
 
     def render_GET(self, request):
         request.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+        request.setHeader('Access-Control-Allow-Origin', '*')
         request.setResponseCode(200)
         self.subscribers.add(request)
         d = request.notifyFinish()
@@ -334,6 +358,7 @@ def main():
     control = resource.Resource()
     root.putChild(b'control', control)
     Method(control, controlApi, 'getCameraData',            arguments=False)
+    Method(control, controlApi, 'setDescription',           arguments=True)
     Method(control, controlApi, 'getSensorData',            arguments=False)
     Method(control, controlApi, 'status',                   arguments=False)
     Method(control, controlApi, 'reinitSystem',             arguments=True)

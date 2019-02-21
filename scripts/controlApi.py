@@ -1,15 +1,16 @@
 #!/usr/bin/python3
 API_VERISON_STRING = '0.1'
 
-import numpy
-
-from twisted.internet import reactor, defer, utils
+from twisted.internet import reactor
+from twisted.internet import defer
+from twisted.internet import utils
 from twisted.internet.defer import inlineCallbacks
 
 from txdbus           import client, objects, error
 from txdbus.interface import DBusInterface, Method, Signal
 from txdbus.objects   import dbusMethod
 
+import numpy
 import logging
 
 from camera import camera
@@ -41,14 +42,11 @@ REC_LED_BACK = "/sys/class/gpio/gpio25/value"
 krontechControl     =  'com.krontech.chronos.control'
 krontechControlPath = '/com/krontech/chronos/control'
 
-
-
-
-
 class controlApi(objects.DBusObject):
     iface = DBusInterface(krontechControl,
                           Method('getCameraData',            arguments='',      returns='a{sv}'),
                           Method('getSensorData',            arguments='',      returns='a{sv}'),
+                          Method('setDescription',           arguments='a{sv}', returns='a{sv}'),
                           Method('status',                   arguments='',      returns='a{sv}'),
                           Signal('statusHasChanged',         arguments='a{sv}'),
 
@@ -81,22 +79,32 @@ class controlApi(objects.DBusObject):
     )
     dbusInterfaces = [iface]
 
+    ## This feels like a duplication of the Python exceptions.
     ERROR_NOT_IMPLEMENTED_YET = 9999
     VALUE_ERROR               = 1
-   
-    
+
     def __init__(self, objectPath, conn, camera):
         self.conn = conn
         super().__init__(objectPath)
-        self.currentState = 'idle'
 
         self.camera = camera
         self.io = regmaps.ioInterface()
         self.display = regmaps.display()
 
+        self.currentState = 'idle'
+        self.description = "Chronos SN:%s" % (self.camera.getSerialNumber())
+        self.idNumber = None
+
         reactor.callLater(0.05, self.reinitSystem, {'reset':True, 'sensor':True})
-
-
+    
+    # Return a state dictionary
+    def status(self, lastState=None, error=None):
+        data = {'state':self.currentState}
+        if lastState:
+            data['lastState'] = lastState
+        if error:
+            data['error'] = error
+        return data
 
     def emitStateChanged(self, reason=None, details=None):
         data = {'state':self.currentState}
@@ -106,7 +114,6 @@ class controlApi(objects.DBusObject):
             data['details'] = details
         self.emitSignal('statusHasChanged', (data))
         
-
     def pokeCamPipelineToRestart(self):
         utils.getProcessOutput('killall', ['-HUP', 'cam-pipeline'])
 
@@ -118,31 +125,51 @@ class controlApi(objects.DBusObject):
     
     @dbusMethod(krontechControl, 'getCameraData')
     def dbusGetCameraData(self):
-        return {
+        data = {
             'model':'Chronos1.4',
-            'serial':0, # make this get hardware serial
             'apiVersion':API_VERISON_STRING,
-            'serial':self.camera.getSerialNumber().strip()
+            'serial':self.camera.getSerialNumber().strip(),
+            'description':self.description,
         }
+        if (self.idNumber is not None):
+            data['idNumber'] = self.idNumber
+        return data
 
     @dbusMethod(krontechControl, 'getSensorData')
     def dbusGetSensorData(self):
-        return {
-            'name':'LUX1310',
+        geometry = self.camera.sensor.getMaxGeometry()
+        cfaPattern = self.camera.sensor.cfaPattern
+        data = {
+            'name': self.camera.sensor.name,
             'pixelRate':1.4*10**9,
-            'hMax':1280,
-            'vMax':1024,
-            'hMin':320,
-            'vMin':2,
-            'hIncrement':16,
-            'vIncrement':2,
-            'pixelFormat':'BYR2-RGGB'
+            'hMax': geometry.hRes,
+            'vMax': geometry.vRes,
+            'hMin': 320,
+            'vMin': 2,
+            'hIncrement': 16,
+            'vIncrement': 2,
+            'pixelFormat': 'Y12'
         }
+        # If a color sensor, set the pixel format accordingly.
+        if (cfaPattern):
+            cfaString = "BYR2-"
+            for color in cfaPattern:
+                cfaString += color
+            data["pixelFormat"] = cfaString
+        
+        return data
+
+    @dbusMethod(krontechControl, 'setDescription')
+    def dbusSetDescription(self, args):
+        if args["description"]:
+            self.description = str(args["description"])
+        if args["idNumber"]:
+            self.idNumber = int(args["idNumber"])
+        return self.status()
 
     @dbusMethod(krontechControl, 'status')
     def dbusStatus(self):
-        logging.debug('request for status')
-        return {'state':self.currentState}
+        return self.status()
     
     #===============================================================================================
     #Method('reinitSystem',             arguments='a{sv}', returns='a{sv}'),
@@ -151,7 +178,7 @@ class controlApi(objects.DBusObject):
     def dbusReinitSystem(self, args):
         reactor.callLater(0.0, self.reinitSystem, args)
         self.currentState = 'reinitializing'
-        return {'state':self.currentState}
+        return self.status()
 
     def reinitSystem(self, args):
         recal = False
@@ -247,7 +274,7 @@ class controlApi(objects.DBusObject):
         return appliedGeometry
 
     @dbusMethod(krontechControl, 'setSensorTiming')
-    def setSensorSettings(self, args):
+    def setSensorTiming(self, args):
         # check if we have a frameRate field and if so convert it to framePeriod
         frameRate = args.get('frameRate')
         if frameRate:
@@ -268,7 +295,6 @@ class controlApi(objects.DBusObject):
         returnData['exposure']    = self.camera.sensor.getCurrentExposure()
         return returnData
         
-    
     #===============================================================================================
     #Method('getIoCapabilities',        arguments='',      returns='a{sv}'),
     #Method('getIoMapping',             arguments='a{sv}', returns='a{sv}'),
@@ -302,7 +328,6 @@ class controlApi(objects.DBusObject):
         self.currentState = 'calibrating'
         return {'success':'started calibration'}
 
-    
     @inlineCallbacks
     def startCalibration(self, args):
         self.emitStateChanged()
@@ -327,7 +352,6 @@ class controlApi(objects.DBusObject):
                 
         self.currentState = 'idle'
         self.emitStateChanged(reason='calibration complete')
-
 
     #===============================================================================================
     #Method('getColorMatrix',           arguments='',      returns='a{sv}'),

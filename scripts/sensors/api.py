@@ -48,6 +48,20 @@ class api(ABC):
         pass
 
     #--------------------------------------------
+    # Sensor Descriptive Properties
+    #--------------------------------------------
+    @property
+    @abstractmethod
+    def name(self):
+        """The name of the image sensor"""
+        pass
+    
+    @property
+    def cfaPattern(self):
+        """The color filter array pattern or None for monochrome sensors"""
+        return None
+
+    #--------------------------------------------
     # Frame Geometry Configuration Functions
     #--------------------------------------------
     @abstractmethod

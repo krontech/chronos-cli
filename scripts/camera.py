@@ -217,7 +217,7 @@ class camera:
         serial = os.read(fd, 12)
         os.close(fd)
         try:
-            return serial.decode("utf-8")
+            return serial.decode("utf-8").strip('\0')
         except:
             return ""
 

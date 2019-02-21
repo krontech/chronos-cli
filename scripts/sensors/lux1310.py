@@ -37,6 +37,17 @@ class lux1310(api):
     COL_GAIN_FRAC_BITS = 12
     COL_CURVE_FRAC_BITS = 21
 
+    @property
+    def name(self):
+        return "LUX1310"
+    
+    @property
+    def cfaPattern(self):
+        if (self.sci.color):
+            return ['R', 'G', 'G', 'B']
+        else:
+            return None
+
     def __init__(self):
         ## Hardware Resources
         self.sci = pychronos.lux1310()
@@ -500,8 +511,12 @@ class lux1310(api):
         gain3pt *= (1 << self.COL_GAIN_FRAC_BITS)
         curve3pt *= (1 << self.COL_CURVE_FRAC_BITS)
         for col in range(self.MAX_HRES):
+            curvature = int(curve3pt[col % self.ADC_CHANNELS])
             colGainRegs.mem16[col] = int(gain3pt[col % self.ADC_CHANNELS])
-            colCurveRegs.mem16[col] = int(curve3pt[col % self.ADC_CHANNELS]) & 0xffff
+            if (curvature > 0):
+                colCurveRegs.mem16[col] = curvature
+            else:
+                colCurveRegs.mem16[col] = (0x10000 + curvature) & 0xffff
         display = pychronos.display()
         display.gainControl |= display.GAINCTL_3POINT
 
