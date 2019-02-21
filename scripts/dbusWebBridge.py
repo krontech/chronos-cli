@@ -374,6 +374,7 @@ def main():
 
     root.putChild(b'waitForTouch', waitForTouch())
     root.putChild(b'waitForTouchThenBlackcal', waitForTouchThenBlackcal(controlApi))
+    logging.info("All Systems Go")
     
 if __name__ == "__main__":
     root = Root()
