@@ -11,6 +11,8 @@ from txdbus import client, error
 import json
 import logging
 
+import cgi
+
 def asleep(secs):
     """
     @brief Do a reactor-safe sleep call. Call with yield to block until done.
@@ -280,8 +282,9 @@ class waitForTouch(resource.Resource):
 
     @inlineCallbacks
     def runCommand(self, request):
+        message = cgi.escape(request.args.get(b'message', (b"Tap"))[0].decode('utf8'))
         logging.info('started wait for touch')
-        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py'], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb1"})
+        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py', message], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb0"})
         logging.info('touch happened')
         request.write(b'{"Touched":true}')
         request.finish()
@@ -298,8 +301,9 @@ class waitForTouchThenBlackcal(resource.Resource):
         
     @inlineCallbacks
     def runCommand(self, request):
+        message = cgi.escape(request.args.get(b'message', (b"Touch to cal"))[0].decode('utf8'))
         logging.info('started wait for touch')
-        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py', 'touch to cal'], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb1"})
+        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py', message], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb0"})
         logging.info('touch happened; calibrating')
 
         reply = yield self.controlApi.callRemote('calibrate', {"blackCal":True, "analogCal":True})

@@ -34,14 +34,14 @@ ui = """<?xml version="1.0" encoding="UTF-8"?>
    </property>
    <property name="font">
     <font>
-     <pointsize>200</pointsize>
+     <pointsize>50</pointsize>
     </font>
    </property>
    <property name="focusPolicy">
     <enum>Qt::NoFocus</enum>
    </property>
    <property name="styleSheet">
-    <string notr="true">background: rgba(255,255,255,64)</string>
+    <string notr="true">background: rgba(127,127,127,64)</string>
    </property>
    <property name="text">
     <string>Set #</string>
