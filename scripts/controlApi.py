@@ -163,7 +163,7 @@ class controlApi(objects.DBusObject):
     def dbusSetDescription(self, args):
         if args["description"]:
             self.description = str(args["description"])
-        if args["idNumber"]:
+        if args["idNumber"] is not None:
             self.idNumber = int(args["idNumber"])
         return self.status()
 
