@@ -8,6 +8,8 @@ import numpy
 import regmaps
 import spd
 
+import logging
+
 class camera:
     BYTES_PER_WORD = 32
     FRAME_ALIGN_WORDS = 64
@@ -256,18 +258,20 @@ class camera:
         xres = display.hRes
         yres = display.vRes
 
-        print("Starting")
+        logging.debug('Starting')
 
         seq = regmaps.sequencer()
         fAverage = numpy.zeros((yres, xres))
         if (useLiveBuffer):
             # Readout and average the frames from the live buffer.
             for i in range(0, numFrames):
+                logging.debug('waiting for frame')
                 yield from seq.startLiveReadout(xres, yres)
                 fAverage += numpy.asarray(seq.liveResult)
         else:
             # Take a recording and read the results from the live buffer.
             program = [regmaps.seqcommand(blockSize=numFrames+1, recTermBlkEnd=True, recTermBlkFull=True)]
+            logging.debug('making recording')
             yield from seq.startRecording([program])
             addr = seq.regionStart
             for i in range(0, numFrames):
@@ -349,6 +353,7 @@ class camera:
         for delay in state:
             time.sleep(delay)
         """
+
         # Grab the current frame size and exposure.
         fSize = self.sensor.getCurrentGeometry()
         expPrev = self.sensor.getCurrentExposure()

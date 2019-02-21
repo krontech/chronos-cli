@@ -18,8 +18,6 @@ from regmaps import seqcommand
 import regmaps
 import pychronos
 
-from ioInterface import ioInterface
-
 def asleep(secs):
     """
     @brief Do a reactor-safe sleep call. Call with yield to block until done.
@@ -93,14 +91,11 @@ class controlApi(objects.DBusObject):
         self.currentState = 'idle'
 
         self.camera = camera
-        self.io = ioInterface()
+        self.io = regmaps.ioInterface()
         self.display = regmaps.display()
 
-        self.reinitSystem({'reset':True, 'sensor':True})
+        reactor.callLater(0.05, self.reinitSystem, {'reset':True, 'sensor':True})
 
-        self.display.whiteBalance[0] = int(1.5226 * 4096)
-        self.display.whiteBalance[1] = int(1.0723 * 4096)
-        self.display.whiteBalance[2] = int(1.5655 * 4096)
 
 
     def emitStateChanged(self, reason=None, details=None):
@@ -159,19 +154,31 @@ class controlApi(objects.DBusObject):
         return {'state':self.currentState}
 
     def reinitSystem(self, args):
+        recal = False
         self.emitStateChanged()
         reinitAll = args.get('all', False)
         if args.get('fpga') or reinitAll:
             reinitAll = True
+            recal = True
             self.camera.reset(FPGA_BITSTREAM)
 
         if args.get('reset'):
+            recal = True
             self.camera.reset()
             
         if args.get('sensor') or reinitAll:
+            recal = True
             self.camera.sensor.reset()
 
-        self.currentState = 'idle'
+        if recal:
+            self.display.whiteBalance[0] = int(1.5226 * 4096)
+            self.display.whiteBalance[1] = int(1.0723 * 4096)
+            self.display.whiteBalance[2] = int(1.5655 * 4096)
+            
+            self.currentState = 'calibrating'
+            reactor.callLater(0.05, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
+        else:
+            self.currentState = 'idle'
         self.emitStateChanged(reason='(re)initialization complete')
 
     #===============================================================================================
@@ -300,9 +307,9 @@ class controlApi(objects.DBusObject):
     def startCalibration(self, args):
         self.emitStateChanged()
 
-        blackCal = args.get('blackCal') or args.get('fpn') or args.get('basic')
+        blackCal         = args.get('blackCal') or args.get('fpn')
         zeroTimeBlackCal = args.get('zeroTimeBlackCal') or args.get('basic')
-        analogCal = args.get('analogCal') or args.get('analog')
+        analogCal        = args.get('analogCal') or args.get('analog') or args.get('basic')
 
         if analogCal:
             logging.info('starting analog calibration')

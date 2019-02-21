@@ -165,18 +165,45 @@ class sensorTiming(pychronos.fpgamap):
         
     @property
     def frameTime(self):
-        return self.__frameTime
+        if (self.__disableFrameTrig):
+            return (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
+        else:
+            return (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
     @frameTime.setter
     def frameTime(self, value):
-        self.programStandard(self.__frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        self.programStandard(value, self.integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
         
     @property
     def integrationTime(self):
-        return self.__integrationTime
+        if (self.__disableFrameTrig):
+            frameTime = (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
+            integrationTime = frameTime - (self.program[1] & 0x00FFFFFF)
+        else:
+            frameTime = (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
+            integrationTime = frameTime - (self.program[3] & 0x00FFFFFF)
+        return integrationTime
     @integrationTime.setter
     def integrationTime(self, value):
-        self.programStandard(self.__frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        self.programStandard(self.frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
 
+    def programShutterGating(self, t2Time=17, timeout=0.01):
+        self.program[0] = self.None + t2Time
+        self.program.next = self.ABN  | self.TIMING_WAIT_FOR_ACTIVE
+        self.program.next = self.IODRIVE | self.NONE | self.TIMING_WAIT_FOR_INACTIVE
+        self.program.next = self.TXN  | 0x31
+        self.program.next = self.NONE | self.TIMING_RESTART
+        if timeout < 0:
+            self.flip(force=True)
+        else:
+            start = time.time()
+            while time.time() < (start + timeout):
+                if not self.busy:
+                    break
+            if not self.busy:
+                self.flip(force=True)
+            else:
+                self.flip()
+        
     def programStandard(self, frameTime, integrationTime, t2Time=17, disableFrameTrig=False, disableIoDrive=False, timeout=0.01):
         frameTime       = int(frameTime)
         integrationTime = int(integrationTime)
@@ -199,8 +226,8 @@ class sensorTiming(pychronos.fpgamap):
             self.program.next = self.ABN | self.TIMING_WAIT_FOR_ACTIVE   # (hence why the hold happens after the first command)
         self.program.next = self.ABN + (frameTime - integrationTime)
         self.program.next = ioDrive + self.NONE + (integrationTime) # ABN raises
-        self.program.next = ioDrive + self.PRSTN + 0x000001         # PRSTN falls
-        self.program.next = ioDrive + self.NONE + 0x000016          # and raises
+        #self.program.next = ioDrive + self.PRSTN + 0x000001         # PRSTN falls
+        #self.program.next = ioDrive + self.NONE + 0x000016          # and raises
         self.program.next = ioDrive + self.TXN + 0x31               # TXN falls
         self.program.next = self.TIMING_RESTART                          # TXN raises and cycle restarts
 
@@ -314,6 +341,7 @@ if __name__ == '__main__':
         frameTime       = int(sensor.framePeriod * 0.9)
         integrationTime = int(sensor.intTime * 0.9)
 
-        timing.programSpecial(frameTime, integrationTime, t2Time=t2Time)
+        timing.programStandard(frameTime, integrationTime, t2Time=t2Time)
+        #timing.programSpecial(frameTime, integrationTime, t2Time=t2Time)
         #timing.programHDR_3slope(frameTime, int(integrationTime * 0.9), int(integrationTime * 0.09), int(integrationTime * 0.01), VDR1=2.5, VDR2=2.0)
         

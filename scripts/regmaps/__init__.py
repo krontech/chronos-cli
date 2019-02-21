@@ -5,3 +5,5 @@ from regmaps.sequencer import seqcommand
 from regmaps.display import display
 from regmaps.vram import vram
 from regmaps.overlay import overlay
+from regmaps.sensorTiming import sensorTiming
+from regmaps.ioInterface import ioInterface

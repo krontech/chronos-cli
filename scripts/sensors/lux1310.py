@@ -9,6 +9,8 @@ from regmaps import sequencer, sensorTiming
 from sensors import api, frameGeometry
 from . import lux1310wt
 
+import logging
+
 class lux1310(api):
     # Image sensor geometry constraints
     MAX_HRES = 1280
@@ -41,10 +43,11 @@ class lux1310(api):
         self.sci = pychronos.lux1310()
         self.fpga = pychronos.sensor()
         self.wavetables = lux1310wt.wavetables
-        self.timing = sensorTiming.sensorTiming()
+        self.timing = sensorTiming()
 
-        self.timing.enabled = True
-        self.timing.programStandard(90000, 85000)
+        if not self.timing.enabled:
+            self.timing.enabled = True
+            self.timing.programStandard(90000, 85000)
 
         ## ADC Calibration state
         self.adcOffsets = [0] * self.HRES_INCREMENT
@@ -526,14 +529,19 @@ class lux1310(api):
             fSizeCal.vRes -= fSizeCal.vDarkRows
 
             # Disable the FPGA timing engine and apply the changes.
+            logging.debug('about to stop timing')
             self.timing.stopTiming(waitUntilStopped=True)
+            logging.debug('changing readout window')
             self.updateReadoutWindow(fSizeCal)
+            logging.debug('resuming timing')
             self.timing.continueTiming()
         
         # Perform ADC offset calibration using the optical black regions.
+        logging.debug('autoAdcOffsetCal')
         yield from self.autoAdcOffsetCal(fSizeCal)
 
         # Perform ADC column gain calibration using the dummy voltage.
+        logging.debug('autoAdcGainCal')
         yield from self.autoAdcGainCal(fSizeCal)
 
         # Restore the frame period and wavetable.
