@@ -44,10 +44,6 @@ class lux1310(api):
         self.wavetables = lux1310wt.wavetables
         self.timing = sensorTiming()
 
-        if not self.timing.enabled:
-            self.timing.enabled = True
-            self.timing.programStandard(90000, 85000)
-
         ## ADC Calibration state
         self.adcOffsets = [0] * self.HRES_INCREMENT
 

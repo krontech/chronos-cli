@@ -60,6 +60,8 @@ class seqcommand:
             self.blkTermHigh = kwargs["blkTermHigh"]
         if ("blkTermLow" in kwargs):
             self.blkTermLow = kwargs["blkTermLow"]
+        if ("blkTermFull" in kwargs):
+            self.blkTermFull = kwargs["blkTermFull"]
         if ("recTermBlockEnd" in kwargs):
             self.recTermBlockEnd = kwargs["recTermBlockEnd"]
         if ("recTermMemory" in kwargs):

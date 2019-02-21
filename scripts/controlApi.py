@@ -415,17 +415,24 @@ class controlApi(objects.DBusObject):
         # send flush
         
         geometry = self.camera.sensor.getCurrentGeometry()
-        nFrames       = args.get('nFrames', self.camera.getRecordingMaxFrames(geometry))
-        recTermMemory = args.get('recTermMemory', True) # this should probably be false
-        blkTermFull   = args.get('blkTermFull', True) # maybe this shold be false?
 
+        # set up some defaults
+        if not 'blkTermFull'     in args: args['blkTermFull']     = True
+        if not 'recTermMemory'   in args: args['recTermMemory']   = True
+        if not 'recTermBlockEnd' in args: args['recTermBlockEnd'] = True
+
+        # use blockSize if given; otherwise use nFrames or use getRecordMaxFrames
+        nFrames = args.get('nFrames', self.camera.getRecordingMaxFrames(geometry))
+        args['blockSize'] = args.get('blockSize', nFrames)
+
+        # override a few variables
+        args['nextState'] = 0
+        
         # TODO: make this use args
-        program = [ seqcommand(blockSize=nFrames,
-                               blkTermRising=True,
-                               recTermBlockEnd=True,
-                               blkTermFull=blkTermFull,
-                               recTermMemory=recTermMemory) ]
+        program = [ seqcommand(**args) ]
 
+        logging.info('Recording program: %s', program[0])
+        
         for delay in self.camera.startRecording(program):
             yield asleep(delay)
 
@@ -449,7 +456,9 @@ def main():
     cam = camera(lux1310())
 
     try:
+        logging.debug('about to test FPGA version')
         output = yield utils.getProcessOutput('python3',['testFpga.py'], errortoo=True)
+        logging.debug('output: %s', repr(output))
         if output and float(output) >= 3.19 and float(output) < 4.0:
             logging.info('FPGA State: All good. Current version: %0.2f', float(output))
         else:
