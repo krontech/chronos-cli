@@ -306,11 +306,9 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
         return 0;
     }
 
-    /* Generate the response */
-    *data = cam_dbus_dict_new();
-
     /* Restart the video pipeline to enter recording mode. */
     cam_pipeline_restart(state);
+    *data = cam_dbus_video_status(state);
     return 1;
 }
 

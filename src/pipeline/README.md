@@ -62,6 +62,10 @@ And emits the DBus signal:
  * [`eof`](#eof): The video stream has ended and the video pipeline is about to change mode.
  * [`segment`](#segment): The video pipeline has received a new video segment from the FPGA.
 
+Methods which take arguments accept an array of string variant tuples (D-Bus type code of
+`a{sv}`), forming a hash map of the arguments. All methods return an array of string variant
+tuples, with the same contents as described by the `status` method.
+
 status
 ------
 Returns the current status of the video pipeline, This method takes no
@@ -83,8 +87,7 @@ arguments, and the returned hash map will contain the following members.
 flush
 -----
 Clear all recording segments from video memory and return the video system back
-to live display mode. This method takes no arguments, and returns the same values
-as the [`status`](#status) method.
+to live display mode.
 
 playback
 --------
@@ -101,8 +104,6 @@ the captured frames. This method takes the following optional arguments.
 | `"position"`      | `uint`    | The frame number to start playback from.
 | `"loopcount"`     | `uint`    | The number of frames to loop over.
 
-This method will return the same values as the [`status`](#status) method.
-
 configure
 ---------
 Configure the video size and position to be rendered to the LCD interface, or
@@ -117,8 +118,6 @@ adjust video settings.
 | `"xoff"`          | `uint`    | Horizontal position of the video display area.
 | `"yoff"`          | `uint`    | Vertical position of the video display area.
 
-This method will return the same values as the [`status`](#status) method.
-
 livedisplay
 -----------
 Switches the pipeline to live display mode, and optionally reconfigures the
@@ -132,8 +131,6 @@ configuration changes.
 | `"peaking"`       | `boolean` | Enable peaking for focus aid.
 | `"hres"`          | `int`     | The horizontal resolution of live video.
 | `"vres"`          | `uint`    | The vertical resolution of live video.
-
-This method will return the same values as the [`status`](#status) method.
 
 recordfile
 ----------
@@ -163,12 +160,10 @@ The `format` field accepts a string to enumerate the output video format, suppor
 The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
 for all other encoding formats.
 
-The `recordfile` function will immediately return an empty hash map.
-
 stop
 ----
 Terminate any active filesave events, and return to playback mode. In any other state this should cause the
-video system to reboot and return to the same state. This method takes no parameters, and returns no values.
+video system to reboot and return to the same state.
 
 overlay
 -------
