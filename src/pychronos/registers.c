@@ -29,8 +29,9 @@ struct fpgamap_reginfo {
     unsigned long   offset; /* Starting offset of the register. */
     unsigned long   size;   /* Length of the scalar (or of a single element in the array). */
     unsigned long   count;  /* Zero for scalar types, length of the array for array types. */
+    unsigned long long mask; /* Mask of register subfield to extract, or zero for full read/write. */
 };
-#define FPGA_REG_INFO(_offset_, _size_, _count_) (struct fpgamap_reginfo []){{_offset_, _size_, _count_}}
+#define FPGA_REG_INFO(_offset_, _size_, _count_) (struct fpgamap_reginfo []){{_offset_, _size_, _count_, 0}}
 
 #define FPGA_REG_TYPED(_container_, _member_, _type_) \
     FPGA_REG_INFO(offsetof(_container_, _member_), sizeof(_type_), 0)
@@ -51,15 +52,92 @@ static PyObject *
 fpga_get_uint(PyObject *self, void *closure)
 {
     struct fpgamap_reginfo *info = closure;
+    unsigned long long value = 0;
+    unsigned long long lsb;
     switch (info->size) {
-        case sizeof(uint8_t):   return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint8_t));
-        case sizeof(uint16_t):  return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint16_t));
-        case sizeof(uint32_t):  return PyLong_FromUnsignedLong(*fpgaptr(self, info->offset, uint32_t));
-        case sizeof(uint64_t):  return PyLong_FromUnsignedLongLong(*fpgaptr(self, info->offset, uint64_t));
+        case sizeof(uint8_t):
+            value = *fpgaptr(self, info->offset, uint8_t);
+            break;
+        case sizeof(uint16_t):
+            value = *fpgaptr(self, info->offset, uint16_t);
+            break;
+        case sizeof(uint32_t):
+            value = *fpgaptr(self, info->offset, uint32_t);
+            break;
+        case sizeof(uint64_t):
+            value = *fpgaptr(self, info->offset, uint64_t);
+            break;
         default:
             PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
             return NULL;
     }
+    
+    /* Simple read. */
+    if (info->mask == 0) {
+        return PyLong_FromUnsignedLongLong(value);
+    }
+
+    /* Perform a masked read. */
+    lsb = (~info->mask + 1) & info->mask;
+    if (info->mask != lsb) {
+        return PyLong_FromUnsignedLongLong((value & info->mask) / lsb);
+    }
+    else if (value & info->mask) {
+        Py_RETURN_TRUE;
+    }
+    else {
+        Py_RETURN_FALSE;
+    }
+}
+
+static int
+fpga_rmw_uint(PyObject *self, PyObject *value, void *closure)
+{
+    struct fpgamap_reginfo *info = closure;
+    unsigned long long lsb = (~info->mask + 1) & info->mask;
+    unsigned long long intval, prev;
+    PyObject *intobj;
+
+    /* Convert whatever we got into an integer. */
+    intobj = PyNumber_Long(value);
+    if (!intobj) {
+        return -1;
+    }
+    intval = PyLong_AsUnsignedLongLong(intobj) * lsb;
+    Py_DECREF(intobj);
+    
+    /* Ensure that it fits within the mask. */
+    if ((info->mask >> (info->size * 8)) != 0) {
+        PyErr_SetString(PyExc_ValueError, "Register mask out of range for size.");
+        return -1;
+    }
+    if ((intval & ~info->mask) != 0) {
+        PyErr_SetString(PyExc_ValueError, "Register value out of range");
+        return -1;
+    }
+
+    switch (info->size) {
+        case sizeof(uint8_t):
+            prev = *fpgaptr(self, info->offset, uint8_t) & ~info->mask;
+            *fpgaptr(self, info->offset, uint8_t) = (prev | intval);
+            break;
+        case sizeof(uint16_t):
+            prev = *fpgaptr(self, info->offset, uint16_t) & ~info->mask;
+            *fpgaptr(self, info->offset, uint16_t) = (prev | intval);
+            break;
+        case sizeof(uint32_t):
+            prev = *fpgaptr(self, info->offset, uint32_t) & ~info->mask;
+            *fpgaptr(self, info->offset, uint32_t) = (prev | intval);
+            break;
+        case sizeof(uint64_t):
+            prev = *fpgaptr(self, info->offset, uint64_t) & ~info->mask;
+            *fpgaptr(self, info->offset, uint64_t) = (prev | intval);
+            break;
+        default:
+            PyErr_SetString(PyExc_RuntimeError, "Invalid register access size");
+            return -1;
+    }
+    return 0;
 }
 
 static int
@@ -69,18 +147,25 @@ fpga_set_uint(PyObject *self, PyObject *value, void *closure)
     unsigned long long intval;
     PyObject *intobj;
 
+    /* Special case for masked writes. */
+    if (info->mask != 0) {
+        return fpga_rmw_uint(self, value, closure);
+    }
+
     /* Convert whatever we got into an integer. */
     intobj = PyNumber_Long(value);
     if (!intobj) {
         return -1;
     }
     intval = PyLong_AsUnsignedLongLong(intobj);
+    Py_DECREF(intobj);
+
+    /* Sanity check the range. */
     if ((intval >> (info->size * 8)) != 0) {
         Py_DECREF(intobj);
         PyErr_SetString(PyExc_ValueError, "Register value out of range");
         return -1;
     }
-    Py_DECREF(intobj);
 
     /* Write it into the registers. */
     switch (info->size) {
@@ -149,6 +234,7 @@ arrayview_getval(PyObject *self, PyObject *key)
         .offset = view->offset + (index * view->itemsize),
         .size = view->itemsize,
         .count = view->itemcount,
+        .mask = 0,
     };
 
     /* Sanity check the index. */
@@ -172,6 +258,7 @@ arrayview_setval(PyObject *self, PyObject *key, PyObject *value)
         .offset = view->offset + (index * view->itemsize),
         .size = view->itemsize,
         .count = view->itemcount,
+        .mask = 0,
     };
 
     /* Sanity check the index. */
@@ -369,6 +456,8 @@ offset : `int`\n\
     Offset in bytes from the start of the register mapping.\n\
 size : `int`\n\
     Length of the integer to read.\n\
+mask : `int`, optional\n\
+    Mask of bits to extract from the register value.\n\
 \n\
 Returns\n\
 -------\n\
@@ -381,12 +470,14 @@ fpgamap_reg_read(PyObject *self, PyObject *args, PyObject *kwargs)
     char *keywords[] = {
         "offset",
         "size",
+        "mask",
         NULL,
     };
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|kk", keywords, &info.offset, &info.size)) {
+    info.mask = 0;
+    info.count = 1;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "kk|K", keywords, &info.offset, &info.size, &info.mask)) {
         return NULL;
     }
-    info.count = 1;
     return fpga_get_uint(self, &info);
 }
 
@@ -404,7 +495,9 @@ offset : `int`\n\
 size : `int`\n\
     Length of the integer to write.\n\
 value : `object`\n\
-    Value to be written, must be convertable to an integer.");
+    Value to be written, must be convertable to an integer.\n\
+mask : `int`, optional\n\
+    Mask of bits to write into the register value.");
 
 static PyObject *
 fpgamap_reg_write(PyObject *self, PyObject *args, PyObject *kwargs)
@@ -415,12 +508,14 @@ fpgamap_reg_write(PyObject *self, PyObject *args, PyObject *kwargs)
         "offset",
         "size",
         "value",
+        "mask",
         NULL,
     };
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "|kkO", keywords, &info.offset, &info.size, &value)) {
+    info.count = 1;
+    info.mask = 0;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "kkO|K", keywords, &info.offset, &info.size, &value, &info.mask)) {
         return NULL;
     }
-    info.count = 1;
     fpga_set_uint(self, value, &info);
     Py_RETURN_NONE;
 }
