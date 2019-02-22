@@ -19,6 +19,7 @@
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
     <method name="livedisplay">
+      <arg name="args" direction="in" type="a{sv}"/>
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
     <method name="recordfile">

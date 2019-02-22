@@ -174,11 +174,55 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
 }
 
 static gboolean
-cam_video_livedisplay(CamVideo *vobj, GHashTable **data, GError **error)
+cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    state->args.mode = PIPELINE_MODE_LIVE;
-    playback_goto(state, PIPELINE_MODE_LIVE);
+    unsigned long hres = cam_dbus_dict_get_uint(args, "hres", 0);
+    unsigned long vres = cam_dbus_dict_get_uint(args, "vres", 0);
+
+    /*
+     * If both resolutions are zero, or are identical to the config, then
+     * just switch to live display without reconfiguring anything.
+     */
+    if ((!hres && !vres) || ((hres == state->hres) && (vres == state->vres))) {
+        state->args.mode = PIPELINE_MODE_LIVE;
+        playback_goto(state, PIPELINE_MODE_LIVE);
+    }
+    /* Otherwise, if the either resolution is zero, then throw an error. */
+    else if (hres == 0) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing argument: hres");
+        return 0;
+    }
+    else if (vres == 0) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing argument: vres");
+        return 0;
+    }
+    /* We can continue only by reconfiguring the video source. */
+    else {
+        state->hres = hres;
+        state->vres = vres;
+        cam_pipeline_restart(state);
+    }
+
+    /* Update the live display flags. */
+    state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
+    state->config.peaking = cam_dbus_dict_get_boolean(args, "peaking", state->config.peaking);
+    if (state->config.zebra) {
+        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+    } else {
+        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
+    }
+    if (state->config.peaking) {
+        state->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+    } else {
+        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+    }
+    /* In live display mode apply FPGA register changes immediately. */
+    if (state->mode == PIPELINE_MODE_LIVE) {
+        state->fpga->display->control &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE);
+        state->fpga->display->control |= (state->control & (DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE));
+    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }

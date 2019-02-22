@@ -25,7 +25,7 @@ the pipeline will generate an EOF signaland return to playback mode.
 The `cam-pipeline` program will respond to the following POSIX signals:
 
  * `SIGHUP`: Reboot the video pipeline and update its configuration.
- * `SIGINT`: Terminate the pipeline and shut down gracefully.
+ * `SIGINT` or `SIGTERM`: Terminate the pipeline and shut down gracefully.
  * `SIGUSR1`: Seek one frame forward when in playback mode.
  * `SIGUSR2`: Seek to the first frame when in playback mode.
 
@@ -52,7 +52,7 @@ which implements the methods:
 * [`flush`](#flush): Clear recorded video and return to live display mode.
 * [`playback`](#playback): Control the frame position and playback rate.
 * [`configure`](#configure): Configure video settings.
-* [`livedisplay`](#livedisplay): Switch to live display mode.
+* [`livedisplay`](#livedisplay): Switch or configure live display mode.
 * [`recordfile`](#recordfile): Encode and write video to a file.
 * [`stop`](#stop): Terminate video encoding and return to playback mode.
 * [`overlay`](#overlay): Configure an overlay text box for video and frame information.
@@ -121,8 +121,19 @@ This method will return the same values as the [`status`](#status) method.
 
 livedisplay
 -----------
-Switch the video system into live display mode. This method takes no input parameters, and
-returns the same values as the [`status`](#status) method.
+Switches the pipeline to live display mode, and optionally reconfigures the
+video resolution to receive from the FPGA. If both `hres` and `vres` are zero,
+this is interpreted as a request to switch to live display without any
+configuration changes.
+
+| Input             | Type      | Description
+|:----------------- |:--------- |:--------------
+| `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
+| `"peaking"`       | `boolean` | Enable peaking for focus aid.
+| `"hres"`          | `int`     | The horizontal resolution of live video.
+| `"vres"`          | `uint`    | The vertical resolution of live video.
+
+This method will return the same values as the [`status`](#status) method.
 
 recordfile
 ----------

@@ -31,6 +31,66 @@ static void playback_rate_init(struct pipeline_state *state);
 static void playback_rate_update(struct pipeline_state *state);
 
 /*===============================================
+ * Video Port Configuration
+ *===============================================
+ */
+static void
+playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
+{
+	const unsigned int hSync = 1;
+	const unsigned int hBackPorch = 64;
+	const unsigned int hFrontPorch = 4;
+	const unsigned int vSync = 1;
+	const unsigned int vBackPorch = 4;
+	const unsigned int vFrontPorch = 1;
+	unsigned int pxClock = 100000000;
+	unsigned int minHPeriod;
+	unsigned int hPeriod;
+	unsigned int vPeriod;
+	unsigned int fps;
+
+    /* FPGA version 3.14 and higher use a 133MHz pixel clock. */
+    if (state->fpga->config->version > 3) {
+		pxClock = 133333333;
+    }
+    else if ((state->fpga->config->version == 3) && (state->fpga->config->subver >= 14)) {
+        pxClock = 133333333;
+    }
+
+    /* Calculate minimum hPeriod to fit within 2048 max vertical resolution. */
+	hPeriod = hSync + hBackPorch + state->hres + hFrontPorch;
+	minHPeriod = (pxClock / ((2048+vBackPorch+vSync+vFrontPorch) * maxfps)) + 1;
+	if (hPeriod < minHPeriod) hPeriod = minHPeriod;
+
+    /* Calculate the vPeriod and make sure it's large enough for the frame. */
+	vPeriod = pxClock / (hPeriod * maxfps);
+	if (vPeriod < (state->vres + vBackPorch + vSync + vFrontPorch)) {
+		vPeriod = (state->vres + vBackPorch + vSync + vFrontPorch);
+	}
+
+	/* Calculate the FPS for debug output */
+	fps = pxClock / (vPeriod * hPeriod);
+	fprintf(stderr, "Setup display timing: %d*%d@%d (%lu*%lu max: %u)\n",
+		   (hPeriod - hBackPorch - hSync - hFrontPorch),
+		   (vPeriod - vBackPorch - vSync - vFrontPorch),
+		   fps, state->hres, state->vres, maxfps);
+	
+    /* Configure the FPGA */
+    state->fpga->display->h_res = state->hres;
+    state->fpga->display->h_out_res = state->hres;
+    state->fpga->display->v_res = state->vres;
+    state->fpga->display->v_out_res = state->vres;
+
+    state->fpga->display->h_period = hPeriod;
+    state->fpga->display->h_sync_len = hSync;
+    state->fpga->display->h_back_porch = hBackPorch;
+
+    state->fpga->display->v_period = vPeriod;
+    state->fpga->display->v_sync_len = vSync;
+    state->fpga->display->v_back_porch = vBackPorch;
+}
+
+/*===============================================
  * Timer for Framerate Control and Watchdog
  *===============================================
  */
@@ -291,6 +351,8 @@ playback_region_add(struct pipeline_state *state)
     region->size = (end - start) + region->framesz;
     region->offset = (last >= end) ? 0 : (last - start + region->framesz);
     /* Capture some metadata too */
+    region->hres = state->hres;
+    region->vres = state->vres;
     region->exposure = state->fpga->sensor->int_time;
     region->interval = state->fpga->sensor->frame_period;
 
@@ -346,6 +408,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             state->position = 0;
             overlay_clear(state);
             playback_timer_disarm(state);
+            playback_setup_timing(state, LIVE_MAX_FRAMERATE);
 
             /* Clear sync inhibit to enable automatic video output. */
             control &= ~(DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
@@ -363,6 +426,7 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
             state->fpga->display->control = control;
             overlay_setup(state);
+            playback_setup_timing(state, state->playrate);
             playback_timer_rearm(state);
             break;
         
@@ -387,11 +451,14 @@ playback_goto(struct pipeline_state *state, unsigned int mode)
             state->mode = mode;
             state->preroll = 3;
 
+
             /* Enable the test pattern and begin prerolling */
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_TEST_PATTERN;
             control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
             control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
             state->fpga->display->control = control;
+            overlay_setup(state);
+            playback_setup_timing(state, SAVE_MAX_FRAMERATE);
             state->fpga->display->manual_sync = 1;
             break;
     }
@@ -416,6 +483,7 @@ playback_play(struct pipeline_state *state, unsigned long frame, unsigned int ra
     state->fpga->display->control = control;
     overlay_setup(state);
     playback_timer_rearm(state);
+    playback_setup_timing(state, state->playrate);
 }
 
 /* Start playback at a given framerate and loop over a subset of frames. */
@@ -437,6 +505,7 @@ playback_loop(struct pipeline_state *state, unsigned long start, unsigned int ra
     control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
     state->fpga->display->control = control;
     playback_timer_rearm(state);
+    playback_setup_timing(state, state->playrate);
 }
 
 /* Initialize the estimated frame rate. */
@@ -554,7 +623,7 @@ playback_thread(void *arg)
     sigaddset(&mask, SIGALRM);
     sigaddset(&mask, SIGUSR1);
     sigaddset(&mask, SIGUSR2);
-    pthread_sigmask(SIG_BLOCK, &mask, NULL);
+    pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 
     /* Wait for frame sync and check for new recording segments. */
     pfd.fd = fsync;
@@ -562,8 +631,8 @@ playback_thread(void *arg)
     pfd.revents = 0;
     sigemptyset(&mask);
     while (1) {
-        struct timespec ts = {0, 100 * 1000 * 1000};
-        int ready = ppoll(&pfd, 1, &ts, &mask);
+        int msec = 100;
+        int ready = poll(&pfd, 1, msec);
         if (ready < 0) {
             if (errno != EINTR) break;
             continue;

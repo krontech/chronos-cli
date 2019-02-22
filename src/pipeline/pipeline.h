@@ -27,6 +27,7 @@
 #define SCREENCAP_PATH      "/tmp/cam-screencap.jpg"
 
 #define LIVE_MAX_FRAMERATE  60
+#define SAVE_MAX_FRAMERATE  230
 
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
@@ -47,6 +48,8 @@ struct playback_region {
     unsigned long   offset;
     unsigned long   framesz;
     /* Some frame metadata captured along with the frames. */
+    unsigned long   hres;
+    unsigned long   vres;
     unsigned long   exposure;
     unsigned long   interval;
 };

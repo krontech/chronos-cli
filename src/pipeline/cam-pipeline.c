@@ -88,8 +88,6 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 
     gst_bin_add_many(GST_BIN(state->pipeline), state->source, tee, NULL);
 
-    state->hres = state->fpga->display->h_res;
-    state->vres = state->fpga->display->v_res;
     caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC('N', 'V', '1', '2'),
                 "width", G_TYPE_INT, state->hres,
@@ -136,6 +134,55 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     return state->pipeline;
 } /* cam_pipeline */
+
+/* Launch a GStreamer pipeline with a test souce if live display isn't active yet. */
+static GstElement *
+cam_videotest(struct pipeline_state *state, struct pipeline_args *args)
+{
+    gboolean ret;
+    GstElement *queue, *ctrl, *sink;
+    GstCaps *caps;
+
+    /* Build the GStreamer Pipeline */
+    state->pipeline = gst_pipeline_new ("pipeline");
+    state->source   = gst_element_factory_make("videotestsrc",  "test-source");
+    queue           = gst_element_factory_make("queue",         "test-queue");
+    ctrl            = gst_element_factory_make("omx_ctrl",      "test-ctrl");
+    sink            = gst_element_factory_make("omx_videosink", "test-sink");
+    if (!state->pipeline || !state->source || !queue || !ctrl || !sink) {
+        return NULL;
+    }
+    gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, ctrl, sink, NULL);
+    gst_element_link_many(queue, ctrl, sink, NULL);
+
+    /* Configure elements - simple video output to LCD with no scaling.  */
+    g_object_set(G_OBJECT(state->source), "pattern", (guint)0, NULL);
+    g_object_set(G_OBJECT(state->source), "is-live", (gboolean)1, NULL);
+
+	g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
+	g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
+	g_object_set(G_OBJECT(sink), "top", (guint)state->config.yoff, NULL);
+	g_object_set(G_OBJECT(sink), "left", (guint)state->config.xoff, NULL);
+	g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+	g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
+
+    g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+	g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
+	
+    caps = gst_caps_new_simple ("video/x-raw-yuv",
+                "width", G_TYPE_INT, state->config.hres,
+                "height", G_TYPE_INT, state->config.vres,
+                "framerate", GST_TYPE_FRACTION, (LIVE_MAX_FRAMERATE / 2), 1,
+                "buffer-count-requested", G_TYPE_INT, 4,
+                NULL);
+    ret = gst_element_link_filtered(state->source, queue, caps);
+    if (!ret) {
+        gst_object_unref(GST_OBJECT(state->pipeline));
+        return NULL;
+    }
+    gst_caps_unref(caps);
+    return state->pipeline;
+} /* cam_videotest */
 
 /*
  * Workaround for OMX buffering bug in the omx_camera element, which doesn't
@@ -197,8 +244,6 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     gst_object_unref(pad);
 
     /* Configure the input video resolution */
-    state->hres = state->fpga->display->h_res;
-    state->vres = state->fpga->display->v_res;
     state->position = args->start;
     state->loopstart = 0;
     state->loopend = state->totalframes;
@@ -709,6 +754,14 @@ main(int argc, char * argv[])
                 /* Throw an EOF and revert to playback. */
                 dbus_signal_eof(state, state->error);
                 continue;
+            }
+        }
+        /* If the display resolution is unknown, fall back to a test pattern. */
+        else if ((state->hres == 0) || (state->vres == 0)) {
+            if (!cam_videotest(state, &args)) {
+                dbus_signal_eof(state, state->error);
+                fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
+                break;
             }
         }
         /* Live display and playback modes should only return fatal errors. */
