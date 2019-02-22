@@ -109,11 +109,23 @@ class Method(resource.Resource):
         return server.NOT_DONE_YET
 
     def render_GET(self, request):
+        data = {}
         if self.arguments:
-            return b'"data" field required using POST'
+            logging.info('GET arguments: %s', request.args)
+            for key in request.args:
+                try:
+                    data[key.decode('utf8')] = int(request.args[key][0])
+                except:
+                    if   request.args[key][0] == b'true':  data[key.decode('utf8')] = True
+                    elif request.args[key][0] == b'false': data[key.decode('utf8')] = False
+                    else:  data[key.decode('utf8')] = request.args[key][0].decode('utf8')
+
         allowCrossOrigin(request)
         request.setHeader('Content-Type', 'application/json')
-        reactor.callLater(0.0, self.startDbusRequest, request)
+        if self.arguments:
+            reactor.callLater(0.0, self.startDbusRequestWData, request, data)
+        else:
+            reactor.callLater(0.0, self.startDbusRequest, request)
         return server.NOT_DONE_YET
         
     def render_POST(self, request):
