@@ -90,10 +90,7 @@ static gboolean
 cam_video_flush(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
-    playback_region_flush(state);
-    if (state->mode != PIPELINE_MODE_LIVE) {
-        playback_goto(state, PIPELINE_MODE_LIVE);
-    }
+    playback_flush(state);
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -106,14 +103,10 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
     unsigned long loopcount = cam_dbus_dict_get_uint(args, "loopcount", 0);
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
-    /* Compute the timer rate, and the change in frame number at each expiration. */
-    int delta = ((framerate > 0) ? (framerate + LIVE_MAX_FRAMERATE - 1) : (framerate - LIVE_MAX_FRAMERATE + 1)) / LIVE_MAX_FRAMERATE;
-    unsigned int timer_rate = (delta) ? (framerate / delta) : LIVE_MAX_FRAMERATE;
-
     if (loopcount) {
-        playback_loop(state, position, timer_rate, delta, loopcount);
+        playback_loop(state, position, framerate, loopcount);
     } else {
-        playback_play(state, position, timer_rate, delta);
+        playback_play(state, position, framerate);
     }
     state->args.mode = PIPELINE_MODE_PLAY;
     *data = cam_dbus_video_status(state);
@@ -186,7 +179,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
      */
     if ((!hres && !vres) || ((hres == state->hres) && (vres == state->vres))) {
         state->args.mode = PIPELINE_MODE_LIVE;
-        playback_goto(state, PIPELINE_MODE_LIVE);
+        playback_live(state);
     }
     /* Otherwise, if the either resolution is zero, then throw an error. */
     else if (hres == 0) {
@@ -201,6 +194,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     else {
         state->hres = hres;
         state->vres = vres;
+        state->args.mode = PIPELINE_MODE_LIVE;
         cam_pipeline_restart(state);
     }
 

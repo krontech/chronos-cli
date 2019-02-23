@@ -27,6 +27,15 @@
 
 #include "pipeline.h"
 
+/* Some special commands that can be passed through the pipe. */
+#define PLAYBACK_PIPE_EXIT      (INT_MIN + 0)   /* Terminate and cleanup the playback thread. */
+#define PLAYBACK_PIPE_FLUSH     (INT_MIN + 1)   /* Dump all recording segments from memory. */
+#define PLAYBACK_PIPE_PREROLL   (INT_MIN + 2)   /* Begin prerolling video to start playback. */
+
+#define PLAYBACK_POLL_INTERVAL 100
+#define PLAYBACK_WATCHDOG_COUNT (5000 / PLAYBACK_POLL_INTERVAL)
+
+static int playback_pipe = -1;
 static void playback_rate_init(struct pipeline_state *state);
 static void playback_rate_update(struct pipeline_state *state);
 
@@ -91,73 +100,16 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
 }
 
 /*===============================================
- * Timer for Framerate Control and Watchdog
- *===============================================
- */
-/*
- * Re-arm the playback timer in single-shot mode. By blocking the delivery
- * of SIGARLM, this allows clock stretching to keep time with the FPGA when
- * we approach the live framerate limits.
- */
-static void
-playback_timer_rearm(struct pipeline_state *state)
-{
-    if (state->playrate == 0) {
-        /* Pause the video by playing the same frame at 60Hz */
-        struct itimerspec ts = {
-            .it_interval = {0, 0},
-            .it_value = {0, 1000000000 / LIVE_MAX_FRAMERATE},
-        };
-        timer_settime(state->playtimer, 0, &ts, NULL);
-    }
-    /* Start the playback frame timer. */
-    else {
-        struct itimerspec ts = {
-            .it_interval = {0, 0},
-            .it_value = {0, (1000000000ULL + state->playrate - 1) / state->playrate},
-        };
-        timer_settime(state->playtimer, 0, &ts, NULL);
-    }
-}
-
-/* Disable the playback timer entirely. */
-static void
-playback_timer_disarm(struct pipeline_state *state)
-{
-    struct itimerspec ts = {
-        .it_interval = {0, 0},
-        .it_value = {0, 0},
-    };
-    timer_settime(state->playtimer, 0, &ts, NULL);
-}
-
-/* (Re)schedule the playback timer as a watchdog. */
-static void
-playback_timer_watchdog(struct pipeline_state *state)
-{
-    struct itimerspec ts = {
-        .it_interval = {0,0},
-        .it_value = {5, 0}
-    };
-    timer_settime(state->playtimer, 0, &ts, NULL);
-}
-
-/*===============================================
  * Frame Playback and Seeking
  *===============================================
  */
 static void
-playback_frame_advance(struct pipeline_state *state, int delta)
+playback_frame_seek(struct pipeline_state *state, int delta)
 {
-    struct playback_region *r;
-    unsigned long count = 0;
     unsigned long playlen = state->loopend - state->loopstart;
-    unsigned long segment;
 
-    /* If no regions have been set, then just display the first address in memory. */
-    if (!state->totalframes) {
-        state->fpga->display->frame_address = state->fpga->seq->region_start;
-        state->fpga->display->manual_sync = 1;
+    /* Do a no-op instead of dividing by zero. */
+    if (playlen == 0) {
         return;
     }
 
@@ -171,6 +123,20 @@ playback_frame_advance(struct pipeline_state *state, int delta)
         if (-delta >= playlen) delta %= playlen;
         if (state->position < (state->loopstart - delta)) state->position += playlen;
         state->position += delta;
+    }
+}
+
+static void
+playback_frame_render(struct pipeline_state *state)
+{
+    struct playback_region *r;
+    unsigned long count = 0;
+
+    /* If no regions have been set, then just display the first address in memory. */
+    if (!state->totalframes) {
+        state->fpga->display->frame_address = state->fpga->seq->region_start;
+        state->fpga->display->manual_sync = 1;
+        return;
     }
 
     /* Search the recording regions for the actual frame address. */
@@ -198,23 +164,24 @@ static void
 playback_signal(int signo, siginfo_t *info, void *ucontext)
 {
     struct pipeline_state *state = cam_pipeline_state();
-    sigset_t sigset;
 
-    /* no-op unless we're in playback mode. */
-    if (state->mode != PIPELINE_MODE_PLAY) {
+    /* no-op unless we're in playback and the seek pipe exists. */
+    if ((playback_pipe < 0) || (state->mode != PIPELINE_MODE_PLAY)) {
         return;
     }
-    playback_timer_rearm(state);
     switch (signo) {
         case SIGUSR1:
+            /* Relative seek on SIGUSR1 */
             if (info->si_code == SI_QUEUE) {
-                playback_frame_advance(state, info->si_int);
+                write(playback_pipe, &info->si_int, sizeof(int));
             } else {
-                playback_frame_advance(state, 1);
+                int delta = 1;
+                write(playback_pipe, &delta, sizeof(int));
             }
             break;
 
         case SIGUSR2:
+            /* Absolute seek on SIGUSR2 */
             if (info->si_code != SI_QUEUE) {
                 state->position = 0;
             } else if (info->si_int >= 0) {
@@ -223,34 +190,31 @@ playback_signal(int signo, siginfo_t *info, void *ucontext)
                 /* TODO: Handle special commands via negative numbers. */
                 state->position = 0;
             }
-            playback_frame_advance(state, 0);
-            break;
-
-        default:
-            playback_frame_advance(state, state->playdelta);
             break;
     }
-    
-    /* Block delivery of our signal until the frame has been delivered. */
-    sigemptyset(&sigset);
-    sigaddset(&sigset, SIGALRM);
-    pthread_sigmask(SIG_BLOCK, &sigset, NULL);
 }
 
 /* Frame sync interrupt handler. */
 static void
 playback_fsync(struct pipeline_state *state)
 {
-    /* Paused and live display mode: do nothing. */
-    if ((state->mode == PIPELINE_MODE_PAUSE) || (state->mode == PIPELINE_MODE_LIVE)) {
+    /* Paused: do nothing. */
+    if (state->mode == PIPELINE_MODE_PAUSE) {
         return;
     }
-    /* Playback mode: unblock the timer to allow the next frame */
+    /* Live display: Ensure sync inhibit is clear. */
+    else if (state->mode == PIPELINE_MODE_LIVE) {
+        uint32_t control = state->control;
+        control &= ~(DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+        state->fpga->display->control = control;
+    }
+    /* Playback mode: Render the next frame. */
     else if (state->mode == PIPELINE_MODE_PLAY) {
-        sigset_t sigset;
-        sigemptyset(&sigset);
-        sigaddset(&sigset, SIGALRM);
-        pthread_sigmask(SIG_UNBLOCK, &sigset, NULL);
+        /* Do a quickly delta-sigma to set the framerate. */
+        int nextcount = state->playcounter + state->playrate;
+        state->playcounter = nextcount % LIVE_MAX_FRAMERATE;
+        playback_frame_seek(state, nextcount / LIVE_MAX_FRAMERATE);
+        playback_frame_render(state);
     }
     /* Recording Modes: Preroll and then begin playback. */
     else if (state->preroll) {
@@ -268,7 +232,8 @@ playback_fsync(struct pipeline_state *state)
     /* This tends to improve throughput by pipelining the OMX round trips. */
     else if (state->buflevel > 2) {
         playback_rate_update(state);
-        playback_frame_advance(state, 1);
+        playback_frame_seek(state, 1);
+        playback_frame_render(state);
         if (state->source) {
             g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
         }
@@ -283,7 +248,8 @@ playback_fsync(struct pipeline_state *state)
             usleep(10000);
         }
         playback_rate_update(state);
-        playback_frame_advance(state, 1);
+        playback_frame_seek(state, 1);
+        playback_frame_render(state);
     }
     return;
 }
@@ -380,132 +346,81 @@ playback_region_add(struct pipeline_state *state)
     return 1;
 }
 
-/* Flush recording segment data. */
-void
-playback_region_flush(struct pipeline_state *state)
-{
-    while (state->region_head) {
-        playback_region_delete(state, state->region_head);
-    }
-    state->totalframes = 0;
-    playback_play(state, 0, LIVE_MAX_FRAMERATE, 0);
-}
-
 /*===============================================
  * Playback State Changes
  *===============================================
  */
-/* This would typically be called from outside the playback thread to change operation. */
 void
-playback_goto(struct pipeline_state *state, unsigned int mode)
+playback_pause(struct pipeline_state *state)
 {
     uint32_t control = state->control;
 
-    switch (mode) {
-        case PIPELINE_MODE_LIVE:
-            state->mode = PIPELINE_MODE_LIVE;
-            state->playrate = 0;
-            state->position = 0;
-            overlay_clear(state);
-            playback_timer_disarm(state);
-            playback_setup_timing(state, LIVE_MAX_FRAMERATE);
+    fprintf(stderr, "Pausing playback\n");
+    
+    state->mode = PIPELINE_MODE_PAUSE;
+    overlay_setup(state);
+    control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+    control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
+    state->fpga->display->control = control;
+    state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
+}
 
-            /* Clear sync inhibit to enable automatic video output. */
-            control &= ~(DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
-            state->fpga->display->control = control;
-            break;
-        
-        case PIPELINE_MODE_PLAY:
-            state->mode = PIPELINE_MODE_PLAY;
-            state->playrate = LIVE_MAX_FRAMERATE;
-            state->playdelta = 0;
-            state->position = 0;
+/* This would typically be called from outside the playback thread to change operation. */
+void
+playback_preroll(struct pipeline_state *state, unsigned int mode)
+{
+    int command = PLAYBACK_PIPE_PREROLL;
+    fprintf(stderr, "Prerolling playback (mode=%d)\n", mode);
+    state->mode = mode;
+    write(playback_pipe, &command, sizeof(command));
+} /* playback_preroll */
 
-            /* Set playback mode and re-arm the timer. */
-            control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
-            control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
-            state->fpga->display->control = control;
-            overlay_setup(state);
-            playback_setup_timing(state, state->playrate);
-            playback_timer_rearm(state);
-            break;
-        
-        case PIPELINE_MODE_PAUSE:
-            state->mode = PIPELINE_MODE_PAUSE;
-            overlay_setup(state);
-            playback_timer_disarm(state);
-            control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
-            control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
-            state->fpga->display->control = control;
-            state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
-            break;
-
-        case PIPELINE_MODE_DNG:
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
-        case PIPELINE_MODE_TIFF_RAW:
-        case PIPELINE_MODE_RAW16:
-        case PIPELINE_MODE_RAW12:
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
-        case PIPELINE_MODE_TIFF:
-        case PIPELINE_MODE_H264:
-            state->mode = mode;
-            state->preroll = 3;
-
-
-            /* Enable the test pattern and begin prerolling */
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_TEST_PATTERN;
-            control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
-            control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
-            state->fpga->display->control = control;
-            overlay_setup(state);
-            playback_setup_timing(state, SAVE_MAX_FRAMERATE);
-            state->fpga->display->manual_sync = 1;
-            break;
-    }
-} /* playback_goto */
+/* Switch to live display mode. */
+void
+playback_live(struct pipeline_state *state)
+{
+    playback_preroll(state, PIPELINE_MODE_LIVE);
+}
 
 /* Switch to playback mode, with the desired position and playback rate. */
 void
-playback_play(struct pipeline_state *state, unsigned long frame, unsigned int rate, int mul)
+playback_play(struct pipeline_state *state, unsigned long frame, int framerate)
 {
-    uint32_t control = state->fpga->display->control;
-
-    state->mode = PIPELINE_MODE_PLAY;
-    state->playdelta = mul;
-    state->playrate = rate;
+    /* Update the frame position */
+    state->playrate = framerate;
+    state->playcounter = 0;
     state->position = frame;
     state->loopstart = 0;
     state->loopend = state->totalframes;
 
-    /* Set playback mode and re-arm the timer. */
-    control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
-    control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
-    state->fpga->display->control = control;
-    overlay_setup(state);
-    playback_timer_rearm(state);
-    playback_setup_timing(state, state->playrate);
+    /* Switch modes if required. */
+    if (state->mode != PIPELINE_MODE_PLAY) {
+        playback_preroll(state, PIPELINE_MODE_PLAY);
+    }
 }
 
 /* Start playback at a given framerate and loop over a subset of frames. */
 void
-playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int mul, unsigned long count)
+playback_loop(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count)
 {
-    uint32_t control = state->fpga->display->control;
-
-    state->mode = PIPELINE_MODE_PLAY;
-    state->playdelta = mul;
-    state->playrate = rate;
+    state->playrate = framerate;
+    state->playcounter = 0;
     state->position = start;
     state->loopstart = start;
     state->loopend = start + count;
     if (state->loopend > state->totalframes) state->loopend = state->totalframes;
+    
+    /* Switch modes if required. */
+    if (state->mode != PIPELINE_MODE_PLAY) {
+        playback_preroll(state, PIPELINE_MODE_PLAY);
+    }
+}
 
-    /* Set playback mode and re-arm the timer. */
-    control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
-    control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
-    state->fpga->display->control = control;
-    playback_timer_rearm(state);
-    playback_setup_timing(state, state->playrate);
+void
+playback_flush(struct pipeline_state *state)
+{
+    int command = PLAYBACK_PIPE_FLUSH;
+    write(playback_pipe, &command, sizeof(command));
 }
 
 /* Initialize the estimated frame rate. */
@@ -605,10 +520,14 @@ playback_setup_fsync(const char *value)
 static void *
 playback_thread(void *arg)
 {
+    int watchdog = PLAYBACK_WATCHDOG_COUNT;
+
+    int seekfds[2];
     struct pipeline_state *state = (struct pipeline_state *)arg;
-    struct pollfd pfd;
+    struct pollfd pfd[2];
     sigset_t mask;
     int newsegs;
+    int flags;
     int fsync;
 
     /* Open the frame sync GPIO or give up and fail. */
@@ -618,27 +537,48 @@ playback_thread(void *arg)
         return NULL;
     }
 
-    /* Block the playback signals */
+    /* Setup a pipe for playback commands and seeking. */
+    if (pipe(seekfds) != 0) {
+        fprintf(stderr, "Failed to create playback pipe: %s\n", strerror(errno));
+        close(fsync);
+        return NULL;
+    }
+    flags = fcntl(seekfds[0], F_GETFL);
+    fcntl(seekfds[0], F_SETFL, flags | O_NONBLOCK);
+    flags = fcntl(seekfds[1], F_GETFL);
+    fcntl(seekfds[1], F_SETFL, flags | O_NONBLOCK);
+    playback_pipe = seekfds[1];
+
+    /* Unblock the playback signals for our thread.*/
     sigemptyset(&mask);
-    sigaddset(&mask, SIGALRM);
     sigaddset(&mask, SIGUSR1);
     sigaddset(&mask, SIGUSR2);
     pthread_sigmask(SIG_UNBLOCK, &mask, NULL);
 
-    /* Wait for frame sync and check for new recording segments. */
-    pfd.fd = fsync;
-    pfd.events = POLLPRI | POLLERR;
-    pfd.revents = 0;
-    sigemptyset(&mask);
+    /* Wait for frame sync when rendering frames. */
+    pfd[0].fd = fsync;
+    pfd[0].events = POLLPRI | POLLERR;
+    pfd[0].revents = 0;
+
+    /* Wait for seek events to navigate through recordings. */
+    pfd[1].fd = seekfds[0];
+    pfd[1].events = POLLIN | POLLERR;
+    pfd[1].revents = 0;
+
     while (1) {
-        int msec = 100;
-        int ready = poll(&pfd, 1, msec);
-        if (ready < 0) {
+        int ready = poll(pfd, 2, PLAYBACK_POLL_INTERVAL);
+        if (ready == 0) {
+            watchdog--;
+        }
+        else if (ready < 0) {
             if (errno != EINTR) break;
             continue;
         }
 
-        /* Check for new regions from the recording sequencer. */
+        /*===============================================
+         * Check for New Recording Regions. 
+         *===============================================
+         */
         newsegs = 0;
         while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
             if (playback_region_add(state) > 0) newsegs++;
@@ -652,18 +592,94 @@ playback_thread(void *arg)
             }
         }
 
-        /* Read the current state of the GPIO. */
-        if (pfd.revents) {
+        /*===============================================
+         * Handle Playback Commands
+         *===============================================
+         */
+        if (pfd[1].revents & POLLIN) {
+            int delta = 0;
+            read(seekfds[0], &delta, sizeof(delta));
+            if (delta == PLAYBACK_PIPE_EXIT) {
+                /* Terminate and cleanup. */
+                break;
+            }
+            else if (delta == PLAYBACK_PIPE_PREROLL) {
+                uint32_t control = state->control;
+                /* Setup prerolling for filesaves. */
+                if (PIPELINE_IS_SAVING(state->mode)) {
+                    playback_setup_timing(state, SAVE_MAX_FRAMERATE);
+                    overlay_setup(state);
+
+                    state->preroll = 3;
+                    state->fpga->display->pipeline |= DISPLAY_PIPELINE_TEST_PATTERN;
+                    control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+                    control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
+                    state->fpga->display->control = control;
+                }
+                /* (Re)configure the overlay and display timing. */
+                else if (state->mode == PIPELINE_MODE_PLAY) {
+                    playback_setup_timing(state, LIVE_MAX_FRAMERATE);
+                    overlay_setup(state);
+                    state->playcounter = 0;
+                    control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+                    control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
+                    state->fpga->display->control = control;
+                }
+                /* Clear the overlay and setup live timing. */
+                else if (state->mode == PIPELINE_MODE_LIVE) {
+                    playback_setup_timing(state, LIVE_MAX_FRAMERATE);
+                    overlay_clear(state);
+                    state->playcounter = 0;
+                    control &= ~(DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+                    state->fpga->display->control = control;
+                }
+
+                /* Start playback by faking a fsync edge. */
+                pfd[0].revents |= POLLPRI;
+            }
+            else if (delta == PLAYBACK_PIPE_FLUSH) {
+                /* Drop all recording segments. */
+                while (state->region_head) {
+                    playback_region_delete(state, state->region_head);
+                }
+                state->totalframes = 0;
+            }
+            else {
+                /* Otherwise, seek through video. */
+                playback_frame_seek(state, delta);
+            }
+        }
+
+        /*===============================================
+         * Render Frames on Frame Sync Rising Edge
+         *===============================================
+         */
+        if (pfd[0].revents) {
             char buf[2];
             lseek(fsync, 0, SEEK_SET);
             read(fsync, buf, sizeof(buf));
 
+            /* Reset the watchdog on fsync. */
+            watchdog = PLAYBACK_WATCHDOG_COUNT;
+
             playback_fsync(state);
+        }
+        else if (watchdog <= 0) {
+            /* We went too long without receiving a frame. */
+            if (state->mode != PIPELINE_MODE_PAUSE) {
+                fprintf(stderr, "Warning: Playback watchdog expired - retrying frame!\n");
+                state->fpga->display->manual_sync;
+            }
+            watchdog = PLAYBACK_WATCHDOG_COUNT;
         }
     }
 
     /* Cleanup */
-    playback_region_flush(state);
+    while (state->region_head) {
+        playback_region_delete(state, state->region_head);
+    }
+    close(seekfds[0]);
+    close(seekfds[1]);
     close(fsync);
 }
 
@@ -689,13 +705,11 @@ playback_init(struct pipeline_state *state)
     sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = SA_SIGINFO;
     sigact.sa_sigaction = playback_signal;
-    sigaction(SIGALRM, &sigact, NULL);
     sigaction(SIGUSR1, &sigact, NULL);
     sigaction(SIGUSR2, &sigact, NULL);
 
     /* Mask off the signals so that only the playback thread will receive them. */
     sigemptyset(&sigact.sa_mask);
-    sigaddset(&sigact.sa_mask, SIGALRM);
     sigaddset(&sigact.sa_mask, SIGUSR1);
     sigaddset(&sigact.sa_mask, SIGUSR2);
     sigprocmask(SIG_BLOCK, &sigact.sa_mask, NULL);
@@ -706,11 +720,17 @@ playback_init(struct pipeline_state *state)
     /* Start off in live display mode */
     state->mode = PIPELINE_MODE_LIVE;
     state->control = state->fpga->display->control & (DISPLAY_CTL_COLOR_MODE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
+}
 
-    /* Create the timer used for driving the playback state machine. */
-    memset(&sigev, 0, sizeof(sigev));
-    sigev.sigev_notify = SIGEV_SIGNAL;
-    sigev.sigev_signo = SIGALRM;
-    sigev.sigev_value.sival_ptr = state;
-    timer_create(CLOCK_MONOTONIC, &sigev, &state->playtimer);
+void
+playback_cleanup(struct pipeline_state *state)
+{
+    int command = PLAYBACK_PIPE_EXIT;
+    write(playback_pipe, &command, sizeof(command));
+#ifdef _GNU_SOURCE
+    struct timespec ts = {1, 0};
+    pthread_timedjoin_np(state->playthread, NULL, &ts);
+#else
+    pthread_join(state->playthread);
+#endif
 }

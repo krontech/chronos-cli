@@ -727,7 +727,7 @@ main(int argc, char * argv[])
     }
     signal(SIGPIPE, SIG_IGN);
 
-    /* Launch the HDMI and DBus threads. */
+    /* Launch the HDMI, DBus and Playback threads. */
     hdmi_hotplug_launch(state);
     dbus_service_launch(state);
     playback_init(state);
@@ -744,7 +744,7 @@ main(int argc, char * argv[])
         state->next = state->args.mode;
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
-        playback_goto(state, PIPELINE_MODE_PAUSE);
+        playback_pause(state);
 
         /* File saving modes should fail gracefully back to playback. */
         if (PIPELINE_IS_SAVING(args.mode)) {
@@ -758,6 +758,7 @@ main(int argc, char * argv[])
         }
         /* If the display resolution is unknown, fall back to a test pattern. */
         else if ((state->hres == 0) || (state->vres == 0)) {
+            state->next = PIPELINE_MODE_PAUSE; /* No video to play. */
             if (!cam_videotest(state, &args)) {
                 dbus_signal_eof(state, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
@@ -782,12 +783,12 @@ main(int argc, char * argv[])
         watchid = gst_bus_add_watch(bus, cam_bus_watch, state);
         gst_object_unref(bus);
 
-        playback_goto(state, state->next);
+        playback_preroll(state, state->next);
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         g_main_loop_run(state->mainloop);
 
         /* Stop the pipeline gracefully */
-        playback_goto(state, PIPELINE_MODE_PAUSE);
+        playback_pause(state);
         gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
         for (i = 0; i < 1000; i++) {
             if (!g_main_context_iteration (NULL, FALSE)) break;
@@ -817,6 +818,7 @@ main(int argc, char * argv[])
     } while(catch_sigint == 0);
     
     fprintf(stderr, "Exiting the pipeline...\n");
+    playback_cleanup(state);
     unlink(SCREENCAP_PATH);
     munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);
     g_main_loop_unref(state->mainloop);

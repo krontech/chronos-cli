@@ -133,9 +133,8 @@ struct pipeline_state {
     unsigned long   segsize;        /* Segment size (in frames) */
 
     /* Playback Mode */
-    timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
-    unsigned int    playrate;       /* Rate (in FPS) of the playback timer. */
-    int             playdelta;      /* Change (in frames) to apply at each playback timer expiry. */
+    int             playrate;       /* Playback rate in frames per second. */
+    int             playcounter;    /* Internal counter for framerate control. */
     unsigned long   loopstart;      /* Starting frame to play from when in playback mode. */
     unsigned long   loopend;        /* Ending frame to play from when in playback mode. */
     pthread_t       playthread;     /* Thread handle for the playback frame manager. */
@@ -184,10 +183,13 @@ void dbus_signal_segment(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);
-void playback_goto(struct pipeline_state *state, unsigned int mode);
-void playback_play(struct pipeline_state *state, unsigned long frame, unsigned int rate, int delta);
-void playback_loop(struct pipeline_state *state, unsigned long start, unsigned int rate, int delta, unsigned long count);
-void playback_region_flush(struct pipeline_state *state);
+void playback_preroll(struct pipeline_state *state, unsigned int mode);
+void playback_pause(struct pipeline_state *state);
+void playback_live(struct pipeline_state *state);
+void playback_play(struct pipeline_state *state, unsigned long frame, int framerate);
+void playback_loop(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count);
+void playback_flush(struct pipeline_state *state);
+void playback_cleanup(struct pipeline_state *state);
 
 /* Video overlay control. */
 void overlay_clear(struct pipeline_state *state);
