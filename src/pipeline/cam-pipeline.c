@@ -159,16 +159,16 @@ cam_videotest(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(state->source), "pattern", (guint)0, NULL);
     g_object_set(G_OBJECT(state->source), "is-live", (gboolean)1, NULL);
 
-	g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
-	g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
-	g_object_set(G_OBJECT(sink), "top", (guint)state->config.yoff, NULL);
-	g_object_set(G_OBJECT(sink), "left", (guint)state->config.xoff, NULL);
-	g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
-	g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
+    g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
+    g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
+    g_object_set(G_OBJECT(sink), "top", (guint)state->config.yoff, NULL);
+    g_object_set(G_OBJECT(sink), "left", (guint)state->config.xoff, NULL);
+    g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+    g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
 
     g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
-	g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
-	
+    g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
+
     caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "width", G_TYPE_INT, state->config.hres,
                 "height", G_TYPE_INT, state->config.vres,

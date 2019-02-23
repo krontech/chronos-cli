@@ -46,44 +46,53 @@ static void playback_rate_update(struct pipeline_state *state);
 static void
 playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
 {
-	const unsigned int hSync = 1;
-	const unsigned int hBackPorch = 64;
-	const unsigned int hFrontPorch = 4;
-	const unsigned int vSync = 1;
-	const unsigned int vBackPorch = 4;
-	const unsigned int vFrontPorch = 1;
-	unsigned int pxClock = 100000000;
-	unsigned int minHPeriod;
-	unsigned int hPeriod;
-	unsigned int vPeriod;
-	unsigned int fps;
+    const unsigned int hSync = 1;
+    const unsigned int hBackPorch = 64;
+    const unsigned int hFrontPorch = 4;
+    const unsigned int vSync = 1;
+    const unsigned int vBackPorch = 4;
+    const unsigned int vFrontPorch = 1;
+    unsigned int pxClock = 100000000;
+    unsigned int minHPeriod;
+    unsigned int hPeriod;
+    unsigned int vPeriod;
+    unsigned int fps;
+
+    /* Inhibit frame sync while adjusting the display timing. */
+    uint32_t control = state->fpga->display->control;
+    state->fpga->display->control = (control | DISPLAY_CTL_SYNC_INHIBIT);
 
     /* FPGA version 3.14 and higher use a 133MHz pixel clock. */
     if (state->fpga->config->version > 3) {
-		pxClock = 133333333;
+        pxClock = 133333333;
     }
     else if ((state->fpga->config->version == 3) && (state->fpga->config->subver >= 14)) {
         pxClock = 133333333;
     }
 
+    /* Force a delay to ensure that frame readout completes. */
+    hPeriod = PIPELINE_MAX_HRES + hBackPorch + hSync + hFrontPorch;
+    vPeriod = PIPELINE_MAX_VRES + vBackPorch + vSync + vFrontPorch;
+    usleep(((unsigned long long)(vPeriod * hPeriod) * 1000000ULL) / pxClock);
+
     /* Calculate minimum hPeriod to fit within 2048 max vertical resolution. */
-	hPeriod = hSync + hBackPorch + state->hres + hFrontPorch;
-	minHPeriod = (pxClock / ((2048+vBackPorch+vSync+vFrontPorch) * maxfps)) + 1;
-	if (hPeriod < minHPeriod) hPeriod = minHPeriod;
+    hPeriod = hSync + hBackPorch + state->hres + hFrontPorch;
+    minHPeriod = (pxClock / ((2048+vBackPorch+vSync+vFrontPorch) * maxfps)) + 1;
+    if (hPeriod < minHPeriod) hPeriod = minHPeriod;
 
     /* Calculate the vPeriod and make sure it's large enough for the frame. */
-	vPeriod = pxClock / (hPeriod * maxfps);
-	if (vPeriod < (state->vres + vBackPorch + vSync + vFrontPorch)) {
-		vPeriod = (state->vres + vBackPorch + vSync + vFrontPorch);
-	}
+    vPeriod = pxClock / (hPeriod * maxfps);
+    if (vPeriod < (state->vres + vBackPorch + vSync + vFrontPorch)) {
+        vPeriod = (state->vres + vBackPorch + vSync + vFrontPorch);
+    }
 
-	/* Calculate the FPS for debug output */
-	fps = pxClock / (vPeriod * hPeriod);
-	fprintf(stderr, "Setup display timing: %d*%d@%d (%lu*%lu max: %u)\n",
-		   (hPeriod - hBackPorch - hSync - hFrontPorch),
-		   (vPeriod - vBackPorch - vSync - vFrontPorch),
-		   fps, state->hres, state->vres, maxfps);
-	
+    /* Calculate the FPS for debug output */
+    fps = pxClock / (vPeriod * hPeriod);
+    fprintf(stderr, "Setup display timing: %d*%d@%d (%lu*%lu max: %u)\n",
+           (hPeriod - hBackPorch - hSync - hFrontPorch),
+           (vPeriod - vBackPorch - vSync - vFrontPorch),
+           fps, state->hres, state->vres, maxfps);
+
     /* Configure the FPGA */
     state->fpga->display->h_res = state->hres;
     state->fpga->display->h_out_res = state->hres;
@@ -97,6 +106,9 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
     state->fpga->display->v_period = vPeriod;
     state->fpga->display->v_sync_len = vSync;
     state->fpga->display->v_back_porch = vBackPorch;
+
+    /* Release sync inhibit after reconfiguration. */
+    state->fpga->display->control = control;
 }
 
 /*===============================================
@@ -599,6 +611,7 @@ playback_thread(void *arg)
         if (pfd[1].revents & POLLIN) {
             int delta = 0;
             read(seekfds[0], &delta, sizeof(delta));
+
             if (delta == PLAYBACK_PIPE_EXIT) {
                 /* Terminate and cleanup. */
                 break;
@@ -726,11 +739,7 @@ void
 playback_cleanup(struct pipeline_state *state)
 {
     int command = PLAYBACK_PIPE_EXIT;
-    write(playback_pipe, &command, sizeof(command));
-#ifdef _GNU_SOURCE
     struct timespec ts = {1, 0};
+    write(playback_pipe, &command, sizeof(command));
     pthread_timedjoin_np(state->playthread, NULL, &ts);
-#else
-    pthread_join(state->playthread);
-#endif
 }

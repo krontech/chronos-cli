@@ -107,7 +107,6 @@ struct pipeline_state {
     struct CamVideo     *video;
     struct fpga         *fpga;
     const struct ioport *iops;
-    int                 fsync_fd;
     int                 write_fd;
     void *              scratchpad;
     char                error[80];
