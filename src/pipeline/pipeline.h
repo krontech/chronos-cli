@@ -54,17 +54,16 @@ struct playback_region {
     unsigned long   interval;
 };
 
-#define PIPELINE_MODE_LIVE      0   /* Displaying live frame data to the display device. */
-#define PIPELINE_MODE_PLAY      1   /* Playing recoded frames back to the display device. */
-#define PIPELINE_MODE_PAUSE     2   /* Pause video output during transitions */
-#define PIPELINE_MODE_H264      3
-#define PIPELINE_MODE_RAW16     4   /* 16-bit raw data (padded with zeros LSB) */
-#define PIPELINE_MODE_RAW12     5   /* 12-bit packed data */
-#define PIPELINE_MODE_DNG       6
-#define PIPELINE_MODE_TIFF      7   /* Processed 8-bit TIFF format. */
-#define PIPELINE_MODE_TIFF_RAW  8   /* Linear RAW 16-bit TIFF format. */
+#define PIPELINE_MODE_PAUSE     0   /* Paused - no video output. */
+#define PIPELINE_MODE_PLAY      1   /* Playing live or recoded frames to the display device. */
+#define PIPELINE_MODE_H264      2
+#define PIPELINE_MODE_RAW16     3   /* 16-bit raw data (padded with zeros LSB) */
+#define PIPELINE_MODE_RAW12     4   /* 12-bit packed data */
+#define PIPELINE_MODE_DNG       5
+#define PIPELINE_MODE_TIFF      6   /* Processed 8-bit TIFF format. */
+#define PIPELINE_MODE_TIFF_RAW  7   /* Linear RAW 16-bit TIFF format. */
 
-#define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PAUSE)
+#define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PLAY)
 
 struct pipeline_args {
     unsigned int    mode;

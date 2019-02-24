@@ -741,7 +741,6 @@ main(int argc, char * argv[])
         unsigned int i;
 
         /* Pause playback while we get setup. */
-        state->next = state->args.mode;
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
         playback_pause(state);
@@ -749,6 +748,7 @@ main(int argc, char * argv[])
         /* File saving modes should fail gracefully back to playback. */
         if (PIPELINE_IS_SAVING(args.mode)) {
             /* Return to playback mode after saving. */
+            state->next = args.mode;
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
                 /* Throw an EOF and revert to playback. */
@@ -767,6 +767,7 @@ main(int argc, char * argv[])
         }
         /* Live display and playback modes should only return fatal errors. */
         else {
+            state->next = PIPELINE_MODE_PLAY;
             if (!cam_pipeline(state, &args)) {
                 dbus_signal_eof(state, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");

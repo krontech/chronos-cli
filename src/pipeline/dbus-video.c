@@ -46,11 +46,11 @@ cam_dbus_video_status(struct pipeline_state *state)
     if (mode == PIPELINE_MODE_PAUSE) mode = state->next; /* Transition in progress. */
 
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-    cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY));
+    cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY) && (state->position >= 0));
     cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(mode));
     cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
     cam_dbus_dict_add_uint(dict, "totalSegments", state->totalsegs);
-    cam_dbus_dict_add_uint(dict, "position", state->position);
+    cam_dbus_dict_add_int(dict, "position", state->position);
     cam_dbus_dict_add_uint(dict, "segment", 0);
     if (PIPELINE_IS_SAVING(mode)) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
@@ -151,14 +151,8 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
 
-    /* In live display mode apply FPGA register changes immediately. */
-    if (state->mode == PIPELINE_MODE_LIVE) {
-        state->fpga->display->control &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE);
-        state->fpga->display->control |= (state->control & (DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE));
-    }
-
     /* Apply invasive pipeline changes. */
-    if ((state->mode == PIPELINE_MODE_LIVE) || (state->mode == PIPELINE_MODE_PLAY)) {
+    if (state->mode == PIPELINE_MODE_PLAY) {
         if (diff) cam_lcd_reconfig(state, &state->config);
     }
 
@@ -173,32 +167,18 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     unsigned long hres = cam_dbus_dict_get_uint(args, "hres", 0);
     unsigned long vres = cam_dbus_dict_get_uint(args, "vres", 0);
 
-    /*
-     * If both resolutions are zero, or are identical to the config, then
-     * just switch to live display without reconfiguring anything.
-     */
-    if ((!hres && !vres) || ((hres == state->hres) && (vres == state->vres))) {
-        state->args.mode = PIPELINE_MODE_LIVE;
-        playback_live(state);
-    }
-    /* Otherwise, if the either resolution is zero, then throw an error. */
-    else if (hres == 0) {
+    /* Sanity check the input resolutions. */
+    if ((hres == 0) && (vres != 0)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing argument: hres");
         return 0;
     }
-    else if (vres == 0) {
+    if ((hres != 0) && (vres == 0)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing argument: vres");
         return 0;
     }
-    /* We can continue only by reconfiguring the video source. */
-    else {
-        state->hres = hres;
-        state->vres = vres;
-        state->args.mode = PIPELINE_MODE_LIVE;
-        cam_pipeline_restart(state);
-    }
 
     /* Update the live display flags. */
+    state->args.mode = PIPELINE_MODE_PLAY;
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
     state->config.peaking = cam_dbus_dict_get_boolean(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
@@ -211,12 +191,20 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
-    /* In live display mode apply FPGA register changes immediately. */
-    if (state->mode == PIPELINE_MODE_LIVE) {
-        state->fpga->display->control &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE);
-        state->fpga->display->control |= (state->control & (DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_FOCUS_PEAK_ENABLE));
-    }
 
+    /* If not in playback mode, a restart is required. */
+    if (state->mode != PIPELINE_MODE_PLAY) {
+        cam_pipeline_restart(state);
+    }
+    /* If resolution has changed, a restart is required. */
+    if (hres && vres && ((hres != state->hres) || (vres !=  state->vres))) {
+        state->hres = hres;
+        state->vres = vres;
+        cam_pipeline_restart(state);
+    }
+    
+    /* Go to live. */
+    playback_live(state);
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -247,7 +235,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     strcpy(state->args.filename, filename);
 
     /* Make sure that an encoding operation is not already in progress. */
-    if ((state->mode != PIPELINE_MODE_LIVE) && (state->mode != PIPELINE_MODE_PLAY)) {
+    if (PIPELINE_IS_SAVING(state->mode)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Encoding in progress");
         return 0;
     }
