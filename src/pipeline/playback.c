@@ -746,7 +746,8 @@ playback_init(struct pipeline_state *state)
 
     /* Start off paused. */
     state->mode = PIPELINE_MODE_PAUSE;
-    state->control = state->fpga->display->control & (DISPLAY_CTL_COLOR_MODE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
+    state->control = (state->color) ? DISPLAY_CTL_COLOR_MODE : 0;
+    state->fpga->display->control = (state->control | DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
 }
 
 void

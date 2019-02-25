@@ -676,6 +676,7 @@ main(int argc, char * argv[])
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
     state->write_fd = -1;
+    state->control = 0;
     if (!state->fpga) {
         fprintf(stderr, "Failed to open FPGA: %s\n", strerror(errno));
         return -1;
@@ -703,6 +704,17 @@ main(int argc, char * argv[])
             memset(state->serial, 0, sizeof(state->serial));
         }
         state->serial[sizeof(state->serial)-1] = '\0';
+        close(fd);
+    }
+    
+    /* Check if we are attached to a color or monochrome sensor. */
+    state->color = 0;
+    fd = ioport_open(state->iops, "lux1310-color", O_RDONLY);
+    if (fd >= 0) {
+        char buf[2];
+        if (read(fd, buf, sizeof(buf)) == sizeof(buf)) {
+            state->color = (buf[0] == '1');
+        }
         close(fd);
     }
 
@@ -789,19 +801,20 @@ main(int argc, char * argv[])
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         gst_element_get_state(state->pipeline, &current, &pending, 10ULL * 1000000000ULL);
         if (current == GST_STATE_PLAYING) {
+            /* Run the pipeline. */
             g_main_loop_run(state->mainloop);
+
+            /* Stop the pipeline gracefully. */
+            playback_pause(state);
+            gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
+            for (i = 0; i < 1000; i++) {
+                if (!g_main_context_iteration (NULL, FALSE)) break;
+            }
         }
         else {
             snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
                 gst_element_state_get_name(current), gst_element_state_get_name(pending));
             fprintf(stderr, "%s\n", state->error);
-        }
-
-        /* Stop the pipeline gracefully */
-        playback_pause(state);
-        gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
-        for (i = 0; i < 1000; i++) {
-            if (!g_main_context_iteration (NULL, FALSE)) break;
         }
 
         /* Garbage collect the pipeline. */

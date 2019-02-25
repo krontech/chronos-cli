@@ -119,6 +119,7 @@ struct pipeline_state {
     uint32_t            control;
 
     /* Video format */
+    unsigned int    color;
     unsigned long   hres;
     unsigned long   vres;
 

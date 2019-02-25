@@ -4,7 +4,9 @@ After=chronos-fpga.service
 Requires=chronos-fpga.service
 
 [Service]
+Type=dbus
 ExecStart=/usr/bin/cam-pipeline
+BusName=com.krontech.chronos.video
 StandardOutput=journal+console
 StandardError=inherit
 

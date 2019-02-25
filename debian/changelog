@@ -1,5 +1,6 @@
-chronos-cli (0.3.1~beta68) unstable; urgency=medium
+chronos-cli (0.3.1~beta69) unstable; urgency=medium
 
+  * pipeline: Check color detect pin to determine mono vs. color sensor.
   * Fix boot order dependency on chronos-fpga package.
   * Add systemd service files to start cam-pipeline on boot.
   * pipeline: Add a check to ensure PAUSED->PLAYING completes.
@@ -70,4 +71,4 @@ chronos-cli (0.3.1~beta68) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Sun, 24 Feb 2019 21:08:22 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Sun, 24 Feb 2019 22:16:15 -0800
