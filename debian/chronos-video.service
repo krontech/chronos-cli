@@ -1,9 +1,10 @@
 [Unit]
 Description=Video interface for the Chronos Camera
+After=chronos-fpga.service
+Requires=chronos-fpga.service
 
 [Service]
 ExecStart=/usr/bin/cam-pipeline
-Wants=chronos-fpga
 StandardOutput=journal+console
 StandardError=inherit
 
