@@ -735,6 +735,7 @@ main(int argc, char * argv[])
     do {
         /* Launch the pipeline. */
         struct pipeline_args args;
+        GstState current, pending;
         GstEvent *event;
         GstBus *bus;
         guint watchid;
@@ -786,7 +787,15 @@ main(int argc, char * argv[])
 
         playback_preroll(state, state->next);
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
-        g_main_loop_run(state->mainloop);
+        gst_element_get_state(state->pipeline, &current, &pending, 10ULL * 1000000000ULL);
+        if (current == GST_STATE_PLAYING) {
+            g_main_loop_run(state->mainloop);
+        }
+        else {
+            snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
+                gst_element_state_get_name(current), gst_element_state_get_name(pending));
+            fprintf(stderr, "%s\n", state->error);
+        }
 
         /* Stop the pipeline gracefully */
         playback_pause(state);
