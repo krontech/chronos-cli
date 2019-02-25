@@ -1,0 +1,11 @@
+[Unit]
+Description=Video interface for the Chronos Camera
+
+[Service]
+ExecStart=/usr/bin/cam-pipeline
+Wants=chronos-fpga
+StandardOutput=journal+console
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

@@ -17,7 +17,7 @@ PY3VERS:=$(shell py3versions -s)
 DESTDIR:=$(shell pwd)/debian/tmp
 
 %:
-	dh $@ --with autotools_dev,python3
+	dh $@ --with autotools_dev,python3,systemd
 
 override_dh_auto_configure:
 	./bootstrap

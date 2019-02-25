@@ -1,5 +1,44 @@
-chronos-cli (0.3.1~beta28) unstable; urgency=medium
+chronos-cli (0.3.1~beta67) unstable; urgency=medium
 
+  * Add systemd service files to start cam-pipeline on boot.
+  * pipeline: Add a check to ensure PAUSED->PLAYING completes.
+  * pipeline: Combine live display and playback states.
+  * Move automounter scripts into chronos-tools package.
+  * More pipeline race conditions with display reconfiguration.
+  * pipeline: Remove playback timer and minimize display reconfig events.
+  * Work in progres: Replace Twisted DBus with Python-DBus
+  * pychronos: Add mask parameter to regRead and regWrite helpers.
+  * made methods with arguments also available through GET using the field names as variables
+  * cam-pipeline: Make all D-Bus methods return the status dict.
+  * Move display timing setup into cam-pipeline (livedisplay API change).
+  * Twisted: Allow more cross-origin request for the wait APIs.
+  * Fix bug in setDescription to allow setting an ID of zero.
+  * DBus and Twisted: add description and cross-origin support.
+  * added ability to set foreground and background colour on tap-to-exit-button
+  * fixed issue in the touch thing. Made the text on screen adjustable with the GET "message" field.
+  * Added waitForTouch and waitForTouchThenBlackcal to web api
+  * Added playbackImage which displays an image from the save buffer. GET is implemented with the variable frameNum setting which frame to display.
+  * Fixed recording bug. Fixed camera not starting due to bus error in init.
+  * Fix sensor deadlock during gain calibration due to wavetable update.
+  * Fixed some issues with the sensor using the new timing system. Also moved ioInterface into regmaps
+  * Adjusted lux1310 to use the new timing engine
+  * Added web interface added framerate control separate to limit pipeline rebuilds
+  * Merge branch 'master' of https://github.com/krontech/chronos-cli
+  * Add arguments to camtest.py and implement white balance in camera.py
+  * Remove blackref mode from pipeline, and clean up the playback thread.
+  * Merge branch 'master' of https://github.com/krontech/chronos-cli
+  * Add spd.read() function to get JEDEC SPD data.
+  * Merge branch 'master' of https://github.com/krontech/chronos-cli
+  * started working on recordings. Got whitebalance interface working
+  * Fix bugs in resolution switching.
+  * Added backup files from emacs to gitignore list
+  * controlApi now detects if FPGA is running (via running testFpga.py and finding if it crashed or succeeded). also fleshed out configuration of resolution and framerate.
+  * Added docstrings to most functions in ioInterface
+  * Merge branch 'master' of https://github.com/krontech/chronos-cli
+  * Fixed bugs in ioInterface
+  * Reorganization of python scripts into sensors and regmaps module.
+  * moved io to ioInterface so namespace works better
+  * Added some scripts for syncing a directory to the camera. Also the start of an API for the IO block and initial Twisted APIs
   * Add recording sequencer to the camtest.py demo.
   * Add zero-time black calibration to the python API.
   * Add black calibration routines to python camera class.
@@ -30,4 +69,4 @@ chronos-cli (0.3.1~beta28) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Wed, 13 Feb 2019 23:00:16 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Sun, 24 Feb 2019 16:23:39 -0800
