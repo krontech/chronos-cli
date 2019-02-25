@@ -20,6 +20,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "ioport.h"
+
 #define	GPMC_BASE                   0x50000000
 #define	GPMC_RANGE_BASE             0x1000000
 
@@ -368,6 +370,7 @@ struct fpga {
 
 struct fpga *fpga_open(void);
 void fpga_close(struct fpga *fpga);
-int fpga_load(const char *spi, const char *bitstream, FILE *log);
+int fpga_load(const struct ioport *iops, const char *bitstream, FILE *log);
+int fpga_unload(const struct ioport *iops);
 
 #endif /* _FPGA_H */

@@ -1,6 +1,6 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a
-bin_PROGRAMS = cam-daemon cam-pipeline cam-upower
+bin_PROGRAMS = cam-pipeline cam-upower
 bin_PROGRAMS += cam-loader cam-regdump cam-recover
 bin_PROGRAMS += cam-json cam-listener
 AM_CFLAGS = -I ${srcdir}/lib
@@ -27,6 +27,8 @@ libcamera_a_SOURCES += lib/fpga-mmap.c
 libcamera_a_SOURCES += lib/edid.c
 libcamera_a_SOURCES += lib/i2c-eeprom.c
 libcamera_a_SOURCES += lib/i2c-spd.c
+libcamera_a_SOURCES += lib/ioport.c
+libcamera_a_SOURCES += lib/jsmn.c
 libcamera_a_SOURCES += lib/lux1310-sensor.c
 libcamera_a_SOURCES += lib/lux1310-wavetab.c
 libcamera_a_SOURCES += lib/memcpy-neon.c
@@ -39,6 +41,8 @@ libcamera_a_SOURCES += lib/sensor-lux1310.h
 libcamera_a_SOURCES += lib/edid.h
 libcamera_a_SOURCES += lib/i2c.h
 libcamera_a_SOURCES += lib/i2c-spd.h
+libcamera_a_SOURCES += lib/ioport.h
+libcamera_a_SOURCES += lib/jsmn.h
 libcamera_a_CFLAGS = ${AM_CFLAGS}
 ## ARM-Only sources
 if SYSROOT
@@ -57,36 +61,19 @@ cam_recover_CFLAGS = ${AM_CFLAGS}
 cam_recover_LDFLAGS = ${AM_LDFLAGS}
 cam_recover_SOURCES = cam-recover.c
 
-## Camera Daemon
-cam_daemon_LDADD = libcamera.a
-cam_daemon_LDADD += ${DBUS_LIBS} ${GLIB_LIBS}
-cam_daemon_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
-cam_daemon_LDFLAGS = ${AM_LDFLAGS} -pthread
-cam_daemon_SOURCES = daemon/main.c
-cam_daemon_SOURCES += daemon/calibration.c
-cam_daemon_SOURCES += daemon/camera.c
-cam_daemon_SOURCES += daemon/memory.c
-cam_daemon_SOURCES += daemon/dbus-glue.c
-cam_daemon_SOURCES += daemon/camera.h
-cam_daemon_SOURCES += api/cam-dbus-server.h
-
 ## Camera DBus JSON translator tools
-cam_json_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
+cam_json_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
 cam_json_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_json_LDFLAGS = ${AM_LDFLAGS}
 cam_json_SOURCES = client/cam-json.c
 cam_json_SOURCES += client/dbus-json.c
 cam_json_SOURCES += client/dbus-json.h
-cam_json_SOURCES += client/jsmn.c
-cam_json_SOURCES += client/jsmn.h
-cam_listener_LDADD = ${DBUS_LIBS} ${GLIB_LIBS}
+cam_listener_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
 cam_listener_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_listener_LDFLAGS = ${AM_LDFLAGS}
 cam_listener_SOURCES = client/cam-listener.c
 cam_listener_SOURCES += client/dbus-json.c
 cam_listener_SOURCES += client/dbus-json.h
-cam_listener_SOURCES += client/jsmn.c
-cam_listener_SOURCES += client/jsmn.h
 
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.

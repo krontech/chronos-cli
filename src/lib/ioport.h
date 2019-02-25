@@ -46,4 +46,7 @@ ioport_open(const struct ioport *iops, const char *name, int oflag)
     return (path) ? open(path, oflag) : -1;
 }
 
+/* Load board definitions from a JSON file. */
+struct ioport *ioport_load_json(const char *filename);
+
 #endif /* _IOPORT_H */
