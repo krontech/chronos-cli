@@ -225,6 +225,7 @@ main(int argc, char *const argv[])
 
             case 'h':
                 usage(argc, argv);
+                return 0;
 
             case 'v':
                 /* TODO: Implement Help and Version output. */
