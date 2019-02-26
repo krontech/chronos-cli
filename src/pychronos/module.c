@@ -6,6 +6,9 @@
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/ioctl.h>
+#include <linux/types.h>
+#include <linux/spi/spidev.h>
 
 #include "fpga.h"
 #include "pychronos.h"
@@ -531,6 +534,123 @@ pychronos_write_frame(PyObject *self, PyObject *args)
 }
 
 /*=====================================*
+ * SPI Read and Write Helper
+ *=====================================*/
+static PyObject *
+pychronos_write_spi(PyObject *self, PyObject *args, PyObject *kwargs)
+{
+    PyObject *ret = NULL;
+    void *rxbuf;
+    int spifd = -1;
+
+    /* Python argument parsing. */
+    char *keywords[] = {
+        "device",
+        "data",
+        "mode",
+        "csel",
+        "speed",
+        "bitsPerWord",
+        NULL,
+    };
+    const char *path;
+    Py_buffer data;
+    unsigned char mode = 0;
+    unsigned long speed = 1000000;
+    unsigned int wordsize = 0;
+    const char *csel = NULL;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sy*|bskI", keywords,
+            &path, &data, &mode, &csel, &speed, &wordsize)) {
+        return NULL;
+    }
+
+    rxbuf = malloc(data.len);
+    if(!rxbuf) {
+        PyBuffer_Release(&data);
+        PyErr_NoMemory();
+        return NULL;
+    }
+    /* Open the SPI device. */
+    spifd = open(path, O_RDWR);
+    if (spifd < 0) {
+        PyErr_SetFromErrno(PyExc_OSError);
+        PyBuffer_Release(&data);
+        free(rxbuf);
+        return NULL;
+    }
+
+    /* Break out to cleanup and return */
+    do {
+        struct spi_ioc_transfer xfer = {
+            .tx_buf = (uintptr_t)data.buf,
+            .rx_buf = (uintptr_t)rxbuf,
+            .len = data.len,
+            .speed_hz = speed,
+            .delay_usecs = 0,
+            .bits_per_word = wordsize,
+            .cs_change = 0,
+        };
+
+        if (ioctl(spifd, SPI_IOC_WR_MODE, &mode)) {
+            PyErr_SetFromErrno(PyExc_OSError);
+            break;
+        }
+        /* Optional soft chip-select */
+        if (csel) {
+            int spics = open(csel, O_WRONLY);
+            if (spics < 0) {
+                PyErr_SetFromErrno(PyExc_OSError);
+                break;
+            }
+            write(spics, "0", 1);
+            if (ioctl(spifd, SPI_IOC_MESSAGE(1), &xfer) < 0) {
+                PyErr_SetFromErrno(PyExc_OSError);
+            } else {
+                ret = PyBytes_FromStringAndSize(rxbuf, data.len);
+            }
+            write(spics, "1", 1);
+            close(spics);
+        }
+        /* Hardware chipselect */
+        else {
+            if (ioctl(spifd, SPI_IOC_MESSAGE(1), &xfer) < 0) {
+                PyErr_SetFromErrno(PyExc_OSError);
+            } else {
+                ret = PyBytes_FromStringAndSize(rxbuf, data.len);
+            }
+        }
+    } while(0);
+
+    /* Cleanup */
+    PyBuffer_Release(&data);
+    free(rxbuf);
+    close(spifd);
+    return ret;
+}
+
+PyDoc_STRVAR(pychronos_write_spi_docstring,
+"writespi(device, data, csel=None, mode=0)\n\
+--\n\
+\n\
+Helper function to write data to an SPI device and return the bytes\n\
+received back via the MISO signal.\n\
+\n\
+Parameters\n\
+----------\n\
+device : `string`\n\
+    Path to the SPI device to open for writing.\n\
+data : `bytes`\n\
+    Data to write to the SPI device.\n\
+mode : `int`, optional\n\
+    SPI clock phase and polarity (default: 0).\n\
+csel : `string`, optional\n\
+    Path to GPIO device to use as a soft chip select.\n\
+speed : `int`, optional\n\
+    SPI device speed in Hertz (default: 1000000).\n\
+bitsPerWord : `int`, optional\n\
+    SPI word size in bits (default: 8).");
+
+/*=====================================*
  * Chronos Python Module
  *=====================================*/
 PyDoc_STRVAR(pychronos__doc__,
@@ -542,6 +662,7 @@ static PyMethodDef pychronos_methods[] = {
     {"readraw",  pychronos_read_raw,        METH_VARARGS, pychronos_read_raw_docstring},
     {"readframe",  pychronos_read_frame,    METH_VARARGS, pychronos_read_frame_docstring},
     {"writeframe", pychronos_write_frame,   METH_VARARGS, pychronos_write_frame_docstring},
+    {"writespi",   (PyCFunction)pychronos_write_spi, METH_VARARGS | METH_KEYWORDS, pychronos_write_spi_docstring},
     {NULL, NULL, 0, NULL}
 };
 

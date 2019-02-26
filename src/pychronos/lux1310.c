@@ -299,7 +299,7 @@ adcoffset_get_arrayview(PyObject *pyself, void *closure)
 static int
 lux1310_write_spi(PyObject *obj, uint16_t value)
 {
-    int spifd, spics;;
+    int spifd, spics;
     uint8_t wrdata[2] = {
         (value & 0x00ff) >> 0,
         (value & 0xff00) >> 8
