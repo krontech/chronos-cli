@@ -395,7 +395,7 @@ class lux1310(api):
     def autoAdcGainCal(self, fSize):
         # Setup some math constants
         numRows = 64
-        tRefresh = (self.timing.frameTime * 3) / self.LUX1310_TIMING_HZ
+        tRefresh = (self.timing.frameTime * 10) / self.LUX1310_TIMING_HZ
         pixFullScale = (1 << fSize.bitDepth)
 
         seq = sequencer()
