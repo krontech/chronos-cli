@@ -35,6 +35,7 @@ class controlApi(dbus.service.Object):
         # FIXME: This seems hacky, just calling the class method directly.
         # Shouldn't we be using a super() call somehow?
         dbus.service.Object.__init__(self, bus, path)
+        self.bus = bus
         self.mainloop = mainloop
     
         self.camera = camera
@@ -78,6 +79,15 @@ class controlApi(dbus.service.Object):
             # Just a plain old function, call directly but force it to return False
             GLib.timeout_add(msec, lambda *args, **kwargs: callback(*args, **kwargs) and False, *args, **kwargs)
 
+
+    def pokeCamPipelineToRestart(self, geometry, zebra=False, peaking=True):
+        logging.info('Notifying cam-pipeline to reconfigure display')
+        video = self.bus.get_object('com.krontech.chronos.video', '/com/krontech/chronos/video')
+        video.livedisplay({'hres':dbus.types.Int32(geometry.hRes, variant_level=1),
+                           'vres':dbus.types.Int32(geometry.vRes, variant_level=1),
+                           'zebra':dbus.types.Boolean(zebra, variant_level=1),
+                           'peaking':dbus.types.Boolean(peaking, variant_level=1)})
+            
     #===============================================================================================
     #Method('status',                   arguments='',      returns='a{sv}'),
     #Signal('statusHasChanged',         arguments=''),
@@ -236,6 +246,7 @@ class controlApi(dbus.service.Object):
         # set exposure or use a default of 95% framePeriod
         exposurePeriod = args.get('exposure', framePeriod * 0.95) # self.camera.sensor.getExposureRange(geom))
 
+        logging.info('framePeriod, exposurePeriod: %f, %f', framePeriod, exposurePeriod)
         # set up video
         self.camera.sensor.setResolution(geom)
         self.camera.sensor.setFramePeriod(framePeriod)
@@ -244,7 +255,7 @@ class controlApi(dbus.service.Object):
         self.camera.setupDisplayTiming(geom)
 
         # tell video pipeline to restart
-        self.callLater(0.0, self.pokeCamPipelineToRestart)
+        self.callLater(0.1, self.pokeCamPipelineToRestart, geom)
 
         # start a calibration loop
         self.runGenerator(self.startCalibration({'analog':True, 'zeroTimeBlackCal':True}))
@@ -270,7 +281,7 @@ class controlApi(dbus.service.Object):
         self.camera.sensor.setFramePeriod(framePeriod)
         self.camera.sensor.setExposurePeriod(exposurePeriod)
 
-        returnData = dict
+        returnData = dict()
         returnData['framePeriod'] = self.camera.sensor.getCurrentPeriod()
         returnData['frameRate']   = 1.0 / returnGeom['framePeriod']
         returnData['exposure']    = self.camera.sensor.getCurrentExposure()

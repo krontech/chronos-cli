@@ -164,26 +164,27 @@ class sensorTiming(pychronos.fpgamap):
         
     @property
     def frameTime(self):
-        if (self.__disableFrameTrig):
-            return (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
-        else:
-            return (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
+        #if (self.__disableFrameTrig):
+        #    return (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
+        #else:
+        #    return (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
+        return self.__frameTime
     @frameTime.setter
     def frameTime(self, value):
-        self.programStandard(value, self.integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        self.programStandard(value, self.__integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
         
     @property
     def integrationTime(self):
-        if (self.__disableFrameTrig):
-            frameTime = (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
-            integrationTime = frameTime - (self.program[1] & 0x00FFFFFF)
-        else:
-            frameTime = (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
-            integrationTime = frameTime - (self.program[3] & 0x00FFFFFF)
-        return integrationTime
+        #if (self.__disableFrameTrig):
+        #    frameTime = (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
+        #    integrationTime = frameTime - (self.program[1] & 0x00FFFFFF)
+        #else:
+        #    frameTime = (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
+        #    integrationTime = frameTime - (self.program[3] & 0x00FFFFFF)
+        return self.__integrationTime
     @integrationTime.setter
     def integrationTime(self, value):
-        self.programStandard(self.frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        self.programStandard(self.__frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
 
     def programShutterGating(self, t2Time=17, timeout=0.01):
         self.program[0] = self.NONE + t2Time

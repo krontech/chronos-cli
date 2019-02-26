@@ -114,7 +114,8 @@ class controlApi(objects.DBusObject):
             data['details'] = details
         self.emitSignal('statusHasChanged', (data))
         
-    def pokeCamPipelineToRestart(self):
+    def pokeCamPipelineToRestart(self, geometry):
+        
         utils.getProcessOutput('killall', ['-HUP', 'cam-pipeline'])
 
     #===============================================================================================
@@ -263,7 +264,7 @@ class controlApi(objects.DBusObject):
         self.camera.setupDisplayTiming(geom)
 
         # tell video pipeline to restart
-        reactor.callLater(0.0, self.pokeCamPipelineToRestart)
+        reactor.callLater(0.0, self.pokeCamPipelineToRestart, geom)
 
         # start a calibration loop
         reactor.callLater(0.05, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
@@ -289,7 +290,7 @@ class controlApi(objects.DBusObject):
         self.camera.sensor.setFramePeriod(framePeriod)
         self.camera.sensor.setExposurePeriod(exposurePeriod)
 
-        returnData = dict
+        returnData = dict()
         returnData['framePeriod'] = self.camera.sensor.getCurrentPeriod()
         returnData['frameRate']   = 1.0 / returnGeom['framePeriod']
         returnData['exposure']    = self.camera.sensor.getCurrentExposure()

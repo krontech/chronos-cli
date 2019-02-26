@@ -306,6 +306,7 @@ class lux1310(api):
 
     def setFramePeriod(self, fPeriod):
         # TODO: Sanity-check the frame period.
+        logging.debug('frame time: %f', math.ceil(fPeriod * self.LUX1310_TIMING_HZ))
         self.timing.frameTime = math.ceil(fPeriod * self.LUX1310_TIMING_HZ)
     
     def getExposureRange(self, fSize, fPeriod):

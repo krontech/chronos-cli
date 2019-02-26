@@ -293,7 +293,7 @@ class previewImage(resource.Resource):
 
     @inlineCallbacks
     def requestPlaybackImage(self, request):
-        reply = yield self.bus.callRemote('livedisplay')
+        reply = yield self.bus.callRemote('livedisplay', {'hres':0,'vres':0})
         yield asleep(1/60)
 
         image = open('/tmp/cam-screencap.jpg', 'br').read()
@@ -415,7 +415,7 @@ def main():
     Method(video, videoApi, 'flush',       arguments=False)
     Method(video, videoApi, 'playback',    arguments=True)
     Method(video, videoApi, 'configure',   arguments=True)
-    Method(video, videoApi, 'livedisplay', arguments=False)
+    Method(video, videoApi, 'livedisplay', arguments=True)
     Method(video, videoApi, 'recordfile',  arguments=True)
     Method(video, videoApi, 'stop',        arguments=False)
     Method(video, videoApi, 'overlay',     arguments=True)
