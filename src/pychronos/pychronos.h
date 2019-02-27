@@ -5,6 +5,7 @@
 
 int pychronos_init_maps(void);
 int pychronos_init_regs(PyObject *mod);
+int pychronos_init_pwm(PyObject *mod);
 int pychronos_init_lux1310(PyObject *mod);
 
 extern Py_buffer fpga_regbuffer;

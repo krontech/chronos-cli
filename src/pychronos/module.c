@@ -725,5 +725,6 @@ PyInit_pychronos(void)
 
     pychronos_init_regs(m);
     pychronos_init_lux1310(m);
+    pychronos_init_pwm(m);
     return m;
 }
