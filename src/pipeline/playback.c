@@ -475,6 +475,11 @@ playback_fsync(struct pipeline_state *state, int fd)
     return;
 }
 
+#define PLAYBACK_POLL_INTERVAL  100
+#define PLAYBACK_POLL_WATCHDOG  (5000 / PLAYBACK_POLL_INTERVAL)
+
+static int debug_watchdog_timeouts = 0;
+
 /* Thread for managing the playback frames, this *MUST* run from a separate thread or
  * the GST/OMX elements may get stuck in a deadlock. */
 static void *
@@ -483,7 +488,7 @@ playback_thread(void *arg)
     struct pipeline_state *state = (struct pipeline_state *)arg;
     struct pollfd pfd;
     sigset_t mask;
-    const int msec = 100;
+    int watchdog = PLAYBACK_POLL_WATCHDOG;
     int fsync_fd;
     int err;
 
@@ -502,10 +507,18 @@ playback_thread(void *arg)
     pfd.events = POLLPRI | POLLERR;
     pfd.revents = 0;
     while (1) {
-        err = poll(&pfd, 1, -1);
+        err = poll(&pfd, 1, PLAYBACK_POLL_INTERVAL);
+        if ((err == 0) && (state->mode >= PIPELINE_MODE_PLAY)) watchdog--;
         if (err < 0) {
             if (errno == EINTR) continue;
             break;
+        }
+
+        if (watchdog == 0) {
+            fprintf(stderr, "Warning: Playback watchdog expired - retrying frame!\n");
+            debug_watchdog_timeouts++;
+            state->fpga->display->manual_sync = 1;
+            watchdog = PLAYBACK_POLL_WATCHDOG;
         }
 
         /* Grab new regions from the recording sequencer. */
@@ -516,6 +529,7 @@ playback_thread(void *arg)
         /* Read the current state of the GPIO. */
         if (pfd.revents) {
             playback_fsync(state, fsync_fd);
+            watchdog = PLAYBACK_POLL_WATCHDOG;
         }
     }
 }
