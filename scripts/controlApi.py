@@ -61,6 +61,8 @@ class controlApi(objects.DBusObject):
                           Method('getIoCapabilities',        arguments='',      returns='a{sv}'),
                           Method('getIoMapping',             arguments='',      returns='a{sv}'),
                           Method('setIoMapping',             arguments='a{sv}', returns='a{sv}'),
+                          Method('getDelay',                 arguments='',      returns='a{sv}'),
+                          Method('setDelay',                 arguments='a{sv}', returns='a{sv}'),
                           Signal('ioEvent',                  arguments='a{sv}'),
                           
                           Method('getCalCapabilities',       arguments='',      returns='a{sv}'),
@@ -90,13 +92,13 @@ class controlApi(objects.DBusObject):
         self.camera = camera
         self.io = regmaps.ioInterface()
         self.display = regmaps.display()
+        self.description = "Chronos SN:%s" % (self.camera.getSerialNumber())
 
         self.currentState = 'idle'
-        self.description = "Chronos SN:%s" % (self.camera.getSerialNumber())
-        self.idNumber = None
 
         reactor.callLater(0.05, self.reinitSystem, {'reset':True, 'sensor':True})
-    
+        reactor.callLater(5.00, self.setSensorSettings, {'hRes':1280, 'vRes':1024, 'program':'standard'})
+        
     # Return a state dictionary
     def status(self, lastState=None, error=None):
         data = {'state':self.currentState}
@@ -106,6 +108,53 @@ class controlApi(objects.DBusObject):
             data['error'] = error
         return data
 
+    @inlineCallbacks
+    def pokeCamPipelineToRestart(self, geometry=None, zebra=True, peaking=False):
+        logging.info('Notifying cam-pipeline to reconfigure display')
+        if not geometry:
+            geometry = self.camera.geometry
+        #utils.getProcessOutput('killall', ['-HUP', 'cam-pipeline'])
+        videoApi = yield self.conn.getRemoteObject('com.krontech.chronos.video',   '/com/krontech/chronos/video')
+        logging.debug('have videoApi')
+        settings = {
+            'hres':geometry.hRes,
+            'vres':geometry.vRes,
+            'peaking':peaking,
+            'zebra':zebra}
+        logging.debug('sending to livedisplay: %s', settings)
+        reply = yield videoApi.callRemote('livedisplay', settings)
+        logging.debug('sent')
+
+    @property
+    def idNumber(self):
+        try:
+            idFile = open("/var/camera/idNum.txt", "r")
+            logging.debug('opened file')
+            idNum = int(idFile.read())
+            logging.debug('read ID')
+            idFile.close()
+            logging.debug('ID: %d', idNum)
+            return idNum
+        except Exception as e:
+            logging.debug('failed to load ID: %s', e)
+            return None
+    @idNumber.setter
+    def idNumber(self, value):
+        idFile = open("/var/camera/idNum.txt", "w+")
+        idFile.write(str(value))
+        idFile.close()
+        hostnameFile = open("/etc/hostname", "w")
+        hostnameFile.write('Chronos-%02d\n' % value)
+        hostnameFile.close()
+
+    #===============================================================================================
+    #Method('status',                   arguments='',      returns='a{sv}'),
+    #Signal('statusHasChanged',         arguments=''),
+
+    @dbusMethod(krontechControl, 'status')
+    def dbusStatus(self):
+        return self.status()
+
     def emitStateChanged(self, reason=None, details=None):
         data = {'state':self.currentState}
         if reason:
@@ -114,15 +163,10 @@ class controlApi(objects.DBusObject):
             data['details'] = details
         self.emitSignal('statusHasChanged', (data))
         
-    def pokeCamPipelineToRestart(self, geometry):
-        
-        utils.getProcessOutput('killall', ['-HUP', 'cam-pipeline'])
-
+    
     #===============================================================================================
     #Method('getCameraData',            arguments='',      returns='a{sv}'),
     #Method('getSensorData',            arguments='',      returns='a{sv}'),
-    #Method('status',                   arguments='',      returns='a{sv}'),
-    #Signal('statusHasChanged',         arguments=''),
     
     @dbusMethod(krontechControl, 'getCameraData')
     def dbusGetCameraData(self):
@@ -131,6 +175,7 @@ class controlApi(objects.DBusObject):
             'apiVersion':API_VERISON_STRING,
             'serial':self.camera.getSerialNumber().strip(),
             'description':self.description,
+            'delay':self.io.delayTime
         }
         if (self.idNumber is not None):
             data['idNumber'] = self.idNumber
@@ -168,9 +213,6 @@ class controlApi(objects.DBusObject):
             self.idNumber = int(args["idNumber"])
         return self.status()
 
-    @dbusMethod(krontechControl, 'status')
-    def dbusStatus(self):
-        return self.status()
     
     #===============================================================================================
     #Method('reinitSystem',             arguments='a{sv}', returns='a{sv}'),
@@ -205,6 +247,7 @@ class controlApi(objects.DBusObject):
             
             self.currentState = 'calibrating'
             reactor.callLater(0.05, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
+            reactor.callLater(0.01, self.pokeCamPipelineToRestart)
         else:
             self.currentState = 'idle'
         self.emitStateChanged(reason='(re)initialization complete')
@@ -241,6 +284,17 @@ class controlApi(objects.DBusObject):
         geom.vOffset   = args.get('vOffset',   geom.vOffset)
         geom.vDarkRows = args.get('vDarkRows', geom.vDarkRows)
         geom.bitDepth  = args.get('bitDepth',  geom.bitDepth)
+        zebra = args.get('zebra', True)
+        peaking = args.get('peaking', True)
+
+        programName = args.get('program', 'standard')
+        program = 0
+        if   programName == 'standard':
+            program = self.camera.sensor.PROGRAM_STANDARD
+            self.io.shutterTriggersFrame = True
+        elif programName == 'shutterGating':
+            program = self.camera.sensor.PROGRAM_SHUTTER_GATING
+            self.io.shutterTriggersFrame = True
 
         # set default value
         framePeriod, _ = self.camera.sensor.getPeriodRange(geom)
@@ -257,14 +311,15 @@ class controlApi(objects.DBusObject):
         exposurePeriod = args.get('exposure', framePeriod * 0.95) # self.camera.sensor.getExposureRange(geom))
 
         # set up video
-        self.camera.sensor.setResolution(geom)
+        self.camera.sensor.setResolution(geom, program=program)
         self.camera.sensor.setFramePeriod(framePeriod)
         self.camera.sensor.setExposurePeriod(exposurePeriod)
         self.camera.setupRecordRegion(geom, self.camera.REC_REGION_START)
         self.camera.setupDisplayTiming(geom)
 
         # tell video pipeline to restart
-        reactor.callLater(0.0, self.pokeCamPipelineToRestart, geom)
+        logging.debug('about to schedule pokeCamPipeline')
+        reactor.callLater(0.01, self.pokeCamPipelineToRestart, geom, zebra, peaking)
 
         # start a calibration loop
         reactor.callLater(0.05, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
@@ -276,6 +331,19 @@ class controlApi(objects.DBusObject):
 
     @dbusMethod(krontechControl, 'setSensorTiming')
     def setSensorTiming(self, args):
+        programName = args.get('program', 'standard')
+        program = 0
+        if   programName == 'standard':
+            program = self.camera.sensor.PROGRAM_STANDARD
+            self.io.shutterTriggersFrame = False
+        elif programName == 'shutterGating':
+            program = self.camera.sensor.PROGRAM_SHUTTER_GATING
+            self.io.shutterTriggersFrame = True
+
+        if program == self.camera.sensor.PROGRAM_SHUTTER_GATING:
+            self.camera.sensor.timing.programShutterGating()
+            return {"program":"shutterGating"}
+
         # check if we have a frameRate field and if so convert it to framePeriod
         frameRate = args.get('frameRate')
         if frameRate:
@@ -307,13 +375,26 @@ class controlApi(objects.DBusObject):
         return {'failed':'Not Implemented Yet - poke otter', 'id':self.ERROR_NOT_IMPLEMENTED_YET}
 
     @dbusMethod(krontechControl, 'getIoMapping')
-    def dbusGetIoMapping(self, args):
-        return self.io.getConfiguration()
+    def dbusGetIoMapping(self):
+        mapping = self.io.getConfiguration()
+        logging.info('mapping: %s', mapping)
+        return mapping
 
     @dbusMethod(krontechControl, 'setIoMapping')
     def dbusSetIoMapping(self, args):
+        logging.info('mapping given: %s', args)
         self.io.setConfiguration(args)
         return self.io.getConfiguration()
+
+    @dbusMethod(krontechControl, 'getDelay')
+    def dbusGetDelay(self, args):
+        return self.io.getDelayConfiguraiton()
+    
+    @dbusMethod(krontechControl, 'setDelay')
+    def dbusSetDelay(self, args):
+        logging.info('delay given: %s', args)
+        self.io.setDelayConfiguration(args)
+        return self.io.getDelayConfiguration()
 
     #===============================================================================================
     #Method('getCalCapabilities',       arguments='',      returns='a{sv}'),
@@ -327,7 +408,7 @@ class controlApi(objects.DBusObject):
     def dbusCalibrate(self, args):
         reactor.callLater(0.0, self.startCalibration, args)
         self.currentState = 'calibrating'
-        return {'success':'started calibration'}
+        return self.status()
 
     @inlineCallbacks
     def startCalibration(self, args):
@@ -336,6 +417,7 @@ class controlApi(objects.DBusObject):
         blackCal         = args.get('blackCal') or args.get('fpn')
         zeroTimeBlackCal = args.get('zeroTimeBlackCal') or args.get('basic')
         analogCal        = args.get('analogCal') or args.get('analog') or args.get('basic')
+        whiteBalance     = args.get('whiteBalance')
 
         if analogCal:
             logging.info('starting analog calibration')
@@ -349,6 +431,11 @@ class controlApi(objects.DBusObject):
         elif blackCal:
             logging.info('starting standard black calibration')
             for delay in self.camera.startBlackCal():
+                yield asleep(delay)
+
+        if whiteBalance:
+            logging.info('starting white balance')
+            for delay in self.camera.startWhiteBalance():
                 yield asleep(delay)
                 
         self.currentState = 'idle'
@@ -480,30 +567,6 @@ class controlApi(objects.DBusObject):
 def main():
     cam = camera(lux1310())
 
-    try:
-        logging.debug('about to test FPGA version')
-        output = yield utils.getProcessOutput('python3',['testFpga.py'], errortoo=True)
-        logging.debug('output: %s', repr(output))
-        if output and float(output) >= 3.19 and float(output) < 4.0:
-            logging.info('FPGA State: All good. Current version: %0.2f', float(output))
-        else:
-            if output:
-                logging.info('FPGA State: needs programming, version: %0.2f', float(output))
-            else:
-                logging.info('FPGA State: needs programming, unable to read from device')
-            logging.info('======== resetting FPGA ==========')
-            cam.reset(FPGA_BITSTREAM)
-            
-            output = yield utils.getProcessOutput('python',['testFpga.py'], errortoo=True)
-            if output and float(output) >= 3.19 and float(output) < 4.0:
-                logging.info('FPGA State: All good. Current version: %0.2f', float(output))
-            else:
-                logging.error('failed to bring up FPGA')
-                reactor.stop()
-    except Exception as e:
-        logging.error(e)
-        reactor.stop()
-        
     try:
         conn = yield client.connect(reactor, 'system')
         conn.exportObject(controlApi(krontechControlPath, conn, cam) )

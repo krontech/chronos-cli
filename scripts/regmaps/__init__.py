@@ -7,3 +7,4 @@ from regmaps.vram import vram
 from regmaps.overlay import overlay
 from regmaps.sensorTiming import sensorTiming
 from regmaps.ioInterface import ioInterface
+from regmaps.zebraStripes import zebra

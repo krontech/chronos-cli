@@ -13,6 +13,13 @@ import logging
 
 import cgi
 
+
+try:
+    from aimCamera import aimCameraResource
+except ImportError:
+    aimCameraResource = None
+    
+
 def asleep(secs):
     """
     @brief Do a reactor-safe sleep call. Call with yield to block until done.
@@ -157,6 +164,7 @@ class Method(resource.Resource):
 
     @inlineCallbacks
     def startDbusRequestWData(self, request, data):
+        logging.debug('request: %s, (%s) %s', self.methodName, type(data), data)
         reply = yield self.bus.callRemote(self.methodName, data)
 
         returnData = json.dumps(reply)
@@ -168,6 +176,7 @@ class Method(resource.Resource):
 
     @inlineCallbacks
     def startDbusRequest(self, request):
+        logging.debug('request: %s', self.methodName)
         reply = yield self.bus.callRemote(self.methodName)
 
         returnData = json.dumps(reply)
@@ -334,7 +343,7 @@ class waitForTouch(resource.Resource):
     def runCommand(self, request):
         message = cgi.escape(request.args.get(b'message', (b"Tap"))[0].decode('utf8'))
         logging.info('started wait for touch')
-        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py', message], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb0"})
+        yield utils.getProcessOutput('python3', ['/root/api/uiScripts/tap-to-exit-button.py', message], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb0"})
         logging.info('touch happened')
         request.write(b'{"Touched":true}')
         request.finish()
@@ -354,7 +363,7 @@ class waitForTouchThenBlackcal(resource.Resource):
     def runCommand(self, request):
         message = cgi.escape(request.args.get(b'message', (b"Touch to cal"))[0].decode('utf8'))
         logging.info('started wait for touch')
-        yield utils.getProcessOutput('python3', ['uiScripts/tap-to-exit-button.py', message], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb0"})
+        yield utils.getProcessOutput('python3', ['/root/api/uiScripts/tap-to-exit-button.py', message], env={"QT_QPA_PLATFORM":"linuxfb:fb=/dev/fb0"})
         logging.info('touch happened; calibrating')
 
         reply = yield self.controlApi.callRemote('calibrate', {"blackCal":True, "analogCal":True})
@@ -397,6 +406,8 @@ def main():
     Method(control, controlApi, 'getIoCapabilities',        arguments=False)
     Method(control, controlApi, 'getIoMapping',             arguments=False)
     Method(control, controlApi, 'setIoMapping',             arguments=True)
+    Method(control, controlApi, 'getDelay',                 arguments=False)
+    Method(control, controlApi, 'setDelay',                 arguments=True)
     Method(control, controlApi, 'getCalCapabilities',       arguments=False)
     Method(control, controlApi, 'calibrate',                arguments=True)
     Method(control, controlApi, 'getColorMatrix',           arguments=False)
@@ -426,6 +437,12 @@ def main():
 
     root.putChild(b'waitForTouch', waitForTouch())
     root.putChild(b'waitForTouchThenBlackcal', waitForTouchThenBlackcal(controlApi))
+
+    if aimCameraResource:
+        root.putChild(b'aimCamera', aimCameraResource())
+
+    root.putChild(b'timingControl.html', File('timingControl.html'))
+
     logging.info("All Systems Go")
     
 if __name__ == "__main__":

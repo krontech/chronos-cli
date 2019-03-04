@@ -13,6 +13,7 @@ from sensors import lux1310, frameGeometry
 from regmaps import seqcommand
 import regmaps
 import pychronos
+import os
 
 interface = 'com.krontech.chronos.control'
 
@@ -41,10 +42,9 @@ class controlApi(dbus.service.Object):
         self.camera = camera
         self.io = regmaps.ioInterface()
         self.display = regmaps.display()
+        self.description = 'SerialNo: %s' % (self.camera.getSerialNumber().strip())
 
         self.currentState = 'idle'
-        self.description = "Chronos SN:%s" % (self.camera.getSerialNumber())
-        self.idNumber = None
 
         self.callLater(0.5, self.doReset, {'reset':True, 'sensor':True})
     
@@ -80,7 +80,7 @@ class controlApi(dbus.service.Object):
             GLib.timeout_add(msec, lambda *args, **kwargs: callback(*args, **kwargs) and False, *args, **kwargs)
 
 
-    def pokeCamPipelineToRestart(self, geometry, zebra=False, peaking=True):
+    def pokeCamPipelineToRestart(self, geometry, zebra=True, peaking=False):
         logging.info('Notifying cam-pipeline to reconfigure display')
         video = self.bus.get_object('com.krontech.chronos.video', '/com/krontech/chronos/video')
         video.livedisplay({'hres':dbus.types.Int32(geometry.hRes, variant_level=1),
@@ -88,6 +88,21 @@ class controlApi(dbus.service.Object):
                            'zebra':dbus.types.Boolean(zebra, variant_level=1),
                            'peaking':dbus.types.Boolean(peaking, variant_level=1)})
             
+    @property
+    def idNumber(self):
+        try:
+            idFile = open("/var/camera/idNum.txt", "r")
+            idNum = int(idFile.read())
+            idFile.close()
+            return idNum
+        except:
+            return None
+    @idNumber.setter
+    def idNumber(self, value):
+        idFile = open("/var/camera/idNum.txt", "w+")
+        idFile.write(str(value))
+        idFile.close()
+
     #===============================================================================================
     #Method('status',                   arguments='',      returns='a{sv}'),
     #Signal('statusHasChanged',         arguments=''),
@@ -117,7 +132,7 @@ class controlApi(dbus.service.Object):
     #Method('getCameraData',            arguments='',      returns='a{sv}'),
     #Method('getSensorData',            arguments='',      returns='a{sv}'),
     #Method('setDescription',           arguments='a{sv}', returns='a{sv}'),
-    
+
     @dbus.service.method(interface, in_signature='', out_signature='a{sv}')
     def getCameraData(self):
         data = {
@@ -153,7 +168,7 @@ class controlApi(dbus.service.Object):
             data["pixelFormat"] = cfaString
         
         return data
-
+    
     @dbus.service.method(interface, in_signature='a{sv}', out_signature='a{sv}')
     def setDescription(self, args):
         if args["description"]:
@@ -232,6 +247,11 @@ class controlApi(dbus.service.Object):
         geom.vDarkRows = args.get('vDarkRows', geom.vDarkRows)
         geom.bitDepth  = args.get('bitDepth',  geom.bitDepth)
 
+        programName = args.get('program', 'standard')
+        program = 0
+        if   programName == 'standard':      program = self.camera.sensor.PROGRAM_STANDARD
+        elif programName == 'shutterGating': program = self.camera.sensor.PROGRAM_SHUTTER_GATING
+        
         # set default value
         framePeriod, _ = self.camera.sensor.getPeriodRange(geom)
 
@@ -248,7 +268,7 @@ class controlApi(dbus.service.Object):
 
         logging.info('framePeriod, exposurePeriod: %f, %f', framePeriod, exposurePeriod)
         # set up video
-        self.camera.sensor.setResolution(geom)
+        self.camera.sensor.setResolution(geom, program=program)
         self.camera.sensor.setFramePeriod(framePeriod)
         self.camera.sensor.setExposurePeriod(exposurePeriod)
         self.camera.setupRecordRegion(geom, self.camera.REC_REGION_START)
@@ -267,6 +287,15 @@ class controlApi(dbus.service.Object):
 
     @dbus.service.method(interface, in_signature='a{sv}', out_signature='a{sv}')
     def setSensorTiming(self, args):
+        programName = args.get('program', 'standard')
+        program = 0
+        if   programName == 'standard':      program = self.camera.sensor.PROGRAM_STANDARD
+        elif programName == 'shutterGating': program = self.camera.sensor.PROGRAM_SHUTTER_GATING
+
+        if program == self.camera.sensor.PROGRAM_SHUTTER_GATING:
+            self.camera.sensor.timing.programShutterGating()
+            return {"program":"shutterGating"}
+        
         # check if we have a frameRate field and if so convert it to framePeriod
         frameRate = args.get('frameRate')
         if frameRate:
@@ -303,8 +332,9 @@ class controlApi(dbus.service.Object):
 
     @dbus.service.method(interface, in_signature='a{sv}', out_signature='a{sv}')
     def setIoMapping(self, args):
+        logging.info('setIoMapping args: (%s) %s', type(args), args)
         self.io.setConfiguration(args)
-        return self.io.getConfiguration()
+        return dbus.Dictionary(self.io.getConfiguration())
     
     #===============================================================================================
     #Method('getCalCapabilities',       arguments='',      returns='a{sv}'),

@@ -58,6 +58,23 @@ class lux1310(api):
         ## ADC Calibration state
         self.adcOffsets = [0] * self.HRES_INCREMENT
 
+        self.PROGRAM_STANDARD = property(fget=lambda self: self.timing.PROGRAM_STANDARD,
+                                         doc="""Standard; normal drive with option for frame triggering
+                                         - Given to setResolution for determining the type of timing program to use""")
+        self.PROGRAM_SHUTTER_GATING = property(fget=lambda self: self.timing.PROGRAM_SHUTTER_GATING,
+                                               doc="""Shutter Gating; drive which takes timing from the IO signal
+                                               - Given to setResolution for determining the type of timing program to use""")
+        self.PROGRAM_2POINT_HDR = property(fget=lambda self: self.timing.PROGRAM_2POINT_HDR,
+                                           doc="""2 point HDR for getting the maximum dynamic range out of the sensor
+                                           - Given to setResolution for determining the type of timing program to use""")
+        self.PROGRAM_3POINT_HDR = property(fget=lambda self: self.timing.PROGRAM_3POINT_HDR,
+                                           doc="""3 point HDR for getting the maximum dynamic range out of the sensor
+                                           - Given to setResolution for determining the type of timing program to use""")
+        self.PROGRAM_FRAME_TRIG = property(fget=lambda self: self.timing.PROGRAM_FRAME_TRIG,
+                                           doc="""Triggered frame mode; on each rising edge or while the trigger is high, the
+                                           timing generator will create frames.
+                                           - Given to setResolution for determining the type of timing program to use""")
+        
         super().__init__()
 
     #--------------------------------------------
@@ -245,7 +262,7 @@ class lux1310(api):
         self.sci.regDrkRowsStAddr = self.MAX_VRES + self.MAX_VDARK - size.vDarkRows + 4
         self.sci.regNbDrkRows = size.vDarkRows
 
-    def setResolution(self, size, fPeriod=None):
+    def setResolution(self, size, fPeriod=None, program=0):
         if (not self.isValidResolution(size)):
             raise ValueError("Invalid frame resolution")
         
@@ -268,8 +285,14 @@ class lux1310(api):
         time.sleep(0.01)
 
         # Switch to the minimum frame period and 180-degree shutter after changing resolution.
-        self.timing.programStandard(fClocks, fClocks * 0.95)
-    
+        if program == self.timing.PROGRAM_STANDARD:
+            self.timing.programStandard(fClocks, fClocks * 0.95)
+        elif program == self.timing.PROGRAM_SHUTTER_GATING:
+            self.timing.programShutterGating()
+        elif program == self.timing.PROGRAM_FRAME_TRIG:
+            self.timing.programTriggerFrames(fClocks, fClocks * 0.95)
+        # TODO: implement HDR modes
+
     #--------------------------------------------
     # Frame Timing Configuration Functions
     #--------------------------------------------

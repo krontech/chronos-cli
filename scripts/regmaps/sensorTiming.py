@@ -39,6 +39,12 @@ class sensorTiming(pychronos.fpgamap):
     TIMING_WAIT_FOR_INACTIVE = 0x00FFFFFE
 
     TIMING_HZ = 90000000
+
+    PROGRAM_STANDARD       = 0
+    PROGRAM_SHUTTER_GATING = 1
+    PROGRAM_2POINT_HDR     = 2
+    PROGRAM_3POINT_HDR     = 3
+    PROGRAM_FRAME_TRIG     = 4
     
     def __init__(self, wt_length=80, fps=1000):
         super().__init__(0x6100, 0x500)
@@ -89,6 +95,7 @@ class sensorTiming(pychronos.fpgamap):
     currentlyWaitingForActive   = __bitprop_ro(0x06, 2, 8, 1, 'if "1" the timing generator is currently waiting for active signal level')
     currentlyWaitingForInactive = __bitprop_ro(0x06, 2, 9, 1, 'if "1" the timing generator is currently waiting for inactive signal level')
     pageSwapState               = __bitprop_ro(0x06, 2, 12, 4, 'state of the state machine that runs the copy on page flip')
+    exposureIsEnabled           = __bitprop_ro(0x06, 2, 6, 1, 'if "1" either exposureEnabled is 1 or external shutter signal is enabled')
 
 
     control             = __regprop(0x08, 2, 'control register')
@@ -171,8 +178,13 @@ class sensorTiming(pychronos.fpgamap):
         return self.__frameTime
     @frameTime.setter
     def frameTime(self, value):
-        self.programStandard(value, self.__integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
-        
+        if self.__program == self.PROGRAM_STANDARD:
+            self.programStandard(value, self.__integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_FRAME_TRIG:
+            self.programTriggerFrames(value, self.__integrationTime, self.__t2Time, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_SHUTTER_GATING:
+            pass
+            
     @property
     def integrationTime(self):
         #if (self.__disableFrameTrig):
@@ -184,14 +196,59 @@ class sensorTiming(pychronos.fpgamap):
         return self.__integrationTime
     @integrationTime.setter
     def integrationTime(self, value):
-        self.programStandard(self.__frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        if self.__program == self.PROGRAM_STANDARD:
+            self.programStandard(self.__frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_FRAME_TRIG:
+            self.programTriggerFrames(self.__frameTime, value, self.__t2Time, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_SHUTTER_GATING:
+            pass
 
+        
     def programShutterGating(self, t2Time=17, timeout=0.01):
-        self.program[0] = self.NONE + t2Time
-        self.program.next = self.ABN  | self.TIMING_WAIT_FOR_ACTIVE
+        self.__program = self.PROGRAM_SHUTTER_GATING
+        
+        self.program[0]   = self.NONE + t2Time
+        self.program.next = self.ABN                 | self.TIMING_WAIT_FOR_ACTIVE
         self.program.next = self.IODRIVE | self.NONE | self.TIMING_WAIT_FOR_INACTIVE
         self.program.next = self.TXN  | 0x31
         self.program.next = self.NONE | self.TIMING_RESTART
+        if timeout < 0:
+            self.flip(force=True)
+        else:
+            start = time.time()
+            while time.time() < (start + timeout):
+                if not self.busy:
+                    break
+            if not self.busy:
+                self.flip(force=True)
+            else:
+                self.flip()
+        
+    def programTriggerFrames(self, frameTime, integrationTime, t2Time=17, disableIoDrive=False, timeout=0.01):
+        frameTime       = int(frameTime)
+        integrationTime = int(integrationTime)
+        t2Time          = int(t2Time)
+        if (frameTime <= integrationTime):
+            raise ValueError("frameTime (%d) must be longer than integrationTime (%d)" % (frameTime, integrationTime))
+
+        self.__program          = self.PROGRAM_FRAME_TRIG
+        self.__frameTime        = frameTime
+        self.__integrationTime  = integrationTime
+        self.__t2Time           = t2Time
+        self.__disableFrameTrig = False
+        self.__disableIoDrive   = disableIoDrive
+
+        if disableIoDrive: ioDrive = 0
+        else:              ioDrive = self.IODRIVE
+        
+        self.program[0] = self.NONE + t2Time                             # period before ABN goes low (must be t2 time)
+        # ABN Falls here
+        self.program.next = self.ABN | self.TIMING_WAIT_FOR_ACTIVE   # (hence why the hold happens after the first command)
+        self.program.next = self.ABN + (frameTime - integrationTime)
+        self.program.next = ioDrive + self.NONE + (integrationTime) # ABN raises
+        self.program.next = ioDrive + self.TXN + 0x31               # TXN falls
+        self.program.next = self.TIMING_RESTART                          # TXN raises and cycle restarts
+
         if timeout < 0:
             self.flip(force=True)
         else:
@@ -211,6 +268,7 @@ class sensorTiming(pychronos.fpgamap):
         if (frameTime <= integrationTime):
             raise ValueError("frameTime (%d) must be longer than integrationTime (%d)" % (frameTime, integrationTime))
 
+        self.__program          = self.PROGRAM_STANDARD
         self.__frameTime        = frameTime
         self.__integrationTime  = integrationTime
         self.__t2Time           = t2Time
