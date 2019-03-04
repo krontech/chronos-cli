@@ -8,9 +8,22 @@ import logging
 
 from regmaps import sequencer, sensorTiming
 from sensors import api, frameGeometry
-from . import lux1310wt
+from . import lux1310regs, lux1310wt
 
 class lux1310(api):
+    """Driver for the Luxima LUX1310 image sensor.
+
+    The board dictionary may provide the following pins:
+        lux1310-spidev: Path to the spidev driver for the voltage DAC.
+        lux1310-dac-cs: Path to the chip select for the voltage DAC.
+        lux1310-color: Path to the GPIO to read for color detection.
+
+    Parameters
+    ----------
+    board : `dict`
+        Name/value pairs listing the hardware wiring of the board.
+    """
+
     # Image sensor geometry constraints
     MAX_HRES = 1280
     MAX_VRES = 1024
@@ -37,21 +50,57 @@ class lux1310(api):
     COL_GAIN_FRAC_BITS = 12
     COL_CURVE_FRAC_BITS = 21
 
+    # Constants for the DAC configuration
+    DAC_VDR3 = 0    # Pixel Driver High Dynamic Range Voltage 3
+    DAC_VABL = 1    # Pixel Anti-Blooming Low Voltage
+    DAC_VDR1 = 2    # Pixel Driver High Dynamic Range Voltage 1
+    DAC_VDR2 = 3    # Pixel Driver High Dynamic Range Voltage 2
+    DAC_VRSTB = 4   # Pixel Reset High Voltage 2
+    DAC_VRSTH = 5   # Pixel Driver Reset High Voltage
+    DAC_VRSTL = 6   # Pixel Driver Reset Low Voltage
+    DAC_VRST = 7    # Pixel Reset High Voltage
+
+    # Gain networks for some DAC outputs. 
+    dacmap = {      # mul           div
+        DAC_VDR3:   ( 1,            1 ),
+        DAC_VABL:   ( 100 + 232,    100 ),
+        DAC_VDR1:   ( 1,            1 ),
+        DAC_VDR2:   ( 1,            1 ),
+        DAC_VRSTB:  ( 1,            1 ),
+        DAC_VRSTH:  ( 499,          499 + 100 ),
+        DAC_VRSTL:  ( 100 + 232,    100 ),
+        DAC_VRST:   ( 499,          499 + 100 )
+    }
+
+    DAC_FULL_SCALE  = 4095
+    DAC_VREF        = 3.3
+    DAC_AUTOUPDATE  = 0x9
+
     @property
     def name(self):
         return "LUX1310"
     
     @property
     def cfaPattern(self):
-        if (self.sci.color):
-            return ['R', 'G', 'G', 'B']
-        else:
+        try:
+            fp = open(self.board["lux1310-color"])
+            if int(fp.read()) == 1:
+                return ['R', 'G', 'G', 'B']
+            else:
+                return None
+        except:
             return None
 
-    def __init__(self):
+    def __init__(self, board={
+            "lux1310-spidev":  "/dev/spidev3.0",
+            "lux1310-dac-cs": "/sys/class/gpio/gpio33/value",
+            "lux1310-color":  "/sys/class/gpio/gpio66/value"} ):
         ## Hardware Resources
-        self.sci = pychronos.lux1310()
-        self.fpga = pychronos.sensor()
+        self.spidev = board["lux1310-spidev"]
+        self.spics = board["lux1310-dac-cs"]
+        self.board = board
+        self.sci = pychronos.lux1310() # TODO: Work in progress to remove this. 
+        self.regs = lux1310regs.lux1310regs()
         self.wavetables = lux1310wt.wavetables
         self.timing = sensorTiming()
 
@@ -77,6 +126,19 @@ class lux1310(api):
         
         super().__init__()
 
+    def writeDAC(self, dac, voltage):
+        """Write the DAC voltage"""
+        # Convert the DAC value
+        mul, div = self.dacmap[dac]
+        dacval = int((voltage * self.DAC_FULL_SCALE * mul) / (self.DAC_VREF * div))
+        if ((dacval < 0)  or (dacval > self.DAC_FULL_SCALE)):
+            raise ValueError("DAC Voltage out of range")
+        dacval |= (dac << 12)
+        
+        # Write the DAC value to the SPI.
+        pychronos.writespi(device=self.spidev, csel=self.spics, mode=1, bitsPerWord=16,
+            data=bytearray([(dacval & 0x00ff) >> 0, (dacval & 0xff00) >> 8]))
+
     #--------------------------------------------
     # Sensor Configuration and Control API
     #--------------------------------------------
@@ -86,83 +148,87 @@ class lux1310(api):
         # Disable integration while setup is in progress.
         self.timing.stopTiming(waitUntilStopped=True)
         
+        # Configure the DAC to autoupdate when written.
+        pychronos.writespi(device=self.spidev, csel=self.spics, mode=1, bitsPerWord=16,
+            data=bytearray([0, self.DAC_AUTOUPDATE]))
+
         # Initialize the DAC voltage levels.
-        self.sci.writeDAC(self.sci.DAC_VABL, 0.3)
-        self.sci.writeDAC(self.sci.DAC_VRSTB, 2.7)
-        self.sci.writeDAC(self.sci.DAC_VRST, 3.3)
-        self.sci.writeDAC(self.sci.DAC_VRSTL, 0.7)
-        self.sci.writeDAC(self.sci.DAC_VRSTH, 3.6)
-        self.sci.writeDAC(self.sci.DAC_VDR1, 2.5)
-        self.sci.writeDAC(self.sci.DAC_VDR2, 2.0)
-        self.sci.writeDAC(self.sci.DAC_VDR3, 1.5)
+        self.writeDAC(self.DAC_VABL, 0.3)
+        self.writeDAC(self.DAC_VRSTB, 2.7)
+        self.writeDAC(self.DAC_VRST, 3.3)
+        self.writeDAC(self.DAC_VRSTL, 0.7)
+        self.writeDAC(self.DAC_VRSTH, 3.6)
+        self.writeDAC(self.DAC_VDR1, 2.5)
+        self.writeDAC(self.DAC_VDR2, 2.0)
+        self.writeDAC(self.DAC_VDR3, 1.5)
         time.sleep(0.01) # Settling time
 
         # Force a reset of the image sensor.
-        self.fpga.control |= self.fpga.RESET
-        self.fpga.control &= ~self.fpga.RESET
+        self.regs.control |= self.regs.RESET
+        self.regs.control &= ~self.regs.RESET
         time.sleep(0.001)
 
         # Reset the SCI interface.
-        self.sci.regSresetB = 0
-        rev = self.sci.regChipId
+        self.regs.regSresetB = 0
+        rev = self.regs.regChipId
         if (rev != self.LUX1310_CHIP_ID):
             print("LUX1310 regChipId returned an invalid ID (%s)" % (hex(rev)))
             return False
         else:
-            print("Initializing LUX1310 silicon revision %s" % (self.sci.revChip))
+            print("Initializing LUX1310 silicon revision %s" % (self.regs.revChip))
         
         # Setup ADC training.
-        self.sci.regCustPat = 0xFC0     # Set custom pattern for ADC training.
-        self.sci.regTstPat = 2          # Enable test pattern
-        self.sci.regPclkVblank = 0xFC0  # Set PCLK channel output during vertical blank
-        self.sci.reg[0x5A] = 0xE1       # Configure for inverted DCLK output
+        self.regs.regCustPat = 0xFC0    # Set custom pattern for ADC training.
+        self.regs.regTstPat = 2         # Enable test pattern
+        self.regs.regPclkVblank = 0xFC0 # Set PCLK channel output during vertical blank
+        self.regs.reg[0x5A] = 0xE1      # Configure for inverted DCLK output
         self.__autoPhaseCal()
 
         # Return to normal data mode
-        self.sci.regPclkVblank = 0xf00          # PCLK channel output during vertical blanking
-        self.sci.regPclkOpticalBlack = 0xfc0    # PCLK channel output during dark pixel readout
-        self.sci.regTstPat = False              # Disable test pattern
+        self.regs.regPclkVblank = 0xf00         # PCLK channel output during vertical blanking
+        self.regs.regPclkOpticalBlack = 0xfc0   # PCLK channel output during dark pixel readout
+        self.regs.regTstPat = False             # Disable test pattern
 
         # Setup for 80-clock wavetable
-        self.sci.regRdoutDly = 80               # Non-overlapping readout delay
-        self.sci.reg[0x7A] = 80                 # Undocumented???
+        self.regs.regRdoutDly = 80              # Non-overlapping readout delay
+        self.regs.regWavetableSize = 80         # Wavetable size
 
                 # Set internal control registers to fine tune the performance of the sensor
-        self.sci.regLvDelay = self.LUX1310_LV_DELAY     # Line valid delay to match internal ADC latency
-        self.sci.regHblank = self.LUX1310_MIN_HBLANK    # Set horizontal blanking period
+        self.regs.regLvDelay = self.LUX1310_LV_DELAY    # Line valid delay to match internal ADC latency
+        self.regs.regHblank = self.LUX1310_MIN_HBLANK   # Set horizontal blanking period
 
         # Undocumented internal registers from Luxima
-        self.sci.reg[0x2D] = 0xE08E     # State for idle controls
-        self.sci.reg[0x2E] = 0xFC1F     # State for idle controls
-        self.sci.reg[0x2F] = 0x0003     # State for idle controls
-        self.sci.reg[0x5C] = 0x2202     # ADC clock controls
-        self.sci.reg[0x62] = 0x5A76     # ADC range to match pixel saturation level
-        self.sci.reg[0x74] = 0x041F     # Internal clock timing
-        self.sci.reg[0x66] = 0x0845     # Internal current control
-        if (self.sci.revChip == 2):
-            self.sci.reg[0x5B] = 0x307F # Internal control register
-            self.sci.reg[0x7B] = 0x3007 # Internal control register
-        elif (self.sci.revChip == 1):
-            self.sci.reg[0x5B] = 0x301F # Internal control register
-            self.sci.reg[0x7B] = 0x3001 # Internal control register
+        self.regs.reg[0x2D] = 0xE08E    # State for idle controls
+        self.regs.reg[0x2E] = 0xFC1F    # State for idle controls
+        self.regs.reg[0x2F] = 0x0003    # State for idle controls
+        self.regs.reg[0x5C] = 0x2202    # ADC clock controls
+        self.regs.reg[0x62] = 0x5A76    # ADC range to match pixel saturation level
+        self.regs.reg[0x74] = 0x041F    # Internal clock timing
+        self.regs.reg[0x66] = 0x0845    # Internal current control
+        if (self.regs.revChip == 2):
+            self.regs.reg[0x5B] = 0x307F # Internal control register
+            self.regs.reg[0x7B] = 0x3007 # Internal control register
+        elif (self.regs.revChip == 1):
+            self.regs.reg[0x5B] = 0x301F # Internal control register
+            self.regs.reg[0x7B] = 0x3001 # Internal control register
         else:
             # Unknown version - use silicon rev1 configuration
-            print("Found LUX1310 sensor, unknown silicon revision: %s" % (self.sci.revChip))
-            self.sci.reg[0x5B] = 0x301F # Internal control register
-            self.sci.reg[0x7B] = 0x3001 # Internal control register
+            print("Found LUX1310 sensor, unknown silicon revision: %s" % (self.regs.revChip))
+            self.regs.reg[0x5B] = 0x301F # Internal control register
+            self.regs.reg[0x7B] = 0x3001 # Internal control register
 
         for x in range(0, self.ADC_CHANNELS):
-            self.sci.regAdcOs[x] = 0
-        self.sci.regAdcCalEn = True
+            self.regs.regAdcOs[x] = 0
+        self.regs.regAdcCalEn = True
 
         # Configure for nominal gain.
-        self.sci.regGainSelSamp = 0x007f
-        self.sci.regGainSelFb = 0x007f
-        self.sci.regGainBit = 0x03
+        self.regs.regGainSelSamp = 0x007f
+        self.regs.regGainSelFb = 0x007f
+        self.regs.regGainBit = 0x03
 
         # Load the default (longest) wavetable and enable the timing engine.
-        self.sci.wavetable(self.wavetables[0].wavetab)
-        self.sci.regTimingEn = True
+        self.regs.wavetable(self.wavetables[0].wavetab)
+        self.regs.regTimingEn = True
         time.sleep(0.01)
 
         # Start the FPGA timing engine.
@@ -175,10 +241,10 @@ class lux1310(api):
     ## return codes are ignored.
     def __autoPhaseCal(self):
         """Private function - calibrate the FPGA data acquisition channels"""
-        self.fpga.clkPhase = 0
-        self.fpga.clkPhase = 1
-        self.fpga.clkPhase = 0
-        print("Phase calibration dataCorrect=%s" % (self.fpga.dataCorrect))
+        self.regs.clkPhase = 0
+        self.regs.clkPhase = 1
+        self.regs.clkPhase = 0
+        print("Phase calibration dataCorrect=%s" % (self.regs.dataCorrect))
     
     #--------------------------------------------
     # Frame Geometry Configuration Functions
@@ -192,12 +258,12 @@ class lux1310(api):
     
     def getCurrentGeometry(self):
         fSize = self.getMaxGeometry()
-        fSize.hRes = self.sci.regXend - 0x20 + 1
-        fSize.hOffset = self.sci.regXstart - 0x20
+        fSize.hRes = self.regs.regXend - 0x20 + 1
+        fSize.hOffset = self.regs.regXstart - 0x20
         fSize.hRes -= fSize.hOffset
-        fSize.vOffset = self.sci.regYstart
-        fSize.vRes = self.sci.regYend - fSize.vOffset + 1
-        fSize.vDarkRows = self.sci.regNbDrkRows
+        fSize.vOffset = self.regs.regYstart
+        fSize.vRes = self.regs.regYend - fSize.vOffset + 1
+        fSize.vDarkRows = self.regs.regNbDrkRows
         return fSize
 
     def isValidResolution(self, size):
@@ -234,16 +300,16 @@ class lux1310(api):
         
         # If a suitable wavetabl exists, then load it.
         if (wavetab):
-            self.sci.regTimingEn = False
-            self.sci.regRdoutDly = wavetab.clocks
-            self.sci.reg[0x7A] = wavetab.clocks
+            self.regs.regTimingEn = False
+            self.regs.regRdoutDly = wavetab.clocks
+            self.regs.reg[0x7A] = wavetab.clocks
             if (gaincal):
-                self.sci.wavetable(wavetab.gaintab)
+                self.regs.wavetable(wavetab.gaintab)
             else:
-                self.sci.wavetable(wavetab.wavetab)
-            self.sci.regTimingEn = True
-            self.fpga.startDelay = wavetab.abnDelay
-            self.fpga.linePeriod = max((size.hRes // self.HRES_INCREMENT) + 2, wavetab.clocks + 3) - 1
+                self.regs.wavetable(wavetab.wavetab)
+            self.regs.regTimingEn = True
+            self.regs.startDelay = wavetab.abnDelay
+            self.regs.linePeriod = max((size.hRes // self.HRES_INCREMENT) + 2, wavetab.clocks + 3) - 1
 
             # set the pulsed pattern timing
             self.timing.setPulsedPattern(wavetab.clocks)
@@ -255,12 +321,12 @@ class lux1310(api):
         # Configure the image sensor resolution
         hStartBlocks = size.hOffset // self.HRES_INCREMENT
         hWidthBlocks = size.hRes // self.HRES_INCREMENT
-        self.sci.regXstart = 0x20 + hStartBlocks * self.HRES_INCREMENT
-        self.sci.regXend = 0x20 + (hStartBlocks + hWidthBlocks) * self.HRES_INCREMENT - 1
-        self.sci.regYstart = size.vOffset
-        self.sci.regYend = size.vOffset + size.vRes - 1
-        self.sci.regDrkRowsStAddr = self.MAX_VRES + self.MAX_VDARK - size.vDarkRows + 4
-        self.sci.regNbDrkRows = size.vDarkRows
+        self.regs.regXstart = 0x20 + hStartBlocks * self.HRES_INCREMENT
+        self.regs.regXend = 0x20 + (hStartBlocks + hWidthBlocks) * self.HRES_INCREMENT - 1
+        self.regs.regYstart = size.vOffset
+        self.regs.regYend = size.vOffset + size.vRes - 1
+        self.regs.regDrkRowsStAddr = self.MAX_VRES + self.MAX_VDARK - size.vDarkRows + 4
+        self.regs.regNbDrkRows = size.vDarkRows
 
     def setResolution(self, size, fPeriod=None, program=0):
         if (not self.isValidResolution(size)):
@@ -348,7 +414,7 @@ class lux1310(api):
     # Sensor Analog Calibration Functions
     #--------------------------------------------
     def getColorMatrix(self, cTempK=5500):
-        if not self.sci.color:
+        if self.cfaPattern:
             # Identity matrix for monochrome cameras.
             return [[1.0, 0.0, 0.0],
                     [0.0, 1.0, 0.0],
@@ -356,8 +422,8 @@ class lux1310(api):
         else:
             # CIECAM16/D55
             return [[ 1.9147, -0.5768, -0.2342], 
-                                [-0.3056,  1.3895, -0.0969],
-                                [ 0.1272, -0.9531,  1.6492]]
+                    [-0.3056,  1.3895, -0.0969],
+                    [ 0.1272, -0.9531,  1.6492]]
 
     def setGain(self, gain):
         gainConfig = {  # VRSTB, VRST,  VRSTH,  Sampling Cap, Feedback Cap, Serial Gain
@@ -371,12 +437,12 @@ class lux1310(api):
             raise ValueError("Unsupported image gain setting")
         
         vrstb, vrst, vrsth, samp, feedback, sgain = gainConfig[int(gain)]
-        self.sci.writeDAC(self.sci.DAC_VRSTB, vrstb)
-        self.sci.writeDAC(self.sci.DAC_VRST, vrst)
-        self.sci.writeDAC(self.sci.DAC_VRSTH, vrsth)
-        self.sci.regGainSelSamp = samp
-        self.sci.regGainSelFb = feedback
-        self.sci.regGainBit = sgain
+        self.writeDAC(self.regs.DAC_VRSTB, vrstb)
+        self.writeDAC(self.regs.DAC_VRST, vrst)
+        self.writeDAC(self.regs.DAC_VRSTH, vrsth)
+        self.regs.regGainSelSamp = samp
+        self.regs.regGainSelFb = feedback
+        self.regs.regGainBit = sgain
     
     def autoAdcOffsetIteration(self, fSize, numFrames=4):
         # Read out the calibration frames.
@@ -396,9 +462,9 @@ class lux1310(api):
                 self.adcOffsets[col] = self.ADC_OFFSET_MIN
             elif (self.adcOffsets[col] > self.ADC_OFFSET_MAX):
                 self.adcOffsets[col] = self.ADC_OFFSET_MAX
-
+            
             # Update the image sensor
-            self.sci.regAdcOs[col] = self.adcOffsets[col]
+            self.regs.regAdcOs[col] = self.adcOffsets[col]
 
     def autoAdcOffsetCal(self, fSize, iterations=16):
         tRefresh = (self.timing.frameTime * 3) / self.LUX1310_TIMING_HZ
@@ -407,10 +473,10 @@ class lux1310(api):
         # Clear out the ADC offsets
         for i in range(0, self.ADC_CHANNELS):
             self.adcOffsets[i] = 0
-            self.sci.regAdcOs[i] = 0
+            self.regs.regAdcOs[i] = 0
         
         # Enable ADC calibration and iterate on the offsets.
-        self.sci.regAdcCalEn = True
+        self.regs.regAdcCalEn = True
         for i in range(0, iterations):
             yield tRefresh
             yield from self.autoAdcOffsetIteration(fSize)
@@ -434,9 +500,9 @@ class lux1310(api):
         # Search for a dummy voltage high reference point.
         vhigh = 31
         while (vhigh > 0):
-            self.sci.regSelVdumrst = vhigh
+            self.regs.regSelVdumrst = vhigh
             yield tRefresh
-            
+
             # Read a frame and compute the column averages and minimum.
             yield from seq.startLiveReadout(fSize.hRes, numRows)
             frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
@@ -451,9 +517,9 @@ class lux1310(api):
         # Search for a dummy voltage low reference point.
         vlow = 0
         while (vlow < vhigh):
-            self.sci.regSelVdumrst = vlow
+            self.regs.regSelVdumrst = vlow
             yield tRefresh
-
+            
             # Read a frame and compute the column averages and minimum.
             yield from seq.startLiveReadout(fSize.hRes, numRows)
             frame = numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
@@ -467,7 +533,7 @@ class lux1310(api):
 
         # Sample the midpoint, which should be somewhere around quarter scale.
         vmid = (vhigh + 3*vlow) // 4
-        self.sci.regSelVdumrst = vmid
+        self.regs.regSelVdumrst = vmid
         yield tRefresh
 
         # Read a frame out of the live display.
@@ -578,4 +644,3 @@ class lux1310(api):
         self.updateReadoutWindow(fSizePrev)
         self.updateWavetable(fSizePrev, frameClocks=self.timing.frameTime, gaincal=False)
         self.timing.continueTiming()
-        
