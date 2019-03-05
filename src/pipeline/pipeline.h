@@ -80,7 +80,7 @@ struct display_config {
     unsigned long xoff;
     unsigned long yoff;
     unsigned char zebra;
-    unsigned char peaking;
+    unsigned int  peaking;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
     unsigned char filter;
 };
 

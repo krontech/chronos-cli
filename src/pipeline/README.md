@@ -112,11 +112,26 @@ adjust video settings.
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
-| `"peaking"`       | `boolean` | Enable peaking for focus aid.
+| `"peaking"`       | variable  | Enable peaking for focus aid.
 | `"hres"`          | `uint`    | Horizontal resolution of the video display area.
 | `"vres"`          | `uint`    | Vertical resolution of the video display area.
 | `"xoff"`          | `uint`    | Horizontal position of the video display area.
 | `"yoff"`          | `uint`    | Vertical position of the video display area.
+
+The `peaking` field can accept several types; if a `boolean` type is used a
+value of `true` then it will enable focus peaking with the default color (cyan),
+or the `peaking` field accepts one of the following strings to select the focus
+peaking color:
+ * `"red"`
+ * `"green"`
+ * `"blue"`
+ * `"cyan"`
+ * `"magenta"`
+ * `"yellow"`
+ * `"white"`
+
+If the `peaking` field is present with any other type, or value, focus peaking will
+be disabled.
 
 livedisplay
 -----------
@@ -128,9 +143,12 @@ configuration changes.
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
-| `"peaking"`       | `boolean` | Enable peaking for focus aid.
+| `"peaking"`       | variable  | Enable peaking for focus aid.
 | `"hres"`          | `int`     | The horizontal resolution of live video.
 | `"vres"`          | `uint`    | The vertical resolution of live video.
+
+For a description of the acceptable values provided to the `peaking` field,
+refer to the [`configure`](#configure) method.
 
 recordfile
 ----------

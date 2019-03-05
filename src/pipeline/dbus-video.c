@@ -15,6 +15,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.   *
  ****************************************************************************/
 #include <stdio.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <glib.h>
@@ -60,6 +61,38 @@ cam_dbus_video_status(struct pipeline_state *state)
         cam_dbus_dict_add_float(dict, "framerate", (double)state->playrate);
     }
     return dict;
+}
+
+static uint16_t
+cam_dbus_parse_focus_peak(GHashTable *dict, const char *name, uint16_t defval)
+{
+    gpointer x = g_hash_table_lookup(dict, name);
+
+    /* If we got a boolean, then select Cyan as the default color. */
+    if (x && G_VALUE_HOLDS_BOOLEAN(x)) {
+        return g_value_get_boolean(x) ? DISPLAY_CTL_FOCUS_PEAK_CYAN : 0;
+    }
+    /* Check for a string naming the color of choice. */
+    if (x && G_VALUE_HOLDS_STRING(x)) {
+        const char *color = g_value_get_string(x);
+        switch (tolower(color[0])) {
+            case 'r': return DISPLAY_CTL_FOCUS_PEAK_RED;
+            case 'g': return DISPLAY_CTL_FOCUS_PEAK_GREEN;
+            case 'b': return DISPLAY_CTL_FOCUS_PEAK_BLUE;
+            case 'c': return DISPLAY_CTL_FOCUS_PEAK_CYAN;
+            case 'm': return DISPLAY_CTL_FOCUS_PEAK_MAGENTA;
+            case 'y': return DISPLAY_CTL_FOCUS_PEAK_YELLOW;
+            case 'w': return DISPLAY_CTL_FOCUS_PEAK_WHITE;
+            default:  return 0;
+        }
+    }
+    /* Although not recommended, also accept an integer. */
+    if (x && G_VALUE_HOLDS_UINT(x)) return (g_value_get_uint(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
+    if (x && G_VALUE_HOLDS_ULONG(x)) return (g_value_get_ulong(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
+    if (x && G_VALUE_HOLDS_INT(x)) return (g_value_get_int(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
+    if (x && G_VALUE_HOLDS_LONG(x)) return (g_value_get_long(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
+    /* Otherwise, return the default value. */
+    return defval;
 }
 
 /*-------------------------------------
@@ -139,14 +172,15 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
 
     /* Update the live display flags. */
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
-    state->config.peaking = cam_dbus_dict_get_boolean(args, "peaking", state->config.peaking);
+    state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
         state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
     } else {
         state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
     }
     if (state->config.peaking) {
-        state->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
+        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peaking);
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
@@ -180,14 +214,15 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     /* Update the live display flags. */
     state->args.mode = PIPELINE_MODE_PLAY;
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
-    state->config.peaking = cam_dbus_dict_get_boolean(args, "peaking", state->config.peaking);
+    state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
         state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
     } else {
         state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
     }
     if (state->config.peaking) {
-        state->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
+        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peaking);
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
