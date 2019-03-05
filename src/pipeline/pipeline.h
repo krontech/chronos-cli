@@ -36,6 +36,8 @@
 #define PIPELINE_MAX_VRES   1080
 #define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES * 4)
 
+#define NETWORK_STREAM_PORT 4953
+
 struct CamVideo;
 
 /* Playback regions are stored as a double-linked list. */
@@ -168,6 +170,7 @@ GstPad *cam_lcd_sink(struct pipeline_state *state, const struct display_config *
 void    cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *config);
 GstPad *cam_hdmi_sink(struct pipeline_state *state);
 GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args);
+GstPad *cam_network_sink(struct pipeline_state *state);
 GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);

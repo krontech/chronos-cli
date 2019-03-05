@@ -130,6 +130,14 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
+    /* Attempt to create the TCP sink */
+    sinkpad = cam_network_sink(state);
+    if (sinkpad) {
+        tpad = gst_element_get_request_pad(tee, "src%d");
+        gst_pad_link(tpad, sinkpad);
+        gst_object_unref(sinkpad);
+    }
+
     /* Configure for RGB Demosaiced Video. */
     state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     return state->pipeline;
@@ -424,6 +432,10 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
             state->error[sizeof(state->error)-1] = '\0';
             g_error_free(error);
             g_main_loop_quit(state->mainloop);
+            break;
+        
+        case GST_MESSAGE_TAG:
+            /* Silently ignore these messages. */
             break;
 
         default:
