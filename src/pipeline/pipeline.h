@@ -66,8 +66,7 @@ struct display_config {
     unsigned long xoff;
     unsigned long yoff;
     unsigned char zebra;
-    unsigned char peaking;
-    unsigned char filter;
+    unsigned int  peaking;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
 };
 
 struct overlay_config {

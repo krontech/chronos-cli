@@ -496,8 +496,14 @@ playback_init(struct pipeline_state *state)
 
     /* Start off in live display mode */
     state->mode = PIPELINE_MODE_LIVE;
-    state->control = state->fpga->display->control & (DISPLAY_CTL_COLOR_MODE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
-
+    state->control = state->fpga->display->control & DISPLAY_CTL_COLOR_MODE;
+    if (state->config.peaking) {
+        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peaking);
+    }
+    if (state->config.zebra) {
+        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+    }
+    
     /* Create the timer used for driving the playback state machine. */
     memset(&sigev, 0, sizeof(sigev));
     sigev.sigev_notify = SIGEV_SIGNAL;

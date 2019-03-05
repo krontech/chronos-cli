@@ -582,6 +582,8 @@ main(int argc, char * argv[])
     state->config.vres = CAM_LCD_VRES;
     state->config.xoff = 0;
     state->config.yoff = 0;
+    state->config.peaking = 0;
+    state->config.zebra = FALSE;
 
     optind = 0;
     while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {

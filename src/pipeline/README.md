@@ -111,18 +111,31 @@ adjust video settings.
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
-| `"peaking"`       | `boolean` | Enable peaking for focus aid.
+| `"peaking"`       | variable  | Enable peaking for focus aid.
 | `"hres"`          | `uint`    | Horizontal resolution of the video display area.
 | `"vres"`          | `uint`    | Vertical resolution of the video display area.
 | `"xoff"`          | `uint`    | Horizontal position of the video display area.
 | `"yoff"`          | `uint`    | Vertical position of the video display area.
 
-This method will return the same values as the [`status`](#status) method.
+The `peaking` field can accept several types; if a `boolean` type is used a
+value of `true` then it will enable focus peaking with the default color (cyan),
+or the `peaking` field accepts one of the following strings to select the focus
+peaking color:
+ * `"red"`
+ * `"green"`
+ * `"blue"`
+ * `"cyan"`
+ * `"magenta"`
+ * `"yellow"`
+ * `"white"`
+
+If the `peaking` field is present with any other type, or value, focus peaking will
+be disabled.
 
 livedisplay
 -----------
 Switch the video system into live display mode. This method takes no input parameters, and
-returns the same values as the [`status`](#status) method.
+returns the same values as in the [`status`](#status) method.
 
 recordfile
 ----------
