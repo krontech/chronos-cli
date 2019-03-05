@@ -84,6 +84,7 @@ struct display_config {
     unsigned char zebra;
     unsigned int  peaking;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
     unsigned char filter;
+    const char *gifsplash;
 };
 
 struct overlay_config {

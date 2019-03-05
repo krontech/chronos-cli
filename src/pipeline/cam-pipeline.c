@@ -40,7 +40,8 @@
 #include "pipeline.h"
 
 /* Private GStreamer elements. */
-#include "gstneon.h"
+#include "gst/gstneon.h"
+#include "gst/gstgifsrc.h"
 
 #define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
 
@@ -145,50 +146,102 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 
 /* Launch a GStreamer pipeline with a test souce if live display isn't active yet. */
 static GstElement *
-cam_videotest(struct pipeline_state *state, struct pipeline_args *args)
+cam_videotest(struct pipeline_state *state)
 {
-    gboolean ret;
-    GstElement *queue, *ctrl, *sink;
-    GstCaps *caps;
-
-    /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
-    state->source   = gst_element_factory_make("videotestsrc",  "test-source");
-    queue           = gst_element_factory_make("queue",         "test-queue");
-    ctrl            = gst_element_factory_make("omx_ctrl",      "test-ctrl");
-    sink            = gst_element_factory_make("omx_videosink", "test-sink");
-    if (!state->pipeline || !state->source || !queue || !ctrl || !sink) {
+    if (!state->pipeline) {
         return NULL;
     }
-    gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, ctrl, sink, NULL);
-    gst_element_link_many(queue, ctrl, sink, NULL);
 
-    /* Configure elements - simple video output to LCD with no scaling.  */
-    g_object_set(G_OBJECT(state->source), "pattern", (guint)0, NULL);
-    g_object_set(G_OBJECT(state->source), "is-live", (gboolean)1, NULL);
+    /*=====================================================
+     * Setup the Video Test Loop for Animated GIF Playback
+     *=====================================================
+     */
+    if (state->config.gifsplash) {
+        GstElement *queue, *vconvert, *ctrl, *sink;
+        /* Build the GStreamer Pipeline */
+        state->source   = gst_element_factory_make("gifsrc",        "test-source");
+        queue           = gst_element_factory_make("queue",         "test-queue");
+        vconvert        = gst_element_factory_make("colorspace",    "test-convert");
+        ctrl            = gst_element_factory_make("omx_ctrl",      "test-ctrl");
+        sink            = gst_element_factory_make("omx_videosink", "test-sink");
+        if (!state->pipeline || !state->source || !vconvert || !queue || !ctrl || !sink) {
+            return NULL;
+        }
+        gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, vconvert, ctrl, sink, NULL);
 
-    g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
-    g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
-    g_object_set(G_OBJECT(sink), "top", (guint)state->config.yoff, NULL);
-    g_object_set(G_OBJECT(sink), "left", (guint)state->config.xoff, NULL);
-    g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
-    g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
+        /* Debug */
+        GstElement *perf = gst_element_factory_make("gstperf", "test-perf");
+        g_object_set(G_OBJECT(perf), "print-fps", (gboolean)TRUE, NULL);
+        g_object_set(G_OBJECT(perf), "print-arm-load", (gboolean)TRUE, NULL);
+        gst_bin_add(GST_BIN(state->pipeline), perf);
 
-    g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
-    g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
+        /* Configure elements - simple video output to LCD with no scaling.  */
+        g_object_set(G_OBJECT(state->source), "location", state->config.gifsplash, NULL);
 
-    caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "width", G_TYPE_INT, state->config.hres,
-                "height", G_TYPE_INT, state->config.vres,
-                "framerate", GST_TYPE_FRACTION, (LIVE_MAX_FRAMERATE / 2), 1,
-                "buffer-count-requested", G_TYPE_INT, 4,
-                NULL);
-    ret = gst_element_link_filtered(state->source, queue, caps);
-    if (!ret) {
-        gst_object_unref(GST_OBJECT(state->pipeline));
-        return NULL;
+        g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
+        g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
+        g_object_set(G_OBJECT(sink), "top", (guint)state->config.yoff, NULL);
+        g_object_set(G_OBJECT(sink), "left", (guint)state->config.xoff, NULL);
+        g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+        g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
+
+        g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+        g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
+
+        //gst_element_link_many(state->source, queue, vconvert, ctrl, sink, NULL);
+        gst_element_link_many(state->source, queue, perf, vconvert, ctrl, sink, NULL);
+        return state->pipeline;
     }
-    gst_caps_unref(caps);
+    /*=====================================================
+     * Setup the Video Test Loop for Animated GIF Playback
+     *=====================================================
+     */
+    else {
+        GstElement *queue, *ctrl, *sink;
+        gboolean ret;
+        GstCaps *caps;
+
+        /* Build the GStreamer Pipeline */
+        state->source   = gst_element_factory_make("videotestsrc",  "test-source");
+        queue           = gst_element_factory_make("queue",         "test-queue");
+        ctrl            = gst_element_factory_make("omx_ctrl",      "test-ctrl");
+        sink            = gst_element_factory_make("omx_videosink", "test-sink");
+        if (!state->source || !queue || !ctrl || !sink) {
+            return NULL;
+        }
+        gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, ctrl, sink, NULL);
+        gst_element_link_many(queue, ctrl, sink, NULL);
+
+        /* Configure elements - simple video output to LCD with no scaling.  */
+        g_object_set(G_OBJECT(state->source), "pattern", (guint)0, NULL);
+        g_object_set(G_OBJECT(state->source), "is-live", (gboolean)1, NULL);
+
+        g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
+        g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
+        g_object_set(G_OBJECT(sink), "top", (guint)state->config.yoff, NULL);
+        g_object_set(G_OBJECT(sink), "left", (guint)state->config.xoff, NULL);
+        g_object_set(G_OBJECT(sink), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+        g_object_set(G_OBJECT(sink), "display-device", "LCD", NULL);
+
+        g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
+        g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
+
+        caps = gst_caps_new_simple ("video/x-raw-yuv",
+                    "width", G_TYPE_INT, state->config.hres,
+                    "height", G_TYPE_INT, state->config.vres,
+                    "framerate", GST_TYPE_FRACTION, (LIVE_MAX_FRAMERATE / 2), 1,
+                    "buffer-count-requested", G_TYPE_INT, 4,
+                    NULL);
+        ret = gst_element_link_filtered(state->source, queue, caps);
+        if (!ret) {
+            gst_object_unref(GST_OBJECT(state->pipeline));
+            return NULL;
+        }
+        gst_caps_unref(caps);
+    }
+
+    /* Success! */
     return state->pipeline;
 } /* cam_videotest */
 
@@ -315,8 +368,8 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
             state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
         } else {
             /* Configure for Raw 12-bit padded video data. */
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
             sinkpad = cam_tiffraw_sink(state, args);
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16BPP;
         }
         if (!sinkpad) {
             gst_object_unref(GST_OBJECT(state->pipeline));
@@ -597,6 +650,7 @@ usage(FILE *fp, int argc, char *argv[])
 
     fprintf(fp, "options:\n");
     fprintf(fp, "\t-o, --offset OFFS  offset the output by OFFS pixels\n");
+    fprintf(fp, "\t-g, --splash FILE  animated GIF splash screen to play when idle\n");
     fprintf(fp, "\t-h, --help         display this help and exit\n");
 } /* usage */
 
@@ -642,9 +696,10 @@ main(int argc, char * argv[])
     struct ti81xxfb_region_params regp;
     struct pipeline_state *state = cam_pipeline_state();
     /* Option Parsing */
-    const char *short_options = "o:h";
+    const char *short_options = "o:s:h";
     const struct option long_options[] = {
         {"offset",  required_argument,  0, 'o'},
+        {"splash",  required_argument,  0, 's'},
         {"help",    no_argument,        0, 'h'},
         {0, 0, 0, 0}
     };
@@ -652,16 +707,20 @@ main(int argc, char * argv[])
     int c, fd;
 
     /* Set default configuration. */
+    memset(&state->config, 0, sizeof(state->config));
     state->config.hres = CAM_LCD_HRES;
     state->config.vres = CAM_LCD_VRES;
-    state->config.xoff = 0;
-    state->config.yoff = 0;
 
     optind = 0;
+    opterr = 1;
     while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {
         switch (c) {
             case 'o':
                 parse_resolution(optarg, "OFFS", &state->config.xoff, &state->config.yoff);
+                break;
+
+            case 's':
+                state->config.gifsplash = optarg;
                 break;
 
             case 'h':
@@ -682,6 +741,9 @@ main(int argc, char * argv[])
     gst_controller_init(NULL, NULL);
     if (!gst_element_register(NULL, "neon", GST_RANK_NONE, GST_TYPE_NEON)) {
         fprintf(stderr, "Failed to register Gstreamer NEON acceleration element.\n");
+    }
+    if (!gst_element_register(NULL, "gifsrc", GST_RANK_NONE, GST_TYPE_GIF_SRC)) {
+        fprintf(stderr, "Failed to register Gstreamer GIF source element.\n");
     }
     state->mainloop = g_main_loop_new(NULL, FALSE);
     state->eos = gst_event_new_eos();
@@ -784,7 +846,7 @@ main(int argc, char * argv[])
         /* If the display resolution is unknown, fall back to a test pattern. */
         else if ((state->hres == 0) || (state->vres == 0)) {
             state->next = PIPELINE_MODE_PAUSE; /* No video to play. */
-            if (!cam_videotest(state, &args)) {
+            if (!cam_videotest(state)) {
                 dbus_signal_eof(state, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
                 break;
