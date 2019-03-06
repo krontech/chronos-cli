@@ -93,14 +93,19 @@ cam_pipeline_SOURCES += pipeline/dbus-video.c
 cam_pipeline_SOURCES += pipeline/dng.c
 cam_pipeline_SOURCES += pipeline/h264.c
 cam_pipeline_SOURCES += pipeline/hdmi.c
-cam_pipeline_SOURCES += pipeline/gstneon.c
-cam_pipeline_SOURCES += pipeline/gstneon.h
 cam_pipeline_SOURCES += pipeline/lcd.c
 cam_pipeline_SOURCES += pipeline/overlay.c
 cam_pipeline_SOURCES += pipeline/playback.c
 cam_pipeline_SOURCES += pipeline/raw.c
 cam_pipeline_SOURCES += pipeline/screencap.c
 cam_pipeline_SOURCES += pipeline/pipeline.h
+# Private gstreamer elements.
+cam_pipeline_SOURCES += pipeline/gst/gifdec.c
+cam_pipeline_SOURCES += pipeline/gst/gifdec.h
+cam_pipeline_SOURCES += pipeline/gst/gstgifsrc.c
+cam_pipeline_SOURCES += pipeline/gst/gstgifsrc.h
+cam_pipeline_SOURCES += pipeline/gst/gstneon.c
+cam_pipeline_SOURCES += pipeline/gst/gstneon.h
 
 ## Power control daemon.
 cam_upower_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
