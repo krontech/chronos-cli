@@ -139,7 +139,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
-    /* Configure for RGB Demosaiced Video. */
+    /* Clear any special pipeline test modes. */
     state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     return state->pipeline;
 } /* cam_pipeline */
@@ -148,6 +148,8 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 static GstElement *
 cam_videotest(struct pipeline_state *state)
 {
+    struct stat st;
+
     state->pipeline = gst_pipeline_new ("pipeline");
     if (!state->pipeline) {
         return NULL;
@@ -157,7 +159,7 @@ cam_videotest(struct pipeline_state *state)
      * Setup the Video Test Loop for Animated GIF Playback
      *=====================================================
      */
-    if (state->config.gifsplash) {
+    if (state->config.gifsplash && (stat(state->config.gifsplash, &st) == 0)) {
         GstElement *queue, *vconvert, *ctrl, *sink;
         /* Build the GStreamer Pipeline */
         state->source   = gst_element_factory_make("gifsrc",        "test-source");
@@ -309,6 +311,9 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     state->loopstart = 0;
     state->loopend = state->totalframes;
 
+    /* Clear any special pipeline test modes. */
+    state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
+
     /*=====================================================
      * Setup the Pipeline in H.264 Recording Mode
      *=====================================================
@@ -338,9 +343,6 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
-
-        /* Configure for RGB Demosaiced Video. */
-        state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     }
     /*=====================================================
      * Setup the Pipeline for saving CinemaDNG
@@ -365,7 +367,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         if (args->mode == PIPELINE_MODE_DNG) {
             /* Configure for Raw 16-bit padded video data. */
             sinkpad = cam_dng_sink(state, args);
-            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD;
+            state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD | DISPLAY_PIPELINE_RAW_16BPP;
         } else {
             /* Configure for Raw 12-bit padded video data. */
             sinkpad = cam_tiffraw_sink(state, args);
@@ -439,9 +441,6 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
         gst_object_unref(sinkpad);
-
-        /* Configure for RGB Demosaiced Video. */
-        state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);
     }
     /* Otherwise, this recording mode is not supported. */
     else {
