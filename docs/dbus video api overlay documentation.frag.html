@@ -1,0 +1,179 @@
+		<table>
+			<thead>
+				<tr>
+					<th>Setting Key</th>
+					<th>Type</th>
+					<th>Mutability</th>
+					<th>Description</th>
+				</tr>
+			</thead>
+			
+			<tbody>
+				<tr>
+					<td><code>overlayChronosWatermarkColor</code></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td>8 bit per channel RGBA value indicating the color for the Chronos logo overlay. The watermark is burned into saved video. See <a href="#focusPeakingColor">focusPeakingColor</a> for more information about color.</td>
+				</tr>
+				<tr>
+					<td><code>overlayChronosWatermarkX</code></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td rowspan=2>The x/y position (horizontal/vertical offset from the top-left corner) of the Chronos watermark.</td>
+				</tr>
+				<tr>
+					<td><code>overlayChronosWatermarkY</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</tr>
+				<tr>
+					<td><a name="overlayRGBImage"><code>overlayRGBImage</code></a></td>
+					<td>binary</td>
+					<td>variable</td>
+					<td>An image to burn on to the video. <a href="https://en.wikipedia.org/wiki/Indexed_color">Indexed color</a> (like a gif), 20480 pixels maximum. Dimensions are given by the <a href="#overlayRGBImageHeight">overlayRGBImageHeight</a> and <a href="#overlayRGBImageWidth">overlayRGBImageWidth</a> variables. Color index is given by <a href="#overlayRGBLogoPalette">overlayRGBLogoPalette</a>.</td>
+				</td>
+				<tr>
+					<td><a name="#overlayRGBImageHeight"><code>overlayRGBImageHeight</code></a></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td rowspan=2>Set the width and the height of the <a href="#overlayRGBImage">overlay image/watermark</a> to burn into the video. Area (overlayRGBImageWidth × overlayRGBImageHeight) should be less than 20480.</td>
+				</td>
+				<tr>
+					<td><a name="#overlayRGBImageWidth"><code>overlayRGBImageWidth</code></a></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayRGBImageX</code></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td rowspan=2>Set the offset left and top of the <a href="#overlayRGBImage">overlay/watermark image</a>.</td>
+				</td>
+				<tr>
+					<td><code>overlayRGBImageY</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayRGBLogoPalette</code></td>
+					<td>binary</td>
+					<td>variable</td>
+					<td>
+						The color index for the <a href="#overlayRGBImage">indexed overlay image</a>. Planar format, 256 8-bit bytes each for Red, Green, and Blue. (If you had two colors in your overlay image, pink and black, your color index might look like:
+						<code class=codeblock>
+							[
+								0xFF, 0x00, «254 more entries»,
+								0x00, 0x00, «254 more entries»,
+								0xFF, 0x00, «254 more entries»
+							]
+						</code>
+						The first column represents the first color, pink, with it's red and blue components. The second column represents black.
+						<br>
+						True black is rendered transparent. If you want to actually draw black, the color <code style="color: #000001;">0x000001</code> may be used instead of <code style="color: #000000;">0x000000</code>.
+					</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0Color</code></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td rowspan=2>Set the textbox's background color. (Text is always white.) Format RGBA. See <a href="#focusPeakingColor">focusPeakingColor</a> for more information about color.</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1Color</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><a name="overlayTextbox0Content"><code>overlayTextbox0Content</code></a></td>
+					<td>string</td>
+					<td>variable</td>
+					<td rowspan=2>A string of length no more than 128, including a required null terminator (0). Characters in this string are simple numeric indexes into the <a href="#overlayTextbox0Font">overlayTextboxFonts</a>, instead of into the standard <a href="https://en.wikipedia.org/wiki/List_of_Unicode_characters">Unicode</a> (utf-8) tables used elsewhere in this API.</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1Content</code></td>
+					<td>string</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><a name="overlayTextbox0Font"><code>overlayTextbox0Font</code></a></td>
+					<td>binary</td>
+					<td>variable</td>
+					<td rowspan=2>A block of 128 16x32px characters indexed in to by <a href="#overlayTextbox0Content">overlayTextBoxContents</a>. 1<a href="https://en.wikipedia.org/wiki/Color_depth">bpp</a>.</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1Font</code></td>
+					<td>binary</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0W</code></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td rowspan=4>Textbox dimensions, <strong>w</strong>idth and <strong>h</strong>eight in pixels. Text is centered inside the box.</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0H</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1W</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1H</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0OffsetX</code></td>
+					<td>integer</td>
+					<td>variable</td>
+					<td rowspan=4>Distance from the top (y) left (x) corner of the recorded picture to the top left corner of the textbox in pixels.</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0OffsetY</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1OffsetX</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1OffsetY</code></td>
+					<td>integer</td>
+					<td>variable</td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0X</code></td>
+					<td></td>
+					<td></td>
+					<td rowspan=2></td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1X</code></td>
+					<td></td>
+					<td></td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox0Y</code></td>
+					<td></td>
+					<td></td>
+					<td rowspan=2></td>
+				</td>
+				<tr>
+					<td><code>overlayTextbox1Y</code></td>
+					<td></td>
+					<td></td>
+				</td>
+				<tr>
+					<td><code>overlayVersion</code></td>
+					<td></td>
+					<td></td>
+					<td></td>
+				</td>
+			</tbody>
+		</table>
