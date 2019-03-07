@@ -1,5 +1,22 @@
-chronos-cli (0.3.1~beta69) unstable; urgency=medium
+chronos-cli (0.3.1~beta86) unstable; urgency=medium
 
+  * Add splash GIF to packaging.
+  * Improve the animated GIF source with caching and alignment.
+  * Fix encoding bug in CinemaDNG due to missing raw flag.
+  * Merge branch 'master' of github.com:krontech/chronos-cli
+  * Moved a fragment of documentation over to dbus video api repository.
+  * Add --splash option to display a GIF splash screen.
+  * Add h264 network stream on port 4953 when in play mode.
+  * Add focus peaking color to the DBus interface.
+  * Merge branch 'master' of https://github.com/krontech/chronos-cli
+  * Lots of updates to get things going - sorry
+  * Add DM814x PWM module to pychronos.
+  * Add lux1310regs class to replace pychronos.lux1310.
+  * lux1310: Increase refresh time for auto gain calibration.
+  * Add pychronos.writespi() function for generic SPI access helpers.
+  * reverted to back saved variables in sensorTiming Updated for new cam-video api Added a runApi script to start the moving parts when needed
+  * loader: Fix bug in parsing the --help option.
+  * Add unload option to cam-loader, and get board defs from JSON.
   * pipeline: Check color detect pin to determine mono vs. color sensor.
   * Fix boot order dependency on chronos-fpga package.
   * Add systemd service files to start cam-pipeline on boot.
@@ -71,4 +88,4 @@ chronos-cli (0.3.1~beta69) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Sun, 24 Feb 2019 22:16:15 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Wed, 06 Mar 2019 16:43:26 -0800
