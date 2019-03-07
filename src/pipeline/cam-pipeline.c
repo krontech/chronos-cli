@@ -180,6 +180,8 @@ cam_videotest(struct pipeline_state *state)
 
         /* Configure elements - simple video output to LCD with no scaling.  */
         g_object_set(G_OBJECT(state->source), "location", state->config.gifsplash, NULL);
+        g_object_set(G_OBJECT(state->source), "cache", (gboolean)TRUE, NULL);
+        g_object_set(G_OBJECT(state->source), "width-align", (guint)16, NULL);
 
         g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
         g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
@@ -196,7 +198,7 @@ cam_videotest(struct pipeline_state *state)
         return state->pipeline;
     }
     /*=====================================================
-     * Setup the Video Test Loop for Animated GIF Playback
+     * Setup the Video Test Source for SMPTE Color Bars
      *=====================================================
      */
     else {

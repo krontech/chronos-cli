@@ -64,12 +64,21 @@ typedef struct _GstGifSrcClass  GstGifSrcClass;
 struct _GstGifSrc {
   GstPushSrc element;
 
+  guint     align;
+  guint     padwidth;
+
+  /* Frame caching */
+  gboolean  cache;
+  gboolean  cachedone;
+  GList     *cachelist;
+
   /* Private */
   GstClockTime timestamp;
   gchar     *filename;
   gd_GIF    *gif;
   guchar    *frame;
-  guint     size;
+  guint     framesize;
+  guint     gifsize;
   guint     iframe_delay_usec;
 };
 

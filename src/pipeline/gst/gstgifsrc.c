@@ -64,7 +64,9 @@ enum {
 
 enum {
   ARG_0,
-  ARG_LOCATION
+  ARG_LOCATION,
+  ARG_WIDTH_ALIGN,
+  ARG_CACHE,
 };
 
 static void gst_gif_src_finalize(GObject * object);
@@ -119,10 +121,20 @@ gst_gif_src_class_init(GstGifSrcClass * klass)
   gobject_class->get_property = gst_gif_src_get_property;
 
   g_object_class_install_property (gobject_class, ARG_LOCATION,
-      g_param_spec_string ("location", "File Location",
+      g_param_spec_string("location", "File Location",
           "Location of the file to read", NULL,
           G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS |
           GST_PARAM_MUTABLE_READY));
+
+  g_object_class_install_property(gobject_class, ARG_WIDTH_ALIGN,
+      g_param_spec_uint("width-align", "Frame width alignment",
+          "Pad the GIF frame to ensure the minimum alignment is satisfied.",
+          0, 64, 0, G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY));
+  
+  g_object_class_install_property(gobject_class, ARG_CACHE,
+      g_param_spec_boolean("cache", "Cache animation frames",
+          "Save animation frames in a cache between loops",
+          TRUE, G_PARAM_READWRITE | GST_PARAM_MUTABLE_READY));
 
   gstbasesrc_class->get_caps = gst_gif_src_getcaps;
   gstbasesrc_class->set_caps = gst_gif_src_setcaps;
@@ -142,6 +154,8 @@ gst_gif_src_init (GstGifSrc *src, GstGifSrcClass *g_class)
 
   src->filename = NULL;
   src->gif = NULL;
+  src->cache = FALSE;
+  src->align = 0;
 
   /* We operate in time */
   gst_base_src_set_format(GST_BASE_SRC(src), GST_FORMAT_TIME);
@@ -153,6 +167,7 @@ gst_gif_src_finalize (GObject * object)
 {
   GstGifSrc *src = GST_GIF_SRC (object);
 
+  g_list_free_full(src->cachelist, (GDestroyNotify)gst_buffer_unref);
   g_free (src->filename);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
@@ -207,7 +222,13 @@ gst_gif_src_set_property (GObject * object, guint prop_id,
 
   switch (prop_id) {
     case ARG_LOCATION:
-      gst_gif_src_set_location (src, g_value_get_string (value));
+      gst_gif_src_set_location(src, g_value_get_string(value));
+      break;
+    case ARG_WIDTH_ALIGN:
+      src->align = g_value_get_uint(value);
+      break;
+    case ARG_CACHE:
+      src->cache = g_value_get_boolean(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -228,6 +249,12 @@ gst_gif_src_get_property (GObject * object, guint prop_id, GValue * value,
   switch (prop_id) {
     case ARG_LOCATION:
       g_value_set_string (value, src->filename);
+      break;
+    case ARG_WIDTH_ALIGN:
+      g_value_set_uint(value, src->align);
+      break;
+    case ARG_CACHE:
+      g_value_set_boolean(value, src->cache);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -253,7 +280,7 @@ gst_gif_src_start(GstBaseSrc * basesrc)
   if (src->filename == NULL || src->filename[0] == '\0')
     goto no_filename;
 
-  GST_INFO_OBJECT(src, "opening file %s", src->filename);
+  GST_INFO_OBJECT(src, "Opening file %s", src->filename);
 
   /* open the GIF file */
   src->gif = gd_open_gif(src->filename);
@@ -261,24 +288,34 @@ gst_gif_src_start(GstBaseSrc * basesrc)
     goto open_failed;
   }
 
+  /* Add padding to the returned frame width, if necessary. */
+  if (src->align) {
+    src->padwidth  = src->gif->width + src->align - 1;
+    src->padwidth -= (src->padwidth % src->align);
+  } else {
+    src->padwidth = src->gif->width;
+  }
+  GST_INFO_OBJECT(src, "Aligning width to %u from %u to %u", src->align, src->gif->width, src->padwidth);
+
   /* Allocate memory for the frame buffer. */
+  src->cachedone = FALSE;
+  src->cachelist = NULL;
   src->timestamp = 0;
   src->iframe_delay_usec = 0;
-  src->size = src->gif->width * src->gif->height * 3;
-  src->frame = g_malloc(src->size);
+  src->gifsize = src->gif->width * src->gif->height * 3;
+  src->framesize = src->padwidth * src->gif->height * 3;
+  src->frame = g_malloc(src->gifsize);
   if (!src->frame) {
     goto malloc_failed;
   }
 
   /* Load the background color. */
   bgcolor = &src->gif->gct.colors[src->gif->bgindex * 3];
-  for (i = 0; i < src->size; i += 3) {
+  for (i = 0; i < src->gifsize; i += 3) {
       src->frame[i + 0] = bgcolor[0];
       src->frame[i + 1] = bgcolor[1];
       src->frame[i + 2] = bgcolor[2];
   }
-
-  //gst_base_src_set_dynamic_size(basesrc, TRUE); /* TODO: ??? Not present in older GST? */
 
   return TRUE;
 
@@ -317,10 +354,12 @@ gst_gif_src_stop (GstBaseSrc * basesrc)
 {
   GstGifSrc *src = GST_GIF_SRC (basesrc);
 
-  /* close the file */
-  g_free (src->frame);
+  g_list_free_full(src->cachelist, (GDestroyNotify)gst_buffer_unref);
+  g_free(src->frame);
   gd_close_gif(src->gif);
   
+  src->cachedone = FALSE;
+  src->cachelist = NULL;
   src->frame = NULL;
   src->gif = NULL;
   return TRUE;
@@ -367,9 +406,122 @@ gst_gif_src_getcaps(GstBaseSrc *bsrc)
     return NULL; /* base class will get template caps for us */
   }
   return gst_caps_new_simple("video/x-raw-rgb",
-    "width", G_TYPE_INT, src->gif->width,
+    "width", G_TYPE_INT, src->padwidth,
     "height", G_TYPE_INT, src->gif->height,
     NULL);
+}
+
+static void
+copy_frame_and_pad(void *dest, GstGifSrc *src)
+{
+  guint padding = (src->padwidth - src->gif->width) / 2;
+  guchar *dstline = (guchar *)dest;
+  guint line;
+  
+  GST_DEBUG_OBJECT(src, "Applying frame padding from %u to %u bytes", src->gifsize, src->framesize);
+  if (src->gifsize == src->framesize) {
+    memcpy(dest, src->frame, src->framesize);
+    return;
+  }
+
+  /* Copy lines and insert the background color where padded. */
+  for (line = 0; line < src->gif->height; line++) {
+    const guchar *srcline = src->frame + (src->gif->width * line * 3);
+    guint i;
+
+    for (i = 0; i < padding; i++) {
+      *dstline++ = 0;
+      *dstline++ = 0;
+      *dstline++ = 0;
+    }
+    memcpy(dstline, srcline, src->gif->width * 3);
+    dstline += src->gif->width * 3;
+    for (i = src->gif->width + padding; i < src->padwidth; i++) {
+      *dstline++ = 0;
+      *dstline++ = 0;
+      *dstline++ = 0;
+    }
+  }
+}
+
+/* Request the next cached frame from the GIF */
+static GstFlowReturn
+gst_gif_src_create_cached(GstGifSrc *src, GstBuffer **buffer)
+{
+  GstBuffer *frame;
+  GList *next;
+  guint usec;
+
+  /* Get the next frame. */
+  next = g_list_next(src->cachelist);
+  if (!next) {
+    next = g_list_first(src->cachelist);
+  }
+  src->cachelist = next;
+  frame = src->cachelist->data;
+
+  /* Update the timestamp */
+  GST_BUFFER_TIMESTAMP(frame) = src->timestamp;
+  src->timestamp += GST_BUFFER_DURATION(frame);
+  src->iframe_delay_usec = (GST_BUFFER_DURATION(frame) * 1000000UL) / GST_SECOND;
+
+  /* Return a new referene to the frame. */
+  gst_buffer_ref(frame);
+  *buffer = frame;
+  return GST_FLOW_OK;
+}
+
+/* Render the next frame from the animated GIF. */
+static GstFlowReturn
+gst_gif_src_create_next(GstGifSrc *src, GstBuffer **buffer)
+{
+  GstBuffer *frame;
+  int ret;
+
+  frame = gst_buffer_try_new_and_alloc(src->framesize);
+  if (G_UNLIKELY(frame == NULL && src->framesize > 0)) {
+    GST_ERROR_OBJECT(src, "Failed to allocate %u bytes", src->framesize);
+    return GST_FLOW_ERROR;
+  }
+
+  ret = gd_get_frame(src->gif);
+  if (ret < 0) {
+    GST_ERROR_OBJECT(src, "GIF decoding failed");
+    gst_buffer_unref(frame);
+    return GST_FLOW_ERROR;
+  }
+  gd_render_frame(src->gif, src->frame);
+  GST_BUFFER_TIMESTAMP(frame) = src->timestamp;
+  GST_BUFFER_DURATION(frame) = (src->gif->gce.delay * GST_SECOND) / 100;
+  copy_frame_and_pad(GST_BUFFER_DATA(frame), src);
+
+  src->iframe_delay_usec = src->gif->gce.delay * 10000;
+  src->timestamp += (src->gif->gce.delay * GST_SECOND) / 100;
+  GST_INFO_OBJECT(src, "Rendered frame with duration %d ms", src->gif->gce.delay * 10);
+
+  /* If frame caching is enabled, store a copy of the frame. */
+  if (src->cache) {
+    GST_DEBUG_OBJECT(src, "Caching frame");
+    GList *next = g_list_append(src->cachelist, frame);
+    if (next) {
+      if (!src->cachelist) src->cachelist = next;
+      gst_buffer_ref(frame);
+    }
+    else {
+      GST_ERROR_OBJECT(src, "Failed to append frame");
+    }
+    if (ret == 0) src->cachedone = TRUE;
+  }
+
+  GST_DEBUG_OBJECT(src, "Frame rendering successful");
+
+  /* TODO: Technically a GIF can end, we should respect src->gif->loop_count */
+  if (ret == 0) {
+    gd_rewind(src->gif);
+  }
+
+  *buffer = frame;
+  return GST_FLOW_OK;
 }
 
 /* Request the next frame from the GIF */
@@ -377,44 +529,14 @@ static GstFlowReturn
 gst_gif_src_create(GstPushSrc *psrc, GstBuffer **buffer)
 {
   GstGifSrc *src = GST_GIF_SRC(psrc);
-  GstBuffer *buf;
-  int ret;
-
-  GST_INFO_OBJECT(src, "allocating frame");
-
-  buf = gst_buffer_try_new_and_alloc(src->size);
-  if (G_UNLIKELY (buf == NULL && src->size > 0)) {
-    GST_ERROR_OBJECT(src, "Failed to allocate %u bytes", src->size);
-    return GST_FLOW_ERROR;
-  }
-
-  GST_INFO_OBJECT(src, "rendering frame");
-
+  
   /* HACK: Delay for the inter-frame time. */
   usleep(src->iframe_delay_usec);
 
-  do {
-    ret = gd_get_frame(src->gif);
-    if (ret < 0) {
-      GST_ERROR_OBJECT(src, "GIF decoding failed");
-      gst_buffer_unref(buf);
-      return GST_FLOW_ERROR;
-    }
-    gd_render_frame(src->gif, src->frame);
-  } while ((src->gif->gce.delay == 0) && (ret != 0));
-  GST_BUFFER_TIMESTAMP(buf) = src->timestamp;
-  GST_BUFFER_DURATION(buf) = (src->gif->gce.delay * GST_SECOND) / 100;
-  memcpy(GST_BUFFER_DATA(buf), src->frame, src->size);
-
-  src->iframe_delay_usec = src->gif->gce.delay * 10000;
-  src->timestamp += (src->gif->gce.delay * GST_SECOND) / 100;
-  GST_INFO_OBJECT(src, "returning frame (duration=%d)", src->gif->gce.delay);
-
-  /* TODO: Technically a GIF can end, we should respect src->gif->loop_count */
-  if (ret == 0) {
-    gd_rewind(src->gif);
+  if (src->cachedone) {
+    return gst_gif_src_create_cached(src, buffer);
   }
-
-  *buffer = buf;
-  return GST_FLOW_OK;
+  else {
+    return gst_gif_src_create_next(src, buffer);
+  }
 }
