@@ -112,6 +112,10 @@ void memcpy_le12_pack(void *dest, const void *src, size_t len);
 
 void neon_div16(void *framebuf, size_t len);
 void neon_be12_unpack(void *dest, const void *src);
+void neon_be12_unpack_unsigned(void *dst, const void *src);
+void neon_be12_unpack_signed(void *dst, const void *src);
+void neon_be12_unpack_2point(void *dst, const void *src, const void *fpn, const void *gain);
+void neon_be12_unpack_3point(void *dst, const void *src, const void *fpn, const void *offset, const void *gain, const void *curve);
 #endif
 
 #endif /* _CLI_UTILS_H */

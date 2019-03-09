@@ -86,6 +86,7 @@ fpga_open(void)
 	fpga->display = (struct fpga_display *)((uint8_t *)fpga->reg + FPGA_DISPLAY_BASE);
 	fpga->config = (struct fpga_config *)((uint8_t *)fpga->reg + FPGA_CONFIG_BASE);
 	fpga->vram = (struct fpga_vram *)((uint8_t *)fpga->reg + FPGA_VRAM_BASE);
+	fpga->segments = (struct fpga_segments *)((uint8_t *)fpga->reg + FPGA_SEQPGM_BASE);
 	fpga->overlay = (struct fpga_overlay *)((uint8_t *)fpga->reg + FPGA_OVERLAY_BASE);
 	return fpga;
 } /* fpga_open */
