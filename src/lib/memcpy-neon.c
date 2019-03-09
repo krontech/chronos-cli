@@ -97,7 +97,116 @@ neon_be12_unpack(void *dst, void *src)
         "   vshl.u16  q3, q3, #4        \n" /* q3 = second pixel */
         /* write out */
         "   vst2.16 {q2,q3}, [%[d]]     \n"
-        : [d]"+r"(dst), [s]"+r"(src) : [pattern]"r"(0xf0) : "cc" );
+        : [d]"+r"(dst), [s]"+r"(src) : [pattern]"r"(0xf0) : );
+}
+
+void
+neon_be12_unpack_unsigned(void *dst, const void *src)
+{
+    asm volatile (
+        "   vld3.8 {d0,d1,d2}, [%[s]]   \n"
+        /* Build the second pixel from d2=msb + split high nibble. */
+        "   vshll.u8 q1, d2, #8         \n" /* q1 = d2 to msb. */
+        "   vaddw.u8 q1, q1, d1         \n" /* q1 = second pixel * 16 */
+        "   vshr.u16 q1, q1, #4         \n" /* q1 = second pixel. */
+        /* Build the first pixel from d0=lsb + split low nibble. */
+        "   vzip.u8  d0, d1             \n" /* q0 = split | lsb */
+        "   vshl.u16 q0, q0, #4         \n" /* q0 = first pixel * 16 */
+        "   vshr.u16 q0, q0, #4         \n" /* q0 = first pixel */
+        /* write out */
+        "   vst2.16 {q0,q1}, [%[d]]     \n"
+        :: [d]"r"(dst), [s]"r"(src) : );
+}
+
+/* Perform unpacking of 16 pixels and sign extend to int16. */
+void
+neon_be12_unpack_signed(void *dst, const void *src)
+{
+    asm volatile (
+        "   vld3.8 {d0,d1,d2}, [%[s]]   \n"
+        /* Build the second pixel from d2=msb + split high nibble. */
+        "   vshll.u8 q1, d2, #8         \n" /* q1 = d2 to msb. */
+        "   vaddw.u8 q1, q1, d1         \n" /* q1 = second pixel * 16 */
+        "   vshr.s16 q1, q1, #4         \n" /* q1 = second pixel. */
+        /* Build the first pixel from d0=lsb + split low nibble. */
+        "   vzip.u8  d0, d1             \n" /* q0 = split | lsb */
+        "   vshl.u16 q0, q0, #4         \n" /* q0 = first pixel * 16 */
+        "   vshr.s16 q0, q0, #4         \n" /* q0 = first pixel */
+        /* write out */
+        "   vst2.16 {q0,q1}, [%[d]]     \n"
+        :: [d]"r"(dst), [s]"r"(src) : );
+}
+
+/* Perform unpacking of 16 pixels and apply 2-point calibration (FPN and column gain) */
+void
+neon_be12_unpack_2point(void *dst, const void *src, const void *fpn, const void *gain)
+{
+    asm volatile (
+        "   vld3.8 {d0,d1,d2}, [%[s]]   \n"
+        "   vld2.u16 {q2,q3},  [%[f]]   \n" /* q2/q3 = FPN calibration. */
+        "   vld2.u16 {q4,q5}, [%[g]]    \n" /* q4/q5 = Column gain calibration */
+        /* Build the second pixel from d2=msb + split high nibble. */
+        "   vshll.u8 q1, d2, #8         \n" /* q1 = d2 to msb. */
+        "   vaddw.u8 q1, q1, d1         \n" /* q1 = second pixel * 16 */
+        "   vshr.u16 q1, q1, #4         \n" /* q1 = second pixel. */
+        /* Build the first pixel from d0=lsb + split low nibble. */
+        "   vzip.u8  d0, d1             \n" /* q0 = split | lsb */
+        "   vshl.u16 q0, q0, #4         \n" /* q0 = first pixel * 16 */
+        "   vshr.u16 q0, q0, #4         \n" /* q0 = first pixel */
+        /* Subtract FPN */
+        "   vqsub.s16 q0, q0, q2        \n"
+        "   vqsub.s16 q1, q1, q3        \n"
+        /* Apply Column Gain to the first set of pixels. */
+        "   vmull.u16 q6, d0, d8        \n"
+        "   vmull.u16 q7, d1, d9        \n"
+        "   vshrn.u32 d0, q6, #12       \n"
+        "   vshrn.u32 d1, q7, #12       \n"
+        /* Apply Column Gain to the second set of pixels. */
+        "   vmull.u16 q6, d2, d10       \n"
+        "   vmull.u16 q7, d3, d11       \n"
+        "   vshrn.u32 d2, q6, #12       \n"
+        "   vshrn.u32 d3, q7, #12       \n"
+        /* write out the calibrated pixels. */
+        "   vst2.16 {q0,q1}, [%[d]]     \n"
+        :: [d]"r"(dst), [s]"r"(src), [f]"r"(fpn), [g]"r"(gain) : );
+}
+
+/* Perform unpacking of 16 pixels and apply 3-point calibration (FPN, offset, gain and curvature). */
+/* TODO: Doesn't actually do curvature yet. */
+void
+neon_be12_unpack_3point(void *dst, const void *src, const void *fpn, const void *offset, const void *gain, const void *curve)
+{
+    asm volatile (
+        "   vld3.8 {d0,d1,d2}, [%[s]]   \n"
+        "   vld2.u16 {q4,q5}, [%[g]]    \n" /* q4/q5 = Column gain calibration */
+        /* Build the second pixel from d2=msb + split high nibble. */
+        "   vshll.u8 q1, d2, #8         \n" /* q1 = d2 to msb. */
+        "   vaddw.u8 q1, q1, d1         \n" /* q1 = second pixel * 16 */
+        "   vshr.u16 q1, q1, #4         \n" /* q1 = second pixel. */
+        /* Build the first pixel from d0=lsb + split low nibble. */
+        "   vzip.u8  d0, d1             \n" /* q0 = split | lsb */
+        "   vshl.u16 q0, q0, #4         \n" /* q0 = first pixel * 16 */
+        "   vshr.u16 q0, q0, #4         \n" /* q0 = first pixel */
+        /* Apply Column Gain to the first set of pixels. */
+        "   vmull.u16 q2, d0, d8        \n"
+        "   vmull.u16 q3, d1, d9        \n"
+        "   vshrn.u32 d0, q2, #12       \n"
+        "   vshrn.u32 d1, q3, #12       \n"
+        /* Apply Column Gain to the second set of pixels. */
+        "   vmull.u16 q2, d2, d10       \n"
+        "   vmull.u16 q3, d3, d11       \n"
+        "   vshrn.u32 d2, q2, #12       \n"
+        "   vshrn.u32 d3, q3, #12       \n"
+        /* Apply FPN and column offset */
+        "   vld2.16 {q4,q5}, [%[f]]     \n" /* q4/q5 = FPN calibration. */
+        "   vld2.16 {q6,q7}, [%[o]]     \n" /* q6/q7 = Column offset calibration */
+        "   vsub.s16 q4, q4, q6         \n"
+        "   vsub.s16 q5, q5, q7         \n"
+        "   vqsub.u16 q0, q0, q4        \n"
+        "   vqsub.u16 q1, q1, q5        \n"
+        /* write out the calibrated pixels. */
+        "   vst2.16 {q0,q1}, [%[d]]     \n"
+        :: [d]"r"(dst), [s]"r"(src), [f]"r"(fpn), [o]"r"(offset), [g]"r"(gain) : );
 }
 
 void

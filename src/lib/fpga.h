@@ -282,14 +282,16 @@ struct fpga_segments {
     uint32_t subver;
     uint32_t control;
     uint32_t status;
-    uint32_t __reserved0[3];
+    uint32_t write_addr;
+    uint32_t read_addr;
+    uint32_t __reserved0[1];
     uint32_t blockno;
     uint32_t __reserved1[504];
     /* Aligned to offset 0x800 */
     struct fpga_segment_entry data[128];
 };
 
-#define SEGMENT_IDENTIFIER      0x0040
+#define SEGMENT_IDENTIFIER      0x0024
 
 #define SEGMENT_CONTROL_RESET   (1 << 0)    /* Erase the segment data. */
 
@@ -372,6 +374,7 @@ struct fpga {
     volatile struct fpga_display *display;
     volatile struct fpga_config *config;
     volatile struct fpga_vram   *vram; 
+    volatile struct fpga_segments *segments;
     volatile struct fpga_overlay *overlay;
 };
 
