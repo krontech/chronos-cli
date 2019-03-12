@@ -198,8 +198,13 @@ static gboolean
 cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
+    unsigned long diff = 0;
     unsigned long hres = cam_dbus_dict_get_uint(args, "hres", 0);
     unsigned long vres = cam_dbus_dict_get_uint(args, "vres", 0);
+    unsigned long cropx = cam_dbus_dict_get_uint(args, "cropx", 0);
+    unsigned long cropy = cam_dbus_dict_get_uint(args, "cropy", 0);
+    unsigned long startx = cam_dbus_dict_get_uint(args, "startx", 0);
+    unsigned long starty = cam_dbus_dict_get_uint(args, "starty", 0);
 
     /* Sanity check the input resolutions. */
     if ((hres == 0) && (vres != 0)) {
@@ -227,14 +232,32 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
 
+    /* Interpret zero size as 'use existing size'. */
+    if ((hres == 0) && (vres == 0)) {
+        hres = state->hres;
+        vres = state->vres;
+    }
+
+    /* Check if resolution has changed. */
+    diff |= (hres ^ state->hres);
+    diff |= (vres ^ state->vres);
+    diff |= (cropx ^ state->cropx);
+    diff |= (cropy ^ state->cropy);
+    diff |= (startx ^ state->startx);
+    diff |= (starty ^ state->starty);
+    state->hres = hres;
+    state->vres = vres;
+    state->cropx = cropx;
+    state->cropy = cropy;
+    state->startx = startx;
+    state->starty = starty;
+
     /* If not in playback mode, a restart is required. */
     if (state->mode != PIPELINE_MODE_PLAY) {
         cam_pipeline_restart(state);
     }
-    /* If resolution has changed, a restart is required. */
-    if (hres && vres && ((hres != state->hres) || (vres !=  state->vres))) {
-        state->hres = hres;
-        state->vres = vres;
+    /* If resolution or cropping has changed, a restart is required. */
+    if (diff) {
         cam_pipeline_restart(state);
     }
     

@@ -123,8 +123,12 @@ struct pipeline_state {
 
     /* Video format */
     unsigned int    color;
-    unsigned long   hres;
-    unsigned long   vres;
+    unsigned int    hres;
+    unsigned int    vres;
+    unsigned int    cropx;
+    unsigned int    cropy;
+    unsigned int    startx;
+    unsigned int    starty;
 
     /* Frame information */
     long            position;       /* Last played frame number, or negative for live display. */

@@ -146,6 +146,14 @@ configuration changes.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
 | `"hres"`          | `int`     | The horizontal resolution of live video.
 | `"vres"`          | `uint`    | The vertical resolution of live video.
+| `"cropx"`         | `uint`    | The horizontal video crop size (default: 0).
+| `"cropy"`         | `uint`    | The vertical video crop size (defualt: 0).
+| `"startx"`        | `uint`    | The horizontal starting offset for cropped video (default: 0).
+| `"starty"`        | `uint`    | The vertical starting offset for cropped video (defualt: 0).
+
+If the `cropx` or `cropy` parameters are set to non-zero values, the live video stream
+will be cropped before entering the scaler elements, otherwise the full video size
+will be rescaled to fit the LCD output size set by the [`configure`](#configure) method.
 
 For a description of the acceptable values provided to the `peaking` field,
 refer to the [`configure`](#configure) method.

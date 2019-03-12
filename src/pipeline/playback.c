@@ -32,6 +32,7 @@
 #define PLAYBACK_PIPE_LIVE      (INT_MIN + 1)   /* Seek to the live display stream. */
 #define PLAYBACK_PIPE_FLUSH     (INT_MIN + 2)   /* Dump all recording segments from memory. */
 #define PLAYBACK_PIPE_PREROLL   (INT_MIN + 3)   /* Begin prerolling video to start playback. */
+#define PLAYBACK_PIPE_DELAY     (INT_MIN + 4)   /* Delay for 100ms. */
 
 #define PLAYBACK_POLL_INTERVAL 100
 #define PLAYBACK_WATCHDOG_COUNT (5000 / PLAYBACK_POLL_INTERVAL)
@@ -89,7 +90,7 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
 
     /* Calculate the FPS for debug output */
     fps = pxClock / (vPeriod * hPeriod);
-    fprintf(stderr, "Setup display timing: %d*%d@%d (%lu*%lu max: %u)\n",
+    fprintf(stderr, "Setup display timing: %d*%d@%d (%u*%u max: %u)\n",
            (hPeriod - hBackPorch - hSync - hFrontPorch),
            (vPeriod - vBackPorch - vSync - vFrontPorch),
            fps, state->hres, state->vres, maxfps);
@@ -383,6 +384,11 @@ playback_preroll(struct pipeline_state *state, unsigned int mode)
 {
     int command = PLAYBACK_PIPE_PREROLL;
     fprintf(stderr, "Prerolling playback (mode=%d)\n", mode);
+    if (PIPELINE_IS_SAVING(mode)) {
+        /* Inject a 100ms delay before starting a filesave. */
+        int delay = PLAYBACK_PIPE_DELAY;
+        write(playback_pipe, &command, sizeof(command));
+    }
     state->mode = mode;
     write(playback_pipe, &command, sizeof(command));
 } /* playback_preroll */
@@ -614,6 +620,10 @@ playback_thread(void *arg)
             if (delta == PLAYBACK_PIPE_EXIT) {
                 /* Terminate and cleanup. */
                 break;
+            }
+            else if (delta == PLAYBACK_PIPE_DELAY) {
+                /* Delay prerolling/playback to help sync filesaves. */
+                usleep(100000);
             }
             else if (delta == PLAYBACK_PIPE_PREROLL) {
                 /* Setup prerolling for filesaves. */

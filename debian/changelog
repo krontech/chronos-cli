@@ -1,5 +1,7 @@
-chronos-cli (0.3.1~beta86) unstable; urgency=medium
+chronos-cli (0.3.1~beta88) unstable; urgency=medium
 
+  * Add video cropping support to the D-Bus livedisplay method.
+  * Update recovery tool to apply calibration and segment data.
   * Add splash GIF to packaging.
   * Improve the animated GIF source with caching and alignment.
   * Fix encoding bug in CinemaDNG due to missing raw flag.
@@ -88,4 +90,4 @@ chronos-cli (0.3.1~beta86) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Wed, 06 Mar 2019 16:43:26 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Mon, 11 Mar 2019 18:08:39 -0700
