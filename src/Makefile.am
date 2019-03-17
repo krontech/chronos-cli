@@ -33,6 +33,7 @@ libcamera_a_SOURCES += lib/lux1310-sensor.c
 libcamera_a_SOURCES += lib/lux1310-wavetab.c
 libcamera_a_SOURCES += lib/memcpy-neon.c
 libcamera_a_SOURCES += lib/tiff.c
+libcamera_a_SOURCES += lib/segment.c
 libcamera_a_SOURCES += lib/sensor.c
 ## Header files too.
 libcamera_a_SOURCES += lib/fpga.h
@@ -43,6 +44,7 @@ libcamera_a_SOURCES += lib/i2c.h
 libcamera_a_SOURCES += lib/i2c-spd.h
 libcamera_a_SOURCES += lib/ioport.h
 libcamera_a_SOURCES += lib/jsmn.h
+libcamera_a_SOURCES += lib/segment.h
 libcamera_a_CFLAGS = ${AM_CFLAGS}
 ## ARM-Only sources
 if SYSROOT

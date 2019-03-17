@@ -143,30 +143,22 @@ playback_frame_seek(struct pipeline_state *state, int delta)
 static void
 playback_frame_render(struct pipeline_state *state)
 {
-    struct playback_region *r;
-    unsigned long count = 0;
+    struct video_segment *seg;
+    unsigned long address;
 
     /* If no regions have been set, then just display the first address in memory. */
-    if (!state->totalframes) {
+    if (!state->seglist.totalframes) {
         state->fpga->display->frame_address = state->fpga->seq->region_start;
         state->fpga->display->manual_sync = 1;
         return;
     }
 
-    /* Search the recording regions for the actual frame address. */
-    count = 0;
-    state->segment = 0;
-    for (r = state->region_head; r; r = r->next) {
-        state->segment++;
-        state->segframe = (state->position - count);
-        state->segsize = (r->size / r->framesz);
-        if (state->segframe < state->segsize) {
-            unsigned long relframe = (state->segframe + (r->offset / r->framesz)) % state->segsize;
-            state->fpga->display->frame_address = r->base + (relframe * r->framesz);
-            overlay_update(state, r);
-            break;
-        }
-        count += state->segsize;
+    /* Search the recording for the actual frame address. */
+    seg = video_segment_lookup(&state->seglist, state->position, &address);
+    if (seg) {
+        overlay_update(state, seg);
+    } else {
+        address = state->fpga->seq->region_start;
     }
 
     /* Play the frame */
@@ -272,44 +264,11 @@ playback_fsync(struct pipeline_state *state)
  * Recording Region Management
  *===============================================
  */
-/* Test if two regions overlap each other.  */
-static int
-playback_region_overlap(struct playback_region *a, struct playback_region *b)
-{
-    /* Sort a and b. */
-    if (a->base > b->base) {struct playback_region *tmp = a; a = b; b = tmp;}
-    return ((a->base + a->size) > b->base);
-}
-
-static void
-playback_region_delete(struct pipeline_state *state, struct playback_region *r)
-{
-    if (r->next) r->next->prev = r->prev;
-    else state->region_tail = r->prev;
-    if (r->prev) r->prev->next = r->next;
-    else state->region_head = r->next;
-    free(r);
-}
-
-static void
-playback_region_totals(struct pipeline_state *state)
-{
-    struct playback_region *r;
-    unsigned long nsegs = 0;
-    unsigned long nframes = 0;
-    for (r = state->region_head; r; r = r->next) {
-        nsegs++;
-        nframes += (r->size / r->framesz);
-    }
-    state->totalframes = nframes;
-    state->totalsegs = nsegs;
-}
-
 static int
 playback_region_add(struct pipeline_state *state)
 {
-    struct playback_region *region;
-    sigset_t sigset;
+    struct video_segment *seg;
+
     /* Read the FIFO to extract the new region info. */
     uint32_t start = state->fpga->seq->md_fifo_read;
     uint32_t end = state->fpga->seq->md_fifo_read;
@@ -321,42 +280,15 @@ playback_region_add(struct pipeline_state *state)
     if (start == state->fpga->seq->live_addr[1]) return 0;
     if (start == state->fpga->seq->live_addr[2]) return 0;
 
-    /* Prepare memory for the new region. */
-    region = malloc(sizeof(struct playback_region));
-    if (!region) {
+    /* Update the recording region info, and add a new segment. */
+    state->seglist.rec_start = state->fpga->seq->region_start;
+    state->seglist.rec_stop = state->fpga->seq->region_stop;
+    state->seglist.framesz = state->fpga->seq->frame_size;
+    seg = video_segment_add(&state->seglist, start, end, last);
+    if (!seg) {
         return -1;
     }
-    region->framesz = state->fpga->seq->frame_size;
-    region->base = start;
-    region->size = (end - start) + region->framesz;
-    region->offset = (last >= end) ? 0 : (last - start + region->framesz);
-    /* Capture some metadata too */
-    region->hres = state->hres;
-    region->vres = state->vres;
-    region->exposure = state->fpga->sensor->int_time;
-    region->interval = state->fpga->sensor->frame_period;
 
-    /* Free any regions that would overlap. */
-    while (state->region_head) {
-        if (!playback_region_overlap(region, state->region_head)) break;
-        playback_region_delete(state, state->region_head);
-    }
-
-    /* Link this region into the end of the list. */
-    region->next = NULL;
-    region->prev = state->region_tail;
-    if (region->prev) {
-        region->prev->next = region;
-        state->region_tail = region;
-    }
-    else {
-        state->region_tail = region;
-        state->region_head = region;
-    }
-
-    /* Update the total recording region size and reset back to the start. */
-    state->position = 0;
-    playback_region_totals(state);
     return 1;
 }
 
@@ -411,7 +343,7 @@ playback_play(struct pipeline_state *state, unsigned long frame, int framerate)
     state->playrate = framerate;
     state->playcounter = 0;
     state->loopstart = 0;
-    state->loopend = state->totalframes;
+    state->loopend = state->seglist.totalframes;
     state->position = frame;
     write(playback_pipe, &delta, sizeof(delta));
 }
@@ -427,7 +359,8 @@ playback_loop(struct pipeline_state *state, unsigned long start, int framerate, 
     state->playcounter = 0;
     state->loopstart = start;
     state->loopend = start + count;
-    if (state->loopend > state->totalframes) state->loopend = state->totalframes;
+
+    if (state->loopend > state->seglist.totalframes) state->loopend = state->seglist.totalframes;
     state->position = start;
     write(playback_pipe, &delta, sizeof(delta));
 }
@@ -660,10 +593,7 @@ playback_thread(void *arg)
             }
             else if (delta == PLAYBACK_PIPE_FLUSH) {
                 /* Drop all recording segments. */
-                while (state->region_head) {
-                    playback_region_delete(state, state->region_head);
-                }
-                state->totalframes = 0;
+                video_segment_flush(&state->seglist);
             }
             else if (delta == PLAYBACK_PIPE_LIVE) {
                 /* Clear address select and sync inhibit to enter live display mode. */
@@ -711,9 +641,7 @@ playback_thread(void *arg)
     }
 
     /* Cleanup */
-    while (state->region_head) {
-        playback_region_delete(state, state->region_head);
-    }
+    video_segment_flush(&state->seglist);
     close(seekfds[0]);
     close(seekfds[1]);
     close(fsync);
@@ -734,8 +662,7 @@ playback_init(struct pipeline_state *state)
      * or we risk pointer dereferencing bugs when updating
      * the playback regions.
      */
-    state->region_head = NULL;
-    state->region_tail = NULL;
+    video_segments_init(&state->seglist, 0, 0, state->fpga->seq->frame_size);
 
     /* Install the desired signal handlers. */
     sigemptyset(&sigact.sa_mask);

@@ -50,18 +50,18 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     char fname[64];
     int fd;
     /* HACK! May not actually correlate to the current frame. */
-    struct playback_region *region = state->region_head;
+    struct video_segment *seg = state->seglist.head;
     
     /* The list of EXIF tags. */
     time_t now = time(0);
     char timestr[64];
     struct tm timebuf;
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
         TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 
@@ -139,18 +139,18 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     int fd;
 
     /* HACK! May not actually correlate to the current frame. */
-    struct playback_region *region = state->region_head;
+    struct video_segment *seg = state->seglist.head;
 
     /* The list of EXIF tags. */
     time_t now = time(0);
     char timestr[64];
     struct tm timebuf;
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
         TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
@@ -266,18 +266,18 @@ tiff_probe_grayscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     char fname[64];
     int fd;
     /* HACK! May not actually correlate to the current frame. */
-    struct playback_region *region = state->region_head;
+    struct video_segment *seg = state->seglist.head;
     
     /* The list of EXIF tags. */
     time_t now = time(0);
     char timestr[64];
     struct tm timebuf;
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
         TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 
@@ -335,18 +335,18 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     char fname[64];
     int fd;
     /* HACK! May not actually correlate to the current frame. */
-    struct playback_region *region = state->region_head;
+    struct video_segment *seg = state->seglist.head;
 
     /* The list of EXIF tags. */
     time_t now = time(0);
     char timestr[64];
     struct tm timebuf;
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
         TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
@@ -401,18 +401,18 @@ tiff_probe_raw(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     char fname[64];
     int fd;
     /* HACK! May not actually correlate to the current frame. */
-    struct playback_region *region = state->region_head;
+    struct video_segment *seg = state->seglist.head;
     
     /* The list of EXIF tags. */
     time_t now = time(0);
     char timestr[64];
     struct tm timebuf;
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, region->exposure, FPGA_TIMEBASE_HZ),   /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),             /* ExifVersion = 2.2 */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
         TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                          /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, region->interval),  /* FrameRate */
+        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 

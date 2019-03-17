@@ -311,7 +311,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     /* Configure the input video resolution */
     state->position = args->start;
     state->loopstart = 0;
-    state->loopend = state->totalframes;
+    state->loopend = state->seglist.totalframes;
 
     /* Clear any special pipeline test modes. */
     state->fpga->display->pipeline &= ~(DISPLAY_PIPELINE_TEST_PATTERN | DISPLAY_PIPELINE_RAW_MODES | DISPLAY_PIPELINE_BYPASS_FPN);

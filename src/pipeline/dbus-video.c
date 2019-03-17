@@ -49,8 +49,8 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
     cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY) && (state->position >= 0));
     cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(mode));
-    cam_dbus_dict_add_uint(dict, "totalFrames", state->totalframes);
-    cam_dbus_dict_add_uint(dict, "totalSegments", state->totalsegs);
+    cam_dbus_dict_add_uint(dict, "totalFrames", state->seglist.totalframes);
+    cam_dbus_dict_add_uint(dict, "totalSegments", state->seglist.totalsegs);
     cam_dbus_dict_add_int(dict, "position", state->position);
     cam_dbus_dict_add_uint(dict, "segment", 0);
     if (PIPELINE_IS_SAVING(mode)) {
@@ -304,7 +304,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
 
     /* Dive deeper based on the format */
     state->args.start = cam_dbus_dict_get_uint(args, "start", 0);
-    state->args.length = cam_dbus_dict_get_uint(args, "length", state->totalframes);
+    state->args.length = cam_dbus_dict_get_uint(args, "length", state->seglist.totalframes);
     
     /* Accept all microsoft variants of the H264 FOURCC codes */
     if ((strcasecmp(format, "h264") == 0) || (strcasecmp(format, "x264") == 0)) {
