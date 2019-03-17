@@ -573,13 +573,13 @@ main(int argc, char *const argv[])
             ftw(outdir, force_unlink, 10);
             ftw(outdir, force_rmdir, 10);
         }
-        ret = mkdir(outdir, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+        ret = mkdir(outdir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
         if ((ret < 0) && (errno != EEXIST)) {
             fprintf(stderr, "Unable to create directory %s (%s)\n", outdir, strerror(errno));
             return EXIT_FAILURE;
         }
     }
-    else if (mkdir(outdir, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH) < 0) {
+    else if (mkdir(outdir, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH) < 0) {
         fprintf(stderr, "Unable to create directory %s (%s)\n", outdir, strerror(errno));
         return EXIT_FAILURE;
     }
