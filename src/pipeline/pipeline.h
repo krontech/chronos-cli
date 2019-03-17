@@ -22,6 +22,7 @@
 #include <gst/gst.h>
 
 #include "ioport.h"
+#include "segment.h"
 #include "fpga.h"
 
 #define SCREENCAP_PATH      "/tmp/cam-screencap.jpg"
@@ -36,20 +37,6 @@
 #define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES * 4)
 
 struct CamVideo;
-
-/* Playback regions are stored as a double-linked list. */
-struct playback_region {
-    struct playback_region *next;
-    struct playback_region *prev;
-    /* Size and starting address of the recorded frames. */
-    unsigned long   size;
-    unsigned long   base;
-    unsigned long   offset;
-    unsigned long   framesz;
-    /* Some frame metadata captured along with the frames. */
-    unsigned long   exposure;
-    unsigned long   interval;
-};
 
 #define PIPELINE_MODE_LIVE      0   /* Displaying live frame data to the display device. */
 #define PIPELINE_MODE_PLAY      1   /* Playing recoded frames back to the display device. */
@@ -123,12 +110,8 @@ struct pipeline_state {
     unsigned long   vres;
 
     /* Frame information */
-    unsigned long   totalframes;    /* Total number of frames when in playback mode. */
-    unsigned long   totalsegs;      /* Total number of recording segments captured. */
+    struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */
     unsigned long   position;       /* Last played frame number when in playback mode. */
-    unsigned long   segment;        /* Current segment number */
-    unsigned long   segframe;       /* Frame number within the current segment. */
-    unsigned long   segsize;        /* Segment size (in frames) */
 
     /* Playback Mode */
     timer_t         playtimer;      /* Periodic timer - fires to manually play back frames. */
@@ -136,8 +119,6 @@ struct pipeline_state {
     int             playdelta;      /* Change (in frames) to apply at each playback timer expiry. */
     unsigned long   loopstart;      /* Starting frame to play from when in playback mode. */
     unsigned long   loopend;        /* Ending frame to play from when in playback mode. */
-    struct playback_region *region_head;
-    struct playback_region *region_tail;
 
     /* Recording Mode */
     unsigned int    phantom;        /* OMX buffering workaround */
@@ -192,6 +173,6 @@ void playback_region_flush(struct pipeline_state *state);
 /* Video overlay control. */
 void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
-void overlay_update(struct pipeline_state *state, const struct playback_region *region);
+void overlay_update(struct pipeline_state *state, const struct video_segment *seg);
 
 #endif /* __PIPELINE */

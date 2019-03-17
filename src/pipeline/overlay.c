@@ -86,17 +86,17 @@ mkformat(char *output, const char *fmt, unsigned int fmtlen, const char *suffix)
 #define TRIGGER_TIME_FREQ   100000000
 
 static long long
-triggertime_counts(struct pipeline_state *state)
+triggertime_counts(struct pipeline_state *state, const struct video_segment *seg)
 {
-    long frames = (state->segsize - state->segframe - 1);
+    long frames = seg->nframes - (state->position - seg->frameno) - 1;
     long delay = state->fpga->seq->trig_delay;
-    return (long long)(delay - frames) * state->fpga->sensor->frame_period;
+    return (long long)(delay - frames) * seg->metadata.interval;
 }
 
 static double
-triggertime_float(struct pipeline_state *state, char specifier)
+triggertime_float(struct pipeline_state *state, const struct video_segment *seg, char specifier)
 {
-    long long counts = triggertime_counts(state);
+    long long counts = triggertime_counts(state, seg);
     switch (specifier) {
         case 'U':
             return (double)counts / (double)(FPGA_TIMEBASE_HZ / 1000000);
@@ -109,7 +109,7 @@ triggertime_float(struct pipeline_state *state, char specifier)
 }
 
 void
-overlay_update(struct pipeline_state *state, const struct playback_region *region)
+overlay_update(struct pipeline_state *state, const struct video_segment *seg)
 {
     char textbox[OVERLAY_TEXT_LENGTH];
     char tempfmt[OVERLAY_TEXT_LENGTH];
@@ -156,48 +156,48 @@ overlay_update(struct pipeline_state *state, const struct playback_region *regio
             /* Total frames */
             case 't':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->totalframes);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->seglist.totalframes);
                 break;
             
             /* Segment number */
             case 'g':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segment);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, seg->segno + 1);
                 break;
             
             /* Segment frame */
             case 'h':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->segframe + 1);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->position - seg->frameno + 1);
                 break;
             
             /* Total segments */
             case 'i':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->totalsegs);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, state->seglist.totalsegs);
                 break;
             
             /* Segment size */
             case 'z':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lu");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, region->size / region->framesz);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, seg->nframes);
                 break;
 
             /* Frame time from trigger as an integer number of: */
             case 'n':
                 /* nanoseconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "lld");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_counts(state) * 1000000000LL / FPGA_TIMEBASE_HZ);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_counts(state, seg) * 1000000000LL / FPGA_TIMEBASE_HZ);
                 break;
             case 'u':
                 /* microseconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "ld");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)((triggertime_counts(state) * 1000000) / FPGA_TIMEBASE_HZ));
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)((triggertime_counts(state, seg) * 1000000) / FPGA_TIMEBASE_HZ));
                 break;
             case 'm':
                 /* milliseconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "ld");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)((triggertime_counts(state) * 1000) / FPGA_TIMEBASE_HZ));
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (long)((triggertime_counts(state, seg) * 1000) / FPGA_TIMEBASE_HZ));
                 break;
 
             /* Frame time from trigger as a floating point number of: */
@@ -205,18 +205,18 @@ overlay_update(struct pipeline_state *state, const struct playback_region *regio
             case 'M': /* milliseconds */
             case 'S': /* seconds */
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_float(state, specifier));
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, triggertime_float(state, seg, specifier));
                 break;
 
             /* Exposure time (floating point) */
             case 'e':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (double)region->exposure / 100.0);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (double)seg->metadata.exposure / 100.0);
                 break;
             /* Framerate (floating point) */
             case 'r':
                 mkformat(tempfmt, fmtstart, (format - fmtstart - 1), "f");
-                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (double)FPGA_TIMEBASE_HZ / region->interval);
+                len += snprintf(textbox + len, sizeof(textbox) - len, tempfmt, (double)FPGA_TIMEBASE_HZ / seg->metadata.interval);
                 break;
         }
     }
