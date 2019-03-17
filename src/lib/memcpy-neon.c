@@ -154,8 +154,8 @@ neon_be12_unpack_2point(void *dst, const void *src, const void *fpn, const void 
         "   vshl.u16 q0, q0, #4         \n" /* q0 = first pixel * 16 */
         "   vshr.u16 q0, q0, #4         \n" /* q0 = first pixel */
         /* Subtract FPN */
-        "   vqsub.s16 q0, q0, q2        \n"
-        "   vqsub.s16 q1, q1, q3        \n"
+        "   vqsub.u16 q0, q0, q2        \n"
+        "   vqsub.u16 q1, q1, q3        \n"
         /* Apply Column Gain to the first set of pixels. */
         "   vmull.u16 q6, d0, d8        \n"
         "   vmull.u16 q7, d1, d9        \n"

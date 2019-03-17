@@ -117,8 +117,6 @@ playback_region_add(struct pipeline_state *state)
     if (start == state->fpga->seq->live_addr[1]) return 0;
     if (start == state->fpga->seq->live_addr[2]) return 0;
 
-    fprintf(stderr, "DEBUG: raw segment start=0x%08lx, end=0x%08lx, last=0x%08lx\n", start, end, last);
-
     /* Update the recording region info, and add a new segment. */
     state->seglist.rec_start = state->fpga->seq->region_start;
     state->seglist.rec_stop = state->fpga->seq->region_stop;
