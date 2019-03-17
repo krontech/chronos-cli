@@ -30,6 +30,7 @@
 
 #include "fpga.h"
 #include "tiff.h"
+#include "segment.h"
 #include "utils.h"
 
 /* Working memory size limits. */
@@ -336,7 +337,7 @@ load_caldata(struct fpga *fpga, void *(*readout)(struct fpga *, void *, uint32_t
 
         /* Convert FPN to unsigned 16-bit data for 2-point calibration. */
         for (in = 0, out = 0; (in + 24) <= f_size; in += 24, out += 16) {
-            neon_be12_unpack(cal_fpn + out, cal_fpn_raw + in);
+            neon_be12_unpack_unsigned(cal_fpn + out, cal_fpn_raw + in);
         }
     }
     free(cal_fpn_raw);
@@ -347,61 +348,17 @@ load_caldata(struct fpga *fpga, void *(*readout)(struct fpga *, void *, uint32_t
  * Recording Region Management
  *===============================================
  */
-/* Playback regions are stored as a double-linked list. */
-struct playback_region {
-    struct playback_region *next;
-    struct playback_region *prev;
-    /* Size and starting address of the recorded frames. */
-    unsigned long   size;
-    unsigned long   base;
-    unsigned long   offset;
-    unsigned long   framesz;
-};
-
-struct playback_region_list {
-    struct playback_region *head;
-    struct playback_region *tail;
-};
-
-/* Test if two regions overlap each other.  */
 static int
-playback_region_overlap(struct playback_region *a, struct playback_region *b)
-{
-    /* Sort a and b. */
-    if (a->base > b->base) {struct playback_region *tmp = a; a = b; b = tmp;}
-    return ((a->base + a->size) > b->base);
-}
-
-static void
-playback_region_delete(struct playback_region_list *list, struct playback_region *r)
-{
-    if (r->next) r->next->prev = r->prev;
-    else list->tail = r->prev;
-    if (r->prev) r->prev->next = r->next;
-    else list->head = r->next;
-    free(r);
-}
-
-static struct playback_region_list *
-load_segments(struct fpga *fpga)
+load_segments(struct video_seglist *list, struct fpga *fpga)
 { 
     int i;
     unsigned int startblock;
-    struct playback_region *region;
-    struct playback_region_list *list;
+    struct video_segment *seg;
 
     /* If the recording segment data block is absent, then there's nothing to recover. */
     if (fpga->segments->identifier != SEGMENT_IDENTIFIER) {
-        return NULL;
+        return -1;
     }
-
-    /* Allocate some memory to hold the region list. */
-    list = malloc(sizeof(struct playback_region_list));
-    if (!list) {
-        return NULL;
-    }
-    list->head = NULL;
-    list->tail = NULL;
 
     /* Start from the oldest block. */
     startblock = fpga->segments->blockno;
@@ -419,9 +376,12 @@ load_segments(struct fpga *fpga)
         memcpy(&entry, (void *)&fpga->segments->data[index], sizeof(entry));
 
         /* Ignore any blocks of zero size, or nonsensical block number. */
-        if (entry.start >= entry.end) continue;
-        if (entry.last > entry.end) continue;
-        if (entry.last < entry.start) continue;
+        if (entry.start < list->rec_start) continue;
+        if (entry.start >= list->rec_stop) continue;
+        if (entry.end < list->rec_start) continue;
+        if (entry.end >= list->rec_stop) continue;
+        if (entry.last < list->rec_start) continue;
+        if (entry.last >= list->rec_stop) continue;
         if ((entry.data & SEGMENT_DATA_BLOCKNO) < startblock) continue;
         if ((entry.data & SEGMENT_DATA_BLOCKNO) > fpga->segments->blockno) continue;
 
@@ -431,43 +391,17 @@ load_segments(struct fpga *fpga)
         if (entry.start == fpga->seq->live_addr[1]) continue;
         if (entry.start == fpga->seq->live_addr[2]) continue;
 
-        /* Prepare memory for the new region. */
-        region = malloc(sizeof(struct playback_region));
-        if (!region) {
-            break;
-        }
-        region->framesz = fpga->seq->frame_size;
-        region->base = entry.start;
-        region->size = (entry.end - entry.start) + region->framesz;
-        region->offset = (entry.last >= entry.end) ? 0 : (entry.last - entry.start + region->framesz);
-
-        /* Free any regions that would overlap. */
-        while (list->head) {
-            if (!playback_region_overlap(region, list->head)) break;
-            playback_region_delete(list, list->head);
-        }
-
-        /* Link this region into the end of the list. */
-        region->next = NULL;
-        region->prev = list->tail;
-        if (region->prev) {
-            region->prev->next = region;
-            list->tail = region;
-        }
-        else {
-            list->tail = region;
-            list->head = region;
-        }
+        video_segment_add(list, entry.start, entry.end, entry.last);
     }
 
     /* List the video segments. */
     printf("Found Video Segments:\n");
-    for (i = 0, region = list->head; region; region = region->next, i++) {
-        printf("Segment %3d: start=0x%08lx offset=0x%08lx length=%lu frames\n", i,
-                region->base, region->offset, region->size / region->framesz);
+    for (seg = list->head; seg; seg = seg->next) {
+        printf("Segment %3lu: start=0x%08lx offset=%lu length=%lu\n",
+                seg->segno, seg->start, seg->offset, seg->nframes);
     }
-
-    return list;
+    printf("\n");
+    return list->totalsegs;
 }
 
 static void
@@ -480,7 +414,10 @@ usage(int argc, char *const argv[])
     printf("options:\n");
     printf("  -d, --dest DIR    save video data to DIR (default: /media/sda1/recovery)\n");
     printf("  -f, --force       ignore existing files, possibly overwriting data\n");
-    printf("  -a, --all         record all video memory (ignores segment data)\n");
+    printf("  -i, --inspect     inspect FPGA state only, don't attempt recovery\n");
+    printf("  -s, --start OFFS  start recovery from frame number OFFS (default: 0)\n");
+    printf("  -l, --length NUM  recover up to NUM frames from memory (default: all)\n");
+    printf("  -a, --all         recover all video memory (ignores segment data)\n");
     printf("  --help            display this message and exit\n");
 } /* usage */
 
@@ -489,16 +426,25 @@ main(int argc, char *const argv[])
 {
     int force = 0;
     int allmem = 0;
+    int inspect = 0;
+    unsigned long length = ULONG_MAX;
+    unsigned long frameno = 0;
+
     const char *outdir = "/media/sda1/recovery";
-	const char *shortopts = "had:f";
+	const char *shortopts = "haid:s:l:f";
 	const struct option options[] = {
         {"dest",    required_argument,  NULL, 'd'},
         {"force",   no_argument,        NULL, 'f'},
+        {"inspect", no_argument,        NULL, 'i'},
+        {"start",   required_argument,  NULL, 's'},
+        {"length",  required_argument,  NULL, 'l'},
         {"all",     no_argument ,       NULL, 'a'},
 		{"help",    no_argument,        NULL, 'h'},
 		{0, 0, 0, 0}
 	};
-	int ret, fd;
+    char *end;
+	int ret;
+    FILE *fp;
     void *(*vram_readout_func)(struct fpga *, void *, uint32_t, uint32_t);
 
     /* Useful FPGA registers. */
@@ -509,14 +455,12 @@ main(int argc, char *const argv[])
     uint32_t f_size;
     uint32_t r_start;
     uint32_t r_stop;
-    uint32_t frameno;
     uint32_t segstart;
     uint32_t i;
     char filename[PATH_MAX];
 
     /* Video region data. */
-    struct playback_region *region;
-    struct playback_region_list *list;
+    struct video_seglist list;
 
     /* Map the FPGA register space, and inspect its configuration. */
     fpga = fpga_open();
@@ -544,6 +488,26 @@ main(int argc, char *const argv[])
             
             case 'f':
                 force = 1;
+                break;
+            
+            case 'i':
+                inspect = 1;
+                break;
+            
+            case 's':
+                frameno = strtoul(optarg, &end, 0);
+                if (*end != '\0') {
+                    fprintf(stderr, "Failed to parse argument: \'%s\'\n", optarg);
+                    return EXIT_FAILURE;
+                }
+                break;
+
+            case 'l':
+                length = strtoul(optarg, &end, 0);
+                if (*end != '\0') {
+                    fprintf(stderr, "Failed to parse argument: \'%s\'\n", optarg);
+                    return EXIT_FAILURE;
+                }
                 break;
             
             case 'a':
@@ -589,26 +553,15 @@ main(int argc, char *const argv[])
     load_caldata(fpga, vram_readout_func);
 
     /* Step 3) Generate the recording segment data. */
-    if (!allmem) {
-        list = load_segments(fpga);
-    }
-    if (!list) {
-        /* Fake out the segment data with the entire recording region. */
-        static struct playback_region fake_region;
-        static struct playback_region_list fake_list;
-
-        fake_region.next = NULL;
-        fake_region.prev = NULL;
-        fake_region.size = fpga->seq->region_stop - fpga->seq->region_start;
-        fake_region.base = fpga->seq->region_start;
-        fake_region.offset = 0;
-        fake_region.framesz = fpga->seq->frame_size;
-        
-        fake_list.head = &fake_region;
-        fake_list.tail = &fake_region;
-        list = &fake_list;
-
+    video_segments_init(&list, fpga->seq->region_start, fpga->seq->region_stop, fpga->seq->frame_size);
+    if (allmem || (load_segments(&list, fpga) <= 0)) {
         printf("No Segment Data Found - Extracting All Memory\n");
+        video_segment_add(&list, fpga->seq->region_start, fpga->seq->region_stop, fpga->seq->region_stop);
+    }
+
+    /* Get out here if we just wanted to inspect the FPGA state. */
+    if (inspect) {
+        return 0;
     }
 
     /* Create a directory for the recovery data. */
@@ -631,17 +584,32 @@ main(int argc, char *const argv[])
         return EXIT_FAILURE;
     }
 
-    /* Step 4) Begin dumping frames. */
-    frameno = 0;
-    for (region = list->head; region; region = region->next) {
-        uint32_t seglength = region->size / region->framesz;
-        for (i = 0; i < seglength; i++) {
-            uint32_t reladdr = (region->offset + i * region->framesz) % region->size;
-            uint32_t frameaddr = region->base + reladdr;
-
-            mkfilepath(filename, outdir, "/frame_%06d.dng", frameno++);
-            printf("Backing up frame from 0x%08x to %s\n", frameaddr, filename);
-            write_frame(fpga, filename, frameaddr, vram_readout_func);
+    sprintf(filename, "%s/segments.txt", outdir);
+    printf("Backing up segment data to %s\n", filename);
+    fp = fopen(filename, "w");
+    if (fp) {
+        struct video_segment *seg;
+        fprintf(fp, "Video Segments:\n");
+        for (seg = list.head; seg; seg = seg->next) {
+            fprintf(fp, "Segment %3lu: start=0x%08lx offset=%lu length=%lu\n",
+                    seg->segno, seg->start, seg->offset, seg->nframes);
         }
+        fclose(fp);
+    }
+    else {
+        fprintf(stderr, "Unable to create file %s (%s)\n", filename, strerror(errno));
+        return EXIT_FAILURE;
+    }
+
+    /* Step 4) Begin dumping frames. */
+    while (frameno < length) {
+        unsigned long frameaddr;
+        if (!video_segment_lookup(&list, frameno, &frameaddr)) break;
+
+        mkfilepath(filename, outdir, "/frame_%06d.dng", frameno);
+        printf("Backing up frame from 0x%08lx to %s\n", frameaddr, filename);
+        write_frame(fpga, filename, frameaddr, vram_readout_func);
+        
+        frameno++;
     }
 } /* main */
