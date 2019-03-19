@@ -68,7 +68,6 @@ struct display_config {
     unsigned long yoff;
     unsigned char zebra;
     unsigned int  peaking;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
-    unsigned char filter;
     const char *gifsplash;
 };
 
@@ -114,6 +113,7 @@ struct pipeline_state {
     unsigned int    cropy;
     unsigned int    startx;
     unsigned int    starty;
+    unsigned int    vidrate;
 
     /* Frame information */
     struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */

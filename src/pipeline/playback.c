@@ -77,23 +77,19 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
     vPeriod = PIPELINE_MAX_VRES + vBackPorch + vSync + vFrontPorch;
     usleep(((unsigned long long)(vPeriod * hPeriod) * 1000000ULL) / pxClock);
 
-    /* Calculate minimum hPeriod to fit within 2048 max vertical resolution. */
+    /* Calculate the ideal hPeriod and then calculate the matching vPeriod for this framerate. */
     hPeriod = hSync + hBackPorch + state->hres + hFrontPorch;
-    minHPeriod = (pxClock / ((2048+vBackPorch+vSync+vFrontPorch) * maxfps)) + 1;
-    if (hPeriod < minHPeriod) hPeriod = minHPeriod;
-
-    /* Calculate the vPeriod and make sure it's large enough for the frame. */
     vPeriod = pxClock / (hPeriod * maxfps);
     if (vPeriod < (state->vres + vBackPorch + vSync + vFrontPorch)) {
         vPeriod = (state->vres + vBackPorch + vSync + vFrontPorch);
     }
 
-    /* Calculate the FPS for debug output */
-    fps = pxClock / (vPeriod * hPeriod);
+    /* Calculate the actual FPS. */
+    state->vidrate = pxClock / (vPeriod * hPeriod);
     fprintf(stderr, "Setup display timing: %d*%d@%d (%u*%u max: %u)\n",
            (hPeriod - hBackPorch - hSync - hFrontPorch),
            (vPeriod - vBackPorch - vSync - vFrontPorch),
-           fps, state->hres, state->vres, maxfps);
+           state->vidrate, state->hres, state->vres, maxfps);
 
     /* Configure the FPGA */
     state->fpga->display->h_res = state->hres;
@@ -162,6 +158,7 @@ playback_frame_render(struct pipeline_state *state)
     }
 
     /* Play the frame */
+    state->fpga->display->frame_address = address;
     state->fpga->display->manual_sync = 1;
 }
 
@@ -216,10 +213,11 @@ playback_fsync(struct pipeline_state *state)
     }
     /* Playback mode: Render the next frame. */
     else if (state->mode == PIPELINE_MODE_PLAY) {
-        /* Do a quickly delta-sigma to set the framerate. */
+        /* Do a quicky delta-sigma to set the framerate. */
+        int inputrate = state->vidrate ? state->vidrate : LIVE_MAX_FRAMERATE;
         int nextcount = state->playcounter + state->playrate;
-        state->playcounter = nextcount % LIVE_MAX_FRAMERATE;
-        playback_frame_seek(state, nextcount / LIVE_MAX_FRAMERATE);
+        state->playcounter = nextcount % inputrate;
+        playback_frame_seek(state, nextcount / inputrate);
         playback_frame_render(state);
     }
     /* Recording Modes: Preroll and then begin playback. */
@@ -575,7 +573,14 @@ playback_thread(void *arg)
                     control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
                     control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
                     state->fpga->display->control = control;
-                    playback_setup_timing(state, LIVE_MAX_FRAMERATE);
+                    if ((state->hres * state->vres) >= 1750000) {
+                        /* At about 1.75MP and higher, we must reduce the speed of playback
+                         * due to saturation of DDR memory with image data from the sensor.
+                         */
+                        playback_setup_timing(state, LIVE_MAX_FRAMERATE/2);
+                    } else {
+                        playback_setup_timing(state, LIVE_MAX_FRAMERATE);
+                    }
 
                     state->playcounter = 0;
                     if (state->position < 0) {
