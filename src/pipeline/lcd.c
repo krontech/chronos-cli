@@ -54,7 +54,9 @@ cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
 	gst_bin_add_many(GST_BIN(state->pipeline), queue, scaler, ctrl, filter, sink, NULL);
 
     /* Sanity-check and apply the crop configuration. */
+#ifdef DEBUG
     fprintf(stderr, "DEBUG: crop = %u,%u@%ux%u\n", state->startx, state->starty, state->cropx, state->cropy);
+#endif
     while (state->cropx && state->cropy) {
         char crop[64];
         if ((state->startx + state->cropx) > state->hres) break;
@@ -80,7 +82,7 @@ cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
     hoffset = (output->xoff + (output->hres - houtput) / 2) & ~0x1;
     voffset = (output->yoff + (output->vres - voutput) / 2) & ~0x1;
 
-#if 1
+#ifdef DEBUG
     fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
     fprintf(stderr, "DEBUG: input = [%u, %u]\n", hinput, vinput);
     fprintf(stderr, "DEBUG: output = [%u, %u]\n", houtput, voutput);

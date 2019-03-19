@@ -172,12 +172,6 @@ cam_videotest(struct pipeline_state *state)
         }
         gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, vconvert, ctrl, sink, NULL);
 
-        /* Debug */
-        GstElement *perf = gst_element_factory_make("gstperf", "test-perf");
-        g_object_set(G_OBJECT(perf), "print-fps", (gboolean)TRUE, NULL);
-        g_object_set(G_OBJECT(perf), "print-arm-load", (gboolean)TRUE, NULL);
-        gst_bin_add(GST_BIN(state->pipeline), perf);
-
         /* Configure elements - simple video output to LCD with no scaling.  */
         g_object_set(G_OBJECT(state->source), "location", state->config.gifsplash, NULL);
         g_object_set(G_OBJECT(state->source), "cache", (gboolean)TRUE, NULL);
@@ -193,8 +187,7 @@ cam_videotest(struct pipeline_state *state)
         g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
         g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
 
-        //gst_element_link_many(state->source, queue, vconvert, ctrl, sink, NULL);
-        gst_element_link_many(state->source, queue, perf, vconvert, ctrl, sink, NULL);
+        gst_element_link_many(state->source, queue, vconvert, ctrl, sink, NULL);
         return state->pipeline;
     }
     /*=====================================================
@@ -783,7 +776,7 @@ main(int argc, char * argv[])
     }
     
     /* Check if we are attached to a color or monochrome sensor. */
-    state->color = 0;
+    state->color = 1;
     fd = ioport_open(state->iops, "lux1310-color", O_RDONLY);
     if (fd >= 0) {
         char buf[2];

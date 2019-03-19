@@ -171,6 +171,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     state->config.yoff = yoff;
 
     /* Update the live display flags. */
+    state->color = cam_dbus_dict_get_boolean(args, "color", state->color);
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
     state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
@@ -184,10 +185,21 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
+    if (state->color) {
+        state->control |= DISPLAY_CTL_COLOR_MODE;
+    } else {
+        state->control &= ~DISPLAY_CTL_COLOR_MODE;
+    }
 
-    /* Apply invasive pipeline changes. */
+    /* Apply Changes. */
     if (state->mode == PIPELINE_MODE_PLAY) {
+        uint32_t dcontrol;
         if (diff) cam_lcd_reconfig(state, &state->config);
+
+        dcontrol = state->fpga->display->control;
+        dcontrol &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_COLOR_MODE);
+        dcontrol &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
+        state->fpga->display->control = dcontrol | state->control;
     }
 
     *data = cam_dbus_video_status(state);
@@ -218,6 +230,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
 
     /* Update the live display flags. */
     state->args.mode = PIPELINE_MODE_PLAY;
+    state->color = cam_dbus_dict_get_boolean(args, "color", state->color);
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
     state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
@@ -231,12 +244,21 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
+    if (state->color) {
+        state->control |= DISPLAY_CTL_COLOR_MODE;
+    } else {
+        state->control &= ~DISPLAY_CTL_COLOR_MODE;
+    }
 
     /* Interpret zero size as 'use existing size'. */
     if ((hres == 0) && (vres == 0)) {
         hres = state->hres;
         vres = state->vres;
     }
+
+    /* Check if the FPGA was changed out from under us. */
+    diff |= (state->hres ^ state->fpga->display->h_res);
+    diff |= (state->vres ^ state->fpga->display->v_res);
 
     /* Check if resolution has changed. */
     diff |= (hres ^ state->hres);
@@ -257,7 +279,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
         cam_pipeline_restart(state);
     }
     /* If resolution or cropping has changed, a restart is required. */
-    if (diff) {
+    else if (diff) {
         cam_pipeline_restart(state);
     }
     
