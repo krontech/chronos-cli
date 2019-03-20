@@ -191,8 +191,19 @@ class ioInterface(pychronos.fpgamap):
     shutterSource          = __srcprop(0x3C,          'shutter source')
     shutterInvertInput     = __bitprop(0x3C, 2, 8, 1, 'invert flag')
     shutterDebounce        = __bitprop(0x3C, 2, 9, 1, 'debounce flag')
-    shutterTriggersFrame   = __bitprop(0x3C, 2,12, 1, 'if set, shutter gating can operate')
-    
+    _shutterTriggersFrame  = __bitprop(0x3C, 2,12, 1, 'if set, shutter gating can operate')
+    @property
+    def shutterTriggersFrame(self):
+        return self._shutterTriggersFrame
+    @shutterTriggersFrame.setter
+    def shutterTriggersFrame(self, value):
+        if value:
+            self._shutterTriggersFrame = 1
+            self._oldRegExtShutterCtl = 2
+        else:
+            self._shutterTriggersFrame = 0
+            self._oldRegExtShutterCtl = 0
+            
     cpuIntSourceReg        = __regprop(0x3E, 2,       'cpuInt driver source and flags')
     cpuIntSource           = __srcprop(0x3E,          'cpuInt source')
     cpuIntInvertInput      = __bitprop(0x3E, 2, 8, 1, 'invert flag')
@@ -254,12 +265,13 @@ class ioInterface(pychronos.fpgamap):
             shutterTriggersFrame = structure.get('shutterTriggersFrame')
             if shutterTriggersFrame is not None:
                 raw += int(shutterTriggersFrame) << 12
+                self._oldRegExtShutterCtl = 2
+            else:
+                self._oldRegExtShutterCtl = 0
         logging.info('%s - final raw: 0x%04X', name, raw)
         prop.fset(self, raw)
 
-        if name == 'shutter':
-            self._oldRegExtShutterCtl = 2;
-        
+
     def getSourceConfiguration(self, name):
         '''This returns a dictionary containing the named signal and all parameters
         for it.
@@ -353,10 +365,10 @@ class ioInterface(pychronos.fpgamap):
 
         self.delayClockEnable  = False
         self.delayOutputEnable = True
-        self.delayFlush        = True
+        #self.delayFlush        = True
         self.delayDivider      = int(divider)
         self.delayCount        = int(delay)
-        self.delayFlush        = False
+        #self.delayFlush        = False
         self.delayClockEnable  = True
 
     def setDelayConfiguration(self, structure):

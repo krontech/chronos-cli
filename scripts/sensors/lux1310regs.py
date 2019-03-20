@@ -1,6 +1,7 @@
 # LUX1310 SCI Register Definitions
 import pychronos
 from regmaps import sensor
+import logging
 
 class adcArrayView(sensor.sciArrayView):
     """ADC offset arrayview helper class"""
@@ -35,11 +36,20 @@ class lux1310regs(sensor):
     """
     def __init__(self, offset=pychronos.FPGA_SENSOR_BASE, size=0x100):
         super().__init__(offset, size)
-    
+
+    def debugWriteRegister(self, offset, value, mask):
+        self.sciWrite(offset, value, mask)
+        writen = self.sciRead(offset, mask)
+        if writen != value:
+            logging.error('SCI read/write problem at 0x%02X(%X): 0x%X != 0x%X', offset, mask, value, writen)
+        
+        #if self.sciRead(0x06, 0x7FF) != 1311:
+        #    logging.error('SCI read of regXend wrong: %d', self.sciRead(0x06, 0x7FF))
+        
     # Helper to define an SCI register as a property.
     def __sciprop(offset, mask, docstring):
         return property(fget=lambda self: self.sciRead(offset, mask),
-                        fset=lambda self, value: self.sciWrite(offset, value, mask),
+                        fset=lambda self, value: self.debugWriteRegister(offset, value, mask),
                         doc = docstring)
     
     @property

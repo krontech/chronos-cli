@@ -26,6 +26,8 @@ class camera:
         self.sensor = sensor
         self.dimms = [0, 0]
 
+        self.forceCancel = False
+        
         # Probe the SODIMMs
         for slot in range(0, len(self.dimms)):
             spdData = spd.read(slot)
@@ -48,12 +50,12 @@ class camera:
             config = pychronos.config()
             config.sysReset = 1
             time.sleep(0.2)
-            print("Loaded FPGA Version %s.%s" % (config.version, config.subver))
+            logging.info("Loaded FPGA Version %s.%s", config.version, config.subver)
         else:
             config = pychronos.config()
             config.sysReset = 1
             time.sleep(0.2)
-            print("Detected FPGA Version %s.%s" % (config.version, config.subver))
+            logging.info("Detected FPGA Version %s.%s", config.version, config.subver)
 
         # Setup memory
         self.setupMemory()
@@ -139,9 +141,10 @@ class camera:
 
         # Calculate the real FPS and generate some debug output.
         realFps = pxClock // (vPeriod * hPeriod)
-        print("Setup display timing: %sx%s@%s (%sx%s max: %s)" % \
-            ((hPeriod - hBackPorch - hSync - hFrontPorch), (vPeriod - vBackPorch - vSync - vFrontPorch), \
-             realFps, fSize.hRes, fSize.vRes + fSize.vDarkRows, framerate))
+        logging.info("Setup display timing: %sx%s@%s (%sx%s max: %s)",
+                     (hPeriod - hBackPorch - hSync - hFrontPorch),
+                     (vPeriod - vBackPorch - vSync - vFrontPorch),
+                     realFps, fSize.hRes, fSize.vRes + fSize.vDarkRows, framerate)
         
         displayRegs.hRes = fSize.hRes
         displayRegs.hOutRes = fSize.hRes
@@ -184,7 +187,7 @@ class camera:
         fSizeWords *= self.FRAME_ALIGN_WORDS
         return ramSizeWords // fSizeWords
     
-    def setRecordingConfig(self, fSize, fPeriod=None, expPeriod=None):
+    def setRecordingConfig(self, fSize, fPeriod=None, expPeriod=None, program=None, nFrames=None):
         if (not self.sensor.isValidResolution(fSize)):
             raise ValueError("Unsupported resolution setting")
         
@@ -193,7 +196,7 @@ class camera:
             minPeriod, maxPeriod = self.sensor.getPeriodRange(fSize)
             fPeriod = minPeriod
         
-        self.sensor.setResolution(fSize, fPeriod)
+        self.sensor.setResolution(fSize, fPeriod=fPeriod, exposure=expPeriod, program=program, nFrames=nFrames)
         self.setupRecordRegion(fSize, self.REC_REGION_START)
         if (expPeriod is not None):
             self.sensor.setExposurePeriod(expPeriod)
@@ -201,7 +204,7 @@ class camera:
         ## TODO: Attempt to load calibration files, if present.
         ## DEBUG: This should go elsewhere.
         self.setupDisplayTiming(fSize)
-        os.system("killall -HUP cam-pipeline")
+        #os.system("killall -HUP cam-pipeline")
 
     # Read the serial number - or make it an attribute?
     def getSerialNumber(self):
@@ -259,6 +262,7 @@ class camera:
         yres = display.vRes
 
         logging.debug('Starting')
+        #self.sensor.configForCal()
 
         seq = regmaps.sequencer()
         fAverage = numpy.zeros((yres, xres))
@@ -280,7 +284,8 @@ class camera:
                 yield 0
 
         fAverage /= numFrames
-        
+
+        logging.debug('received frames - linking up col calibration')
         # Readout the column gain and linearity calibration.
         colGainRegs = pychronos.fpgamap(pychronos.FPGA_COL_GAIN_BASE, display.hRes * 2)
         colCurveRegs = pychronos.fpgamap(pychronos.FPGA_COL_CURVE_BASE, display.hRes * 2)
@@ -290,6 +295,7 @@ class camera:
         offsets = numpy.asarray(colOffsetRegs.mem16, dtype=numpy.int16)
         yield 0
 
+        logging.debug('for each column, average and write offset')
         # For each column, the average gives the DC component of the FPN, which
         # gets applied to the column calibration as the constant term. The column
         # calibration function is given by:
@@ -306,6 +312,7 @@ class camera:
             colOffsetRegs.mem16[x] = int(-colOffset[x]) & 0xffff
         yield 0
 
+        logging.debug('write fpn')
         # For each pixel, the AC component of the FPN can be found by subtracting
         # the column average, which we will load into the per-pixel FPN region as
         # a signed quantity.
@@ -316,12 +323,14 @@ class camera:
         fpn = numpy.int16(fAverage - colAverage)
         pychronos.writeframe(display.fpnAddr, fpn)
 
-        print("---------------------------------------------")
-        print("fpn details: min = %d, max = %d" % (numpy.min(fAverage), numpy.max(fAverage)))
-        print("fpn standard deviation: %d" % (numpy.std(fAverage)))
-        print("fpn standard deviation horiz: %s" % (numpy.std(fAverage, axis=1)))
-        print("fpn standard deviation vert:  %s" % (numpy.std(fAverage, axis=0)))
-        print("---------------------------------------------")
+        logging.info('finished - getting some statistics')
+        logging.info("---------------------------------------------")
+        logging.info("fpn details: min = %d, max = %d", numpy.min(fAverage), numpy.max(fAverage))
+        logging.info("fpn standard deviation: %d", numpy.std(fAverage))
+        logging.info("fpn standard deviation horiz: %s", numpy.std(fAverage, axis=1))
+        logging.info("fpn standard deviation vert:  %s", numpy.std(fAverage, axis=0))
+        logging.info("---------------------------------------------")
+        #self.sensor.returnFromCal()
 
     def startZeroTimeBlackCal(self):
         """Begin the black calibration proceedure using a zero-time exposure.
@@ -354,10 +363,14 @@ class camera:
             time.sleep(delay)
         """
 
+        self.sensor.configForCal()
         # Grab the current frame size and exposure.
         fSize = self.sensor.getCurrentGeometry()
         expPrev = self.sensor.getCurrentExposure()
         expMin, expMax = self.sensor.getExposureRange(fSize, self.sensor.getCurrentPeriod())
+        logging.info('fSize: %s', fSize)
+        logging.info('expPrev: %d, zeroTime: %d, period: %d', expPrev, expMin, self.sensor.getCurrentPeriod())
+
 
         # Reconfigure for the minum exposure supported by the sensor.
         self.sensor.setExposurePeriod(expMin)
@@ -371,6 +384,7 @@ class camera:
 
         # Restore the previous exposure settings.
         self.sensor.setExposurePeriod(expPrev)
+        self.sensor.returnFromCal()
 
     def startRecording(self, program):
         """Program the recording sequencer and start recording.
@@ -409,6 +423,8 @@ class camera:
         # Yield until recording is complete.
         yield 0.1
         while (seq.status & seq.ACTIVE_REC) != 0:
+            if self.forceCancel:
+                break
             yield 0.1
     
     def softTrigger(self):
@@ -453,6 +469,8 @@ class camera:
         """
         hSamples = 32
         vSamples = 32
+        self.sensor.configForCal()
+
         fSize = self.sensor.getCurrentGeometry()
         if (hStart is None):
             hStart = (fSize.hRes - hSamples) // 2
@@ -498,10 +516,13 @@ class camera:
         # Find the highest channel (probably green)
         maxSum = max(rSum, gSum, bSum)
         whiteBalance = [maxSum / rSum, maxSum / gSum, maxSum / bSum]
-        print("Computed White Balance = %s" % (whiteBalance))
+        logging.info("Computed White Balance = %s", whiteBalance)
 
         # Load it into the display block for immediate use.
         displayRegs = regmaps.display()
         displayRegs.whiteBalance[0] = whiteBalance[0] * displayRegs.WHITE_BALANCE_DIV
         displayRegs.whiteBalance[1] = whiteBalance[1] * displayRegs.WHITE_BALANCE_DIV
         displayRegs.whiteBalance[2] = whiteBalance[2] * displayRegs.WHITE_BALANCE_DIV
+
+        self.sensor.returnFromCal()
+        

@@ -18,6 +18,8 @@ from sensors import lux1310, frameGeometry
 from regmaps import seqcommand
 import regmaps
 import pychronos
+import json
+import time
 
 def asleep(secs):
     """
@@ -78,6 +80,8 @@ class controlApi(objects.DBusObject):
                           Method('setSequencerProgram',      arguments='a{sv}', returns='a{sv}'),
                           Method('startRecord',              arguments='a{sv}', returns='a{sv}'),
                           Method('stopRecord',               arguments='a{sv}', returns='a{sv}'),
+
+                          Method('forceCancel',              arguments='',      returns='')
     )
     dbusInterfaces = [iface]
 
@@ -88,17 +92,108 @@ class controlApi(objects.DBusObject):
     def __init__(self, objectPath, conn, camera):
         self.conn = conn
         super().__init__(objectPath)
+        self.forceCancel = False
+
+        # hack to get focus peaking working
+        #self.pychronos
 
         self.camera = camera
         self.io = regmaps.ioInterface()
         self.display = regmaps.display()
         self.description = "Chronos SN:%s" % (self.camera.getSerialNumber())
 
-        self.currentState = 'idle'
+        self.config = {}
+        self.lastSaveTime = None
+        
+        self.currentState = 'initializing'
 
         reactor.callLater(0.05, self.reinitSystem, {'reset':True, 'sensor':True})
-        reactor.callLater(5.00, self.setSensorSettings, {'hRes':1280, 'vRes':1024, 'program':'standard'})
+        reactor.callLater(6.00, self.loadConfig)
+
+    def loadConfig(self, configFile='/var/camera/apiConfig.json'):
+        try:
+            logging.info('checking for config file: %s', configFile)
+            with open(configFile, 'r') as inFile:
+                self.config = json.load(inFile)
+            logging.info('loaded config file')
+            if self.config['sensorSettings'].get('hOffset',0) <   0: self.config['sensorSettings']['hOffset'] = 0
+            if self.config['sensorSettings'].get('vOffset',0) <   0: self.config['sensorSettings']['vOffset'] = 0
+            if self.config['sensorSettings'].get('hRes',1280) < 320: self.config['sensorSettings']['hRes'] = 1280
+            if self.config['sensorSettings'].get('vRes',1024) <  96: self.config['sensorSettings']['vRes'] = 1024
+
+            # reset because I can't make this work
+            self.config['sensorSettings'] = {
+                'hRes':1280,
+                'vRes':1024,
+                'hOffset':0,
+                'vOffset':0,
+                'vDarkRows':0,
+                'framePeriod':1/1041.67,
+                'program': 'standard',
+                'exposure': 0.000020,
+                'zebra': True,
+                'peaking': True,
+                'nTriggerFrames': 5
+            }
+            reactor.callLater(0.01, self.setSensorSettings, self.config['sensorSettings'])
+            self.description = self.config['description']
+            self.idNumber    = self.config['idNumber']
+            
+            ## disabled until I can test it further
+            #self.io.setConfiguration(self.config['ioMapping'])
+
+            # reset as there's no way to set it yet and I don't
+            # want corrupted data anywhere
+            self.config['colorMatrix'] = [ 1.9147, -0.5768, -0.2342,
+                                           -0.3056, 1.3895, -0.0969,
+                                           0.1272, -0.9531, 1.6492 ]
+            self.dbusSetColorMatrix(self.config['colorMatrix'])
+            self.dbusSetWhiteBalance(self.config['whiteBalance'])
+            
+        except FileNotFoundError:
+            logging.info('config file not found')
+            self.setConfigToDefaults(configFile)
+        except ValueError as e:
+            logging.info('value error found in config file: %s', e) 
+            self.setConfigToDefaults(configFile)
+
+    def setConfigToDefaults(self, configFile='/var/camera/apiConfig.json'):
+        logging.info('setting config to defaults')
+        self.config['sensorSettings'] = {
+            'hRes':1280,
+            'vRes':1024,
+            'framePeriod':1/1041.67,
+            'program': 'standard',
+            'exposure': 0.000020,
+            'zebra': True,
+            'peaking': True,
+            'nTriggerFrames': 5
+        }
         
+        self.config['description']  = self.description
+        self.config['idNumber']     = self.idNumber
+        
+        self.config['ioMapping']    = self.io.getConfiguration()
+        
+        self.config['colorMatrix'] = [ 1.9147, -0.5768, -0.2342,
+                                       -0.3056, 1.3895, -0.0969,
+                                       0.1272, -0.9531, 1.6492 ]
+        self.config['whiteBalance'] = {'whitebalance': {'red':1.5226, 'green':1.0723, 'blue':1.5655}}
+        self.saveConfig(configFile)
+        # immediately load so it's applied
+        self.loadConfig(configFile)
+
+    def saveConfig(self, configFile='/var/camera/apiConfig.json', force=False):
+        if not force and self.lastSaveTime:
+            if time.time() - self.lastSaveTime < 5.0:
+                # don't save every second - only every five seconds
+                logging.info('skipping save as it\'s too soon after a previous one')
+                return
+        logging.info('saving config file: %s', configFile)
+        self.lastSaveTime = time.time()
+        with open(configFile, 'w') as outFile:
+            json.dump(self.config, outFile, sort_keys=True, indent=4, separators=(',', ': '))
+            
     # Return a state dictionary
     def status(self, lastState=None, error=None):
         data = {'state':self.currentState}
@@ -153,6 +248,7 @@ class controlApi(objects.DBusObject):
 
     @dbusMethod(krontechControl, 'status')
     def dbusStatus(self):
+        self.emitStateChanged(reason='polled')
         return self.status()
 
     def emitStateChanged(self, reason=None, details=None):
@@ -233,7 +329,7 @@ class controlApi(objects.DBusObject):
             self.camera.reset(FPGA_BITSTREAM)
 
         if args.get('reset'):
-            recal = True
+            #recal = True
             self.camera.reset()
             
         if args.get('sensor') or reinitAll:
@@ -241,13 +337,10 @@ class controlApi(objects.DBusObject):
             self.camera.sensor.reset()
 
         if recal:
-            self.display.whiteBalance[0] = int(1.5226 * 4096)
-            self.display.whiteBalance[1] = int(1.0723 * 4096)
-            self.display.whiteBalance[2] = int(1.5655 * 4096)
-            
             self.currentState = 'calibrating'
-            reactor.callLater(0.05, self.startCalibration, {'analog':True, 'zeroTimeBlackCal':True})
-            reactor.callLater(0.01, self.pokeCamPipelineToRestart)
+            settings = self.config.get('sensorSettings')
+            if settings:
+                reactor.callLater(0.05, self.loadConfig)
         else:
             self.currentState = 'idle'
         self.emitStateChanged(reason='(re)initialization complete')
@@ -275,9 +368,12 @@ class controlApi(objects.DBusObject):
         minPeriod, maxPeriod = self.camera.sensor.getPeriodRange(self.camera.sensor.getCurrentGeometry())
         return {'minPeriod':minPeriod, 'maxPeriod':maxPeriod}
 
+
     @dbusMethod(krontechControl, 'setSensorSettings')
     def setSensorSettings(self, args):
+        logging.info('setSensorSettings args: %s', args)
         geom = self.camera.sensor.getCurrentGeometry()
+        logging.info('getCurrentGeometry results: %s', geom)
         geom.hRes      = args.get('hRes',      geom.hRes)
         geom.vRes      = args.get('vRes',      geom.vRes)
         geom.hOffset   = args.get('hOffset',   geom.hOffset)
@@ -287,16 +383,19 @@ class controlApi(objects.DBusObject):
         zebra = args.get('zebra', True)
         peaking = args.get('peaking', True)
 
+        logging.info('after mixing: %s', geom)
+
         programName = args.get('program', 'standard')
         program = 0
         if   programName == 'standard':
             program = self.camera.sensor.PROGRAM_STANDARD
-            self.io.shutterTriggersFrame = True
+            self.io.shutterTriggersFrame = False
         elif programName == 'shutterGating':
             program = self.camera.sensor.PROGRAM_SHUTTER_GATING
             self.io.shutterTriggersFrame = True
 
         # set default value
+        logging.info("geom: %s", geom)
         framePeriod, _ = self.camera.sensor.getPeriodRange(geom)
 
         # check if we have a frameRate field and if so convert it to framePeriod
@@ -308,14 +407,13 @@ class controlApi(objects.DBusObject):
         framePeriod = args.get('framePeriod', framePeriod)
 
         # set exposure or use a default of 95% framePeriod
-        exposurePeriod = args.get('exposure', framePeriod * 0.95) # self.camera.sensor.getExposureRange(geom))
+        exposurePeriod = args.get('exposure', framePeriod * 0.95)
 
+        # nFrames if the trigger nframes mode is used
+        nFrames = args.get('nTriggerFrames', 5)
+        
         # set up video
-        self.camera.sensor.setResolution(geom, program=program)
-        self.camera.sensor.setFramePeriod(framePeriod)
-        self.camera.sensor.setExposurePeriod(exposurePeriod)
-        self.camera.setupRecordRegion(geom, self.camera.REC_REGION_START)
-        self.camera.setupDisplayTiming(geom)
+        self.camera.setRecordingConfig(geom, framePeriod, exposurePeriod, program=program, nFrames=nFrames)
 
         # tell video pipeline to restart
         logging.debug('about to schedule pokeCamPipeline')
@@ -326,22 +424,31 @@ class controlApi(objects.DBusObject):
 
         # get the current config so we can return the real values
         appliedGeometry = self.dbusGetSensorSettings()
+        appliedGeometry['zebra'] = zebra
+        appliedGeometry['peaking'] = peaking
+        appliedGeometry['nTriggerFrames'] = nFrames
+
+        self.currentState = 'calibrating'
         reactor.callLater(0.0, self.emitStateChanged, reason='resolution changed', details={'geometry':appliedGeometry})
+
+        self.config['sensorSettings'] = appliedGeometry
+        reactor.callLater(0.0, self.saveConfig)
+
         return appliedGeometry
 
     @dbusMethod(krontechControl, 'setSensorTiming')
     def setSensorTiming(self, args):
         programName = args.get('program', 'standard')
-        program = 0
-        if   programName == 'standard':
-            program = self.camera.sensor.PROGRAM_STANDARD
-            self.io.shutterTriggersFrame = False
-        elif programName == 'shutterGating':
+        program = self.camera.sensor.PROGRAM_STANDARD
+
+        geom = self.camera.sensor.getCurrentGeometry()
+
+        if programName == 'shutterGating':
             program = self.camera.sensor.PROGRAM_SHUTTER_GATING
             self.io.shutterTriggersFrame = True
 
         if program == self.camera.sensor.PROGRAM_SHUTTER_GATING:
-            self.camera.sensor.timing.programShutterGating()
+            self.camera.sensor.setResolution(geom, program=program)
             return {"program":"shutterGating"}
 
         # check if we have a frameRate field and if so convert it to framePeriod
@@ -355,12 +462,19 @@ class controlApi(objects.DBusObject):
         # set exposure or use a default of 95% framePeriod
         exposurePeriod = args.get('exposure', framePeriod * 0.95) # self.camera.sensor.getExposureRange(geom))
 
-        self.camera.sensor.setFramePeriod(framePeriod)
-        self.camera.sensor.setExposurePeriod(exposurePeriod)
-
+        self.camera.sensor.setResolution(geom, fPeriod=framePeriod,
+                                         exposure=exposurePeriod,
+                                         program=program)
+        self.io.shutterTriggersFrame = False
+        #self.camera.sensor.setFramePeriod(framePeriod)
+        #self.camera.sensor.setExposurePeriod(exposurePeriod)
+        self.config['sensorSettings']['framePeriod'] = framePeriod
+        self.config['sensorSettings']['exposure'] = exposurePeriod
+        reactor.callLater(0.0, self.saveConfig)
+        
         returnData = dict()
         returnData['framePeriod'] = self.camera.sensor.getCurrentPeriod()
-        returnData['frameRate']   = 1.0 / returnGeom['framePeriod']
+        returnData['frameRate']   = 1.0 / returnData['framePeriod']
         returnData['exposure']    = self.camera.sensor.getCurrentExposure()
         return returnData
         
@@ -384,7 +498,9 @@ class controlApi(objects.DBusObject):
     def dbusSetIoMapping(self, args):
         logging.info('mapping given: %s', args)
         self.io.setConfiguration(args)
-        return self.io.getConfiguration()
+        self.config['ioMapping'] = self.io.getConfiguration()
+        reactor.callLater(0.0, self.saveConfig)
+        return self.config['ioMapping']
 
     @dbusMethod(krontechControl, 'getDelay')
     def dbusGetDelay(self, args):
@@ -394,6 +510,8 @@ class controlApi(objects.DBusObject):
     def dbusSetDelay(self, args):
         logging.info('delay given: %s', args)
         self.io.setDelayConfiguration(args)
+        self.config['ioMapping'] = self.io.getConfiguration()
+        reactor.callLater(0.0, self.saveConfig)
         return self.io.getDelayConfiguration()
 
     #===============================================================================================
@@ -422,21 +540,27 @@ class controlApi(objects.DBusObject):
         if analogCal:
             logging.info('starting analog calibration')
             for delay in self.camera.sensor.startAnalogCal():
+                if self.forceCancel: break
                 yield asleep(delay)
 
         if zeroTimeBlackCal:
             logging.info('starting zero time black calibration')
             for delay in self.camera.startZeroTimeBlackCal():
+                if self.forceCancel: break
                 yield asleep(delay)
         elif blackCal:
             logging.info('starting standard black calibration')
             for delay in self.camera.startBlackCal():
+                if self.forceCancel: break
                 yield asleep(delay)
 
         if whiteBalance:
             logging.info('starting white balance')
             for delay in self.camera.startWhiteBalance():
+                if self.forceCancel: break
                 yield asleep(delay)
+            self.config['whiteBalance'] = self.dbusGetWhiteBalance()
+            self.saveConfig(force=True)
                 
         self.currentState = 'idle'
         self.emitStateChanged(reason='calibration complete')
@@ -457,8 +581,17 @@ class controlApi(objects.DBusObject):
     
     @dbusMethod(krontechControl, 'setColorMatrix')
     def dbusSetColorMatrix(self, args):
-        # TODO: implement setting colorMatrix
-        return self.dbusGetColorMatrix()
+        if type(args) == list:
+            if len(args) == 9:
+                for i in range(9):
+                    self.display.colorMatrix[i] = int(args[i] * 4096)
+            else:
+                logging.error("------- length of arguments too short")
+        else:
+            logging.error("------ type for colormatrix wrong(%s)", type(args))
+        self.config['colorMatrix'] = self.dbusGetColorMatrix()
+        reactor.callLater(0.0, self.saveConfig)
+        return self.config['colorMatrix']
 
     @dbusMethod(krontechControl, 'getWhiteBalance')
     def dbusGetWhiteBalance(self):
@@ -480,7 +613,9 @@ class controlApi(objects.DBusObject):
         self.display.whiteBalance[0] = int(red   * 4096)
         self.display.whiteBalance[1] = int(green * 4096)
         self.display.whiteBalance[2] = int(blue  * 4096)
-        return self.dbusGetWhiteBalance()
+        self.config['whiteBalance'] = self.dbusGetWhiteBalance()
+        reactor.callLater(0.0, self.saveConfig)
+        return self.config['whiteBalance']
 
     
 
@@ -518,8 +653,7 @@ class controlApi(objects.DBusObject):
     def dbusStopRecord(self, args):
         self.camera.stopRecording()
         return {'success':'stopped recording'}
-
-
+    
     @inlineCallbacks
     def startRecord(self, args):
         self.emitStateChanged()
@@ -546,14 +680,33 @@ class controlApi(objects.DBusObject):
         logging.info('Recording program: %s', program[0])
         
         for delay in self.camera.startRecording(program):
+            if self.forceCancel: break
             yield asleep(delay)
 
         self.camera.stopRecording()
         
         self.currentState = 'idle'
         self.emitStateChanged(reason='recording complete')
-        
 
+    
+    #===============================================================================================
+    #Method('forceCancel',              arguments='',      returns='')
+    @dbusMethod(krontechControl, 'forceCancel')
+    def dbusForceCancel(self):
+        reactor.callLater(0.0, self.runForceCancel)
+
+    @inlineCallbacks
+    def runForceCancel(self):
+        logging.info("starting forced cancel")
+        self.forceCancel = True
+        self.camera.forceCancel = True
+        self.camera.sensor.forceCancel = True
+        yield asleep(0.5)
+        self.forceCancel = False
+        self.camera.forceCancel = False
+        self.camera.sensor.forceCancel = False
+        logging.info("finished forced cancel")
+        
 
 
 
@@ -578,7 +731,7 @@ def main():
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s [%(funcName)s] %(message)s')
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s [%(funcName)s] %(message)s')
     reactor.callWhenRunning( main )
     reactor.run()
 

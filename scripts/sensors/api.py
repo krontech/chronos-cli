@@ -100,10 +100,21 @@ class api(ABC):
         return True
 
     @abstractmethod
-    def setResolution(self, size, fPeriod=None):
+    def setResolution(self, size, fPeriod=None, exposure=None, program=None, nFrames=None):
         """Configure the resolution and frame geometry of the image sensor"""
         pass
 
+    @abstractmethod
+    def configForCal(self):
+        """This configures the sensor for calibration steps
+        This often means switching it to internal timing mode
+        """
+        pass
+    @abstractmethod
+    def returnFromCal(self):
+        """return from mode set using configForCal"""
+        pass
+    
     #--------------------------------------------
     # Frame Timing Configuration Functions
     #--------------------------------------------

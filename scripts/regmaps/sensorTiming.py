@@ -1,6 +1,7 @@
 import pychronos
 import time
 import logging
+from regmaps import ioInterface
 
 class sensorTimingProgram(pychronos.fpgamap):
     def __init__(self):
@@ -13,6 +14,9 @@ class sensorTimingProgram(pychronos.fpgamap):
     
     def __setitem__(self, key, value):
         self.lastIndex = key
+        if value > 0xFFFFFFFF:
+            value = 0
+            logging.error("====================  ValueError while setting sensorTimingProgram")
         self.mem32[key] = value
 
     @property
@@ -23,6 +27,9 @@ class sensorTimingProgram(pychronos.fpgamap):
     @next.setter
     def next(self, value):
         self.lastIndex += 1
+        if value > 0xFFFFFFFF:
+            value = 0
+            logging.error("====================  ValueError while setting sensorTimingProgram")
         self.mem32[self.lastIndex] = value
         
 
@@ -37,6 +44,7 @@ class sensorTiming(pychronos.fpgamap):
     TIMING_RESTART           = 0x00000000
     TIMING_WAIT_FOR_ACTIVE   = 0x00FFFFFF
     TIMING_WAIT_FOR_INACTIVE = 0x00FFFFFE
+    TIMING_WAIT_FOR_NLINES   = 0x00FFFFFC
 
     TIMING_HZ = 90000000
 
@@ -45,6 +53,7 @@ class sensorTiming(pychronos.fpgamap):
     PROGRAM_2POINT_HDR     = 2
     PROGRAM_3POINT_HDR     = 3
     PROGRAM_FRAME_TRIG     = 4
+    PROGRAM_N_FRAME_TRIG   = 5
     
     def __init__(self, wt_length=80, fps=1000):
         super().__init__(0x6100, 0x500)
@@ -57,8 +66,15 @@ class sensorTiming(pychronos.fpgamap):
         self.__t2Time           = 17
         self.__disableFrameTrig = False
         self.__disableIoDrive   = False
-
+        self.__nFrames          = 5
         
+        self.io = ioInterface.ioInterface()
+
+        if self.version_reg >= 0 and self.subversion_reg >= 2:
+            self.useMinLinesWait = True
+        else:
+            self.useMinLinesWait = False
+            
     #-------------------------------------------------
     # property helpers
     def setPropertyBits(self, offset, size, bitOffset, nBits, value):
@@ -89,13 +105,17 @@ class sensorTiming(pychronos.fpgamap):
     pulsedAbnLowPeriod  = __regprop(0x0A, 2, 'Pulsed-ABN low period')
     pulsedAbnHighPeriod = __regprop(0x0C, 2, 'Pulsed-ABN high period')
 
+    minLines            = __regprop(0x0E, 2, '''If WAIT_FOR_N_LINES active in a program, this sets how many lines or wavetable periods before the program continues.
+    This is used for shutter-gating to make sure it doesn't start a new frame while the last one is being read out''')
+    
     #-------------------------------------------------
     status                      = __regprop_ro(0x06, 2, 'status')
     inUseControlPage            = __bitprop_ro(0x06, 2, 3, 1, 'which "page" in the control memory is currently active - the other one is being edited')
+    exposureIsEnabled           = __bitprop_ro(0x06, 2, 6, 1, 'if "1" either exposureEnabled is 1 or external shutter signal is enabled')
+    frameRequestNotDone         = __bitprop_ro(0x06, 2, 7, 1, 'when requestFrame called, this goes high until the request is completed')
     currentlyWaitingForActive   = __bitprop_ro(0x06, 2, 8, 1, 'if "1" the timing generator is currently waiting for active signal level')
     currentlyWaitingForInactive = __bitprop_ro(0x06, 2, 9, 1, 'if "1" the timing generator is currently waiting for inactive signal level')
     pageSwapState               = __bitprop_ro(0x06, 2, 12, 4, 'state of the state machine that runs the copy on page flip')
-    exposureIsEnabled           = __bitprop_ro(0x06, 2, 6, 1, 'if "1" either exposureEnabled is 1 or external shutter signal is enabled')
 
 
     control             = __regprop(0x08, 2, 'control register')
@@ -134,47 +154,70 @@ class sensorTiming(pychronos.fpgamap):
         # is the best way to use it
         self.resetSignal = 0
 
-    def flip(self, force=False):
-        if (force):
+    def forcedFlip(self):
+        self.requestFlip = 1
+        self.reset()
+    def normalFlip(self):
+        if (not self.busy):
             self.requestFlip = 1
-            self.reset()
-
         else:
-            if (not self.busy):
-                self.requestFlip = 1
+            logging.error("Error: sensorTiming flip state machine still busy")
+        
+    def flip(self, timeout=0.01, force=False):
+        origShutterTriggersFrame = self.io.shutterTriggersFrame
+        if self.currentlyWaitingForActive or self.currentlyWaitingForInactive:
+            logging.info('flip while waiting for external IO - disabling IO during flip')
+            self.io.shutterTriggersFrame = False
+            self.exposureEnabled = 0
+        
+        if timeout < 0:
+            logging.info('---- Forcing flip')
+            self.forcedFlip()
+        else:
+            start = time.time()
+            while time.time() < (start + timeout):
+                if not self.busy:
+                    break
+            if self.busy:
+                logging.error('---- Forcing flip')
+                self.forcedFlip()
             else:
-                logging.error("Error: sensorTiming flip state machine still busy")
+                self.normalFlip()
 
+        start = time.time()
+        while time.time() < (start + timeout):
+            if not self.busy:
+                break
+        self.io.shutterTriggersFrame = origShutterTriggersFrame
     
     def setPulsedPattern(self, wavetableLength, hSync=2):
         self.pulsedAbnLowPeriod = wavetableLength
         self.pulsedAbnHighPeriod = hSync
 
     def stopTiming(self, waitUntilStopped=False, timeout=0.0):
-        self.exposureEnabled = 1
-        if waitUntilStopped:
-            if timeout == 0.0:
-                timeout = 1.5 * self.frameTime / self.TIMING_HZ
-            start = time.time()
-            while time.time() < (start + timeout):
-                if self.currentlyWaitingForActive or self.currentlyWaitingForInactive:
-                    break
-            if not self.currentlyWaitingForActive or self.currentlyWaitingForInactive:
-                logging.warning('timing engine did not stop as expected')
+        self.programInterm()
+        #self.exposureEnabled = 1
+        #if waitUntilStopped:
+        #    if timeout == 0.0:
+        #        timeout = 1.5 * self.frameTime / self.TIMING_HZ
+        #    start = time.time()
+        #    while time.time() < (start + timeout):
+        #        if self.currentlyWaitingForActive or self.currentlyWaitingForInactive:
+        #            break
+        #    if not self.currentlyWaitingForActive or self.currentlyWaitingForInactive:
+        #        logging.warning('timing engine did not stop as expected')
         
     def singleFrame(self):
         self.requestFrame = 1
 
     def continueTiming(self):
-        self.exposureEnabled = 0
+        self.programLast()
+        #self.exposureEnabled = 0
 
         
     @property
     def frameTime(self):
-        #if (self.__disableFrameTrig):
-        #    return (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
-        #else:
-        #    return (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
+        logging.info("frameTime: %d", self.__frameTime)
         return self.__frameTime
     @frameTime.setter
     def frameTime(self, value):
@@ -182,17 +225,14 @@ class sensorTiming(pychronos.fpgamap):
             self.programStandard(value, self.__integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
         elif self.__program == self.PROGRAM_FRAME_TRIG:
             self.programTriggerFrames(value, self.__integrationTime, self.__t2Time, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_N_FRAME_TRIG:
+            self.programTriggerNFrames(value, self.__integrationTime, self.__nFrames, self.__t2Time, self.__disableIoDrive)
         elif self.__program == self.PROGRAM_SHUTTER_GATING:
             pass
             
     @property
     def integrationTime(self):
-        #if (self.__disableFrameTrig):
-        #    frameTime = (self.program[1] & 0x00FFFFFF) + (self.program[2] & 0x00FFFFFF)
-        #    integrationTime = frameTime - (self.program[1] & 0x00FFFFFF)
-        #else:
-        #    frameTime = (self.program[3] & 0x00FFFFFF) + (self.program[4] & 0x00FFFFFF)
-        #    integrationTime = frameTime - (self.program[3] & 0x00FFFFFF)
+        logging.info("integrationTime: %d", self.__integrationTime)
         return self.__integrationTime
     @integrationTime.setter
     def integrationTime(self, value):
@@ -200,36 +240,69 @@ class sensorTiming(pychronos.fpgamap):
             self.programStandard(self.__frameTime, value, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
         elif self.__program == self.PROGRAM_FRAME_TRIG:
             self.programTriggerFrames(self.__frameTime, value, self.__t2Time, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_N_FRAME_TRIG:
+            self.programTriggerNFrames(self.__frameTime, value, self.__nFrames, self.__t2Time, self.__disableIoDrive)
         elif self.__program == self.PROGRAM_SHUTTER_GATING:
             pass
 
+    def programInterm(self, readoutTime=90000, timeout=0.01):
+        """This programs an blank program which will make sure the readout
+        section has enough time to complete readout before switching to a
+        new timing program.
+        This has all IO disabled including the one driving the io block...
+        """
+        self.program[0]        = self.NONE + readoutTime;
+        self.program.next = self.NONE | self.TIMING_RESTART
+        logging.info('programInterm - flip')
+        self.flip(timeout)
+
+    def programLast(self):
+        if self.__program == self.PROGRAM_STANDARD:
+            self.programStandard(self.__frameTime, self.__integrationTime, self.__t2Time, self.__disableFrameTrig, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_FRAME_TRIG:
+            self.programTriggerFrames(self.__frameTime, value, self.__t2Time, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_N_FRAME_TRIG:
+            self.programTriggerNFrames(self.__frameTime, value, self.__nFrames, self.__t2Time, self.__disableIoDrive)
+        elif self.__program == self.PROGRAM_SHUTTER_GATING:
+            self.programShutterGating(self.__t2Time)
+        else:
+            logging.error('unknown last timing program')
         
-    def programShutterGating(self, t2Time=17, timeout=0.01):
+    def programShutterGating(self, t2Time=17, readoutTime=90000, timeout=0.01):
         self.__program = self.PROGRAM_SHUTTER_GATING
+        self.__t2Time           = t2Time
+        self.__disableFrameTrig = False
+
+        logging.info('programShutterGating')
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        self.io.shutterTriggersFrame = False
         
         self.program[0]   = self.NONE + t2Time
         self.program.next = self.ABN                 | self.TIMING_WAIT_FOR_ACTIVE
         self.program.next = self.IODRIVE | self.NONE | self.TIMING_WAIT_FOR_INACTIVE
         self.program.next = self.TXN  | 0x31
+        if self.useMinLinesWait:
+            self.program.next = self.TXN | self.TIMING_WAIT_FOR_NLINES
         self.program.next = self.NONE | self.TIMING_RESTART
-        if timeout < 0:
-            self.flip(force=True)
-        else:
-            start = time.time()
-            while time.time() < (start + timeout):
-                if not self.busy:
-                    break
-            if not self.busy:
-                self.flip(force=True)
-            else:
-                self.flip()
         
-    def programTriggerFrames(self, frameTime, integrationTime, t2Time=17, disableIoDrive=False, timeout=0.01):
+        logging.info('programShutterGating - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = True
+        
+    def programTriggerFrames(self, frameTime, integrationTime, t2Time=17, disableIoDrive=False, readoutTime=90000, timeout=0.01):
         frameTime       = int(frameTime)
         integrationTime = int(integrationTime)
         t2Time          = int(t2Time)
+        
         if (frameTime <= integrationTime):
-            raise ValueError("frameTime (%d) must be longer than integrationTime (%d)" % (frameTime, integrationTime))
+            logging.error("frameTime (%d) must be longer than integrationTime (%d)", frameTime, integrationTime)
+            integrationTime = int(frameTime * 0.95)
+
+        logging.info('TriggerFrames: %d, %d', frameTime, integrationTime)
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        self.io.shutterTriggersFrame = False
 
         self.__program          = self.PROGRAM_FRAME_TRIG
         self.__frameTime        = frameTime
@@ -238,8 +311,10 @@ class sensorTiming(pychronos.fpgamap):
         self.__disableFrameTrig = False
         self.__disableIoDrive   = disableIoDrive
 
+
         if disableIoDrive: ioDrive = 0
         else:              ioDrive = self.IODRIVE
+
         
         self.program[0] = self.NONE + t2Time                             # period before ABN goes low (must be t2 time)
         # ABN Falls here
@@ -249,24 +324,23 @@ class sensorTiming(pychronos.fpgamap):
         self.program.next = ioDrive + self.TXN + 0x31               # TXN falls
         self.program.next = self.TIMING_RESTART                          # TXN raises and cycle restarts
 
-        if timeout < 0:
-            self.flip(force=True)
-        else:
-            start = time.time()
-            while time.time() < (start + timeout):
-                if not self.busy:
-                    break
-            if not self.busy:
-                self.flip(force=True)
-            else:
-                self.flip()
+        logging.info('programTriggerFrames - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = True
         
-    def programStandard(self, frameTime, integrationTime, t2Time=17, disableFrameTrig=False, disableIoDrive=False, timeout=0.01):
+    def programStandard(self, frameTime, integrationTime, t2Time=17, disableFrameTrig=True, disableIoDrive=False, readoutTime=90000, timeout=0.01):
         frameTime       = int(frameTime)
         integrationTime = int(integrationTime)
         t2Time          = int(t2Time)
         if (frameTime <= integrationTime):
-            raise ValueError("frameTime (%d) must be longer than integrationTime (%d)" % (frameTime, integrationTime))
+            logging.error("frameTime (%d) must be longer than integrationTime (%d)", frameTime, integrationTime)
+            integrationTime = int(frameTime * 0.95)
+
+        logging.info('ProgramStandard: %d, %d', frameTime, integrationTime)
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        origShutterTriggersFrame = self.io.shutterTriggersFrame
+        self.io.shutterTriggersFrame = False
 
         self.__program          = self.PROGRAM_STANDARD
         self.__frameTime        = frameTime
@@ -279,7 +353,7 @@ class sensorTiming(pychronos.fpgamap):
         else:              ioDrive = self.IODRIVE
         
         self.program[0] = self.NONE + t2Time                             # period before ABN goes low (must be t2 time)
-        if (not disableFrameTrig):                                       # ABN Falls here
+        if (disableFrameTrig):                                           # ABN Falls here
             self.program.next = self.ABN | self.TIMING_WAIT_FOR_INACTIVE # Timing for the pulsed mode is reset on the falling edge
             self.program.next = self.ABN | self.TIMING_WAIT_FOR_ACTIVE   # (hence why the hold happens after the first command)
         self.program.next = self.ABN + (frameTime - integrationTime)
@@ -289,26 +363,24 @@ class sensorTiming(pychronos.fpgamap):
         self.program.next = ioDrive + self.TXN + 0x31               # TXN falls
         self.program.next = self.TIMING_RESTART                          # TXN raises and cycle restarts
 
-        if timeout < 0:
-            self.flip(force=True)
-        else:
-            start = time.time()
-            while time.time() < (start + timeout):
-                if not self.busy:
-                    break
-            if not self.busy:
-                self.flip(force=True)
-            else:
-                self.flip()
+        logging.info('programStandard - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = origShutterTriggersFrame
 
                 
-    def programSpecial(self, frameTime, integrationTime, t2Time):
+    def programSpecial(self, frameTime, integrationTime, t2Time, readoutTime=90000, timeout=0.01):
         wavetableTime = self.pulsedAbnHighPeriod + self.pulsedAbnLowPeriod
 
         preFrameTime = (frameTime - integrationTime) // (wavetableTime+2)
         preFrameTime *= (wavetableTime+2)
         preFrameTime -= 16
         
+        logging.info('ProgramSpecial: %d, %d', frameTime, integrationTime)
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        origShutterTriggersFrame = self.io.shutterTriggersFrame
+        self.io.shutterTriggersFrame = False
+
         self.program[0]   = self.NONE + t2Time
         self.program.next = self.ABN + self.TIMING_WAIT_FOR_INACTIVE
         self.program.next = self.ABN + self.TIMING_WAIT_FOR_ACTIVE
@@ -317,11 +389,21 @@ class sensorTiming(pychronos.fpgamap):
         self.program.next = self.IODRIVE + self.NONE + (integrationTime)
         self.program.next = self.IODRIVE + self.TXN + 6
         self.program.next = self.NONE + self.TIMING_RESTART
-        self.flip()
 
-    def programHDR_2slope(self, frameTime, integration1, integration2, t2Time=17, VDR1=2.5, VDR2 = 2.0):
+        logging.info('programSpecial - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = origShutterTriggersFrame
+
+    def programHDR_2slope(self, frameTime, integration1, integration2, t2Time=17, VDR1=2.5, VDR2 = 2.0, readoutTime=90000, timeout=0.01):
         if (integration1 + integration2 + t2Time + 50) > frameTime:
-            raise ValueError("frameTime (%d) must be longer than total integrationTime (%d)" % (frameTime, integrationTime))
+            logging.error("frameTime (%d) must be longer than integrationTime (%d)", frameTime, integrationTime)
+            integrationTime = frameTime * 0.95
+
+        logging.info('ProgramHDR_2slope: %d, %d, %d', frameTime, integrationTime1, integrationTime2)
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        origShutterTriggersFrame = self.io.shutterTriggersFrame
+        self.io.shutterTriggersFrame = False
 
         lux = pychronos.lux1310()
         lux.writeDAC(lux.DAC_VDR1, VDR1) # example 2.5
@@ -349,11 +431,19 @@ class sensorTiming(pychronos.fpgamap):
         self.program.next = self.PRSTN + self.TXN + 45           # TXN ___
         self.program.next = self.PRSTN + 60                      # TXN __/ to TXN \__
         self.program.next = self.TXN   + (integration2 - 15)
-        self.flip()
+        logging.info('programHDR-2slope - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = origShutterTriggersFrame
 
-    def programHDR_3slope(self, frameTime, integration1, integration2, integration3, t2Time=17, VDR1=2.5, VDR2 = 2.0):
+    def programHDR_3slope(self, frameTime, integration1, integration2, integration3, t2Time=17, VDR1=2.5, VDR2 = 2.0, readoutTime=90000, timeout=0.01):
         if (integration1 + integration2 + integration3 + t2Time + 50) > frameTime:
             raise ValueError("frameTime (%d) must be longer than total integrationTime (%d)" % (frameTime, integrationTime))
+
+        logging.info('ProgramHDR_3slope: %d, %d, %d', frameTime, integrationTime1, integrationTime2, integrationTime3)
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        origShutterTriggersFrame = self.io.shutterTriggersFrame
+        self.io.shutterTriggersFrame = False
 
         lux = pychronos.lux1310()
         lux.writeDAC(lux.DAC_VDR1, VDR1) # example 2.5
@@ -376,8 +466,50 @@ class sensorTiming(pychronos.fpgamap):
         self.program.next = self.PRSTN + self.TXN + (integration2 - 60)
         self.program.next = self.PRSTN + 15
         self.program.next = self.TXN   + (integration3 - 15)
-        self.flip()
+        logging.info('programHDR-3slope - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = origShutterTriggersFrame
 
+
+    def programTriggerNFrames(self, frameTime, integrationTime, nFrames=5, t2Time=17, disableIoDrive=False, readoutTime=90000, timeout=0.01):
+        frameTime       = int(frameTime)
+        integrationTime = int(integrationTime)
+        t2Time          = int(t2Time)
+        if (frameTime <= integrationTime):
+            logging.error("frameTime (%d) must be longer than integrationTime (%d)", frameTime, integrationTime)
+            integrationTime = frameTime * 0.95
+
+        logging.info('ProgramTriggerNFrames: %d, %d', frameTime, integrationTime)
+        # make sure the readout completes
+        self.programInterm(readoutTime, timeout)
+        origShutterTriggersFrame = self.io.shutterTriggersFrame
+        self.io.shutterTriggersFrame = False
+
+        self.__program          = self.PROGRAM_N_FRAME_TRIG
+        self.__frameTime        = frameTime
+        self.__integrationTime  = integrationTime
+        self.__t2Time           = t2Time
+        self.__disableFrameTrig = False
+        self.__disableIoDrive   = disableIoDrive
+        self.__nFrames          = nFrames
+
+        if disableIoDrive: ioDrive = 0
+        else:              ioDrive = self.IODRIVE
+        
+        self.program[0] = self.NONE + t2Time                             # period before ABN goes low (must be t2 time)
+        # ABN Falls here
+        self.program.next = self.ABN | self.TIMING_WAIT_FOR_ACTIVE       # (hence why the hold happens after the first command)
+
+        for i in range(nFrames):
+            self.program.next = self.ABN + (frameTime - integrationTime)
+            self.program.next = ioDrive + self.NONE + (integrationTime)  # ABN raises
+            self.program.next = ioDrive + self.TXN  + 0x31               # TXN falls
+
+        self.program.next = self.TIMING_RESTART                          # TXN raises and cycle restarts
+
+        logging.info('programTriggerNFrames - flip')
+        self.flip(timeout)
+        self.io.shutterTriggersFrame = origShutterTriggersFrame
 
         
         

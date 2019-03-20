@@ -14,6 +14,7 @@ import logging
 import cgi
 
 
+
 try:
     from aimCamera import aimCameraResource
 except ImportError:
@@ -142,7 +143,10 @@ class Method(resource.Resource):
             # Expect a JSON object for the POST data.
             data = request.content.getvalue().decode("utf8")
             request.setHeader('Content-Type', 'application/json')
-            reactor.callLater(0.0, self.startDbusRequestWData, request, json.loads(data))
+            if self.arguments:
+                reactor.callLater(0.0, self.startDbusRequestWData, request, json.loads(data))
+            else:
+                reactor.callLater(0.0, self.startDbusRequest, request)
             return server.NOT_DONE_YET
         if self.arguments:
             # Expect JSON data passed in URL-encoded form.
@@ -202,7 +206,7 @@ class Subscribe(resource.Resource):
         self.subscribers.add(request)
         d = request.notifyFinish()
         d.addBoth(self.removeSubscriber)
-        log.msg("Adding subscriber...")
+        logging.info("Adding subscriber...")
         request.write(b"")
         return server.NOT_DONE_YET
 
@@ -219,7 +223,7 @@ class Subscribe(resource.Resource):
 
     def removeSubscriber(self, subscriber):
         if subscriber in self.subscribers:
-            log.msg("Removing subscriber..")
+            logging.info("Removing subscriber..")
             self.subscribers.remove(subscriber)
 
 
@@ -303,7 +307,7 @@ class previewImage(resource.Resource):
     @inlineCallbacks
     def requestPlaybackImage(self, request):
         reply = yield self.bus.callRemote('livedisplay', {'hres':0,'vres':0})
-        yield asleep(1/60)
+        yield asleep(2/60)
 
         image = open('/tmp/cam-screencap.jpg', 'br').read()
         request.write(image)
@@ -325,11 +329,33 @@ class playbackImage(resource.Resource):
     def requestPlaybackImage(self, request):
         frameNum = int(request.args.get(b'frameNum', (0))[0])
         reply = yield self.bus.callRemote('playback', {"framerate":0, "position":frameNum})
-        yield asleep(1/60)
+        yield asleep(2/60)
 
         image = open('/tmp/cam-screencap.jpg', 'br').read()
         request.write(image)
         request.finish()
+
+
+class forceReboot(resource.Resource):
+    isLeaf = True
+
+    def render_OPTIONS(self, request):
+        allowCrossOrigin(request, methods='GET, POST, OPTION')
+        request.setHeader('Content-Type', 'application/json')
+        request.finish()
+        return server.NOT_DONE_YET
+
+    def render_GET(self, request):
+        allowCrossOrigin(request, methods='GET, POST, OPTION')
+        request.setHeader('Content-Type', 'application/json')
+        utils.getProcessOutput('/sbin/reboot', [])
+        return b'{"done":true}'
+
+    def render_POST(self, request):
+        allowCrossOrigin(request, methods='GET, POST, OPTION')
+        request.setHeader('Content-Type', 'application/json')
+        utils.getProcessOutput('/sbin/reboot', [])
+        return b'{"done":true}'
 
 
 class waitForTouch(resource.Resource):
@@ -419,6 +445,7 @@ def main():
     Method(control, controlApi, 'setSequencerProgram',      arguments=True)
     Method(control, controlApi, 'startRecord',              arguments=True)
     Method(control, controlApi, 'stopRecord',               arguments=True)
+    Method(control, controlApi, 'forceCancel',              arguments=False)
 
     video = resource.Resource()
     root.putChild(b'video', video)
@@ -443,11 +470,13 @@ def main():
 
     root.putChild(b'timingControl.html', File('timingControl.html'))
 
+    root.putChild(b'forceReboot', forceReboot())
+    
     logging.info("All Systems Go")
     
 if __name__ == "__main__":
     root = Root()
-    logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(levelname)s [%(funcName)s] %(message)s')
+    logging.basicConfig(level=logging.DEBUG, format='%(levelname)s [%(funcName)s] %(message)s')
     reactor.callWhenRunning( main )
 
     log.startLogging(sys.stdout)

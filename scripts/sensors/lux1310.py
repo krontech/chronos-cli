@@ -6,7 +6,12 @@ import copy
 import numpy
 import logging
 
-from regmaps import sequencer, sensorTiming
+DEBUGGING_DEPTH = True
+
+if DEBUGGING_DEPTH:
+    import inspect
+
+from regmaps import sequencer, sensorTiming, ioInterface
 from sensors import api, frameGeometry
 from . import lux1310regs, lux1310wt
 
@@ -40,7 +45,7 @@ class lux1310(api):
     LUX1310_LV_DELAY = 0x07
     LUX1310_MIN_HBLANK = 2
     LUX1310_SENSOR_HZ = 90000000
-    LUX1310_TIMING_HZ = 100000000
+    LUX1310_TIMING_HZ = 90000000
     ADC_CHANNELS = 16
     ADC_FOOTROOM = 32
     ADC_OFFSET_MIN = -1023
@@ -95,6 +100,10 @@ class lux1310(api):
             "lux1310-spidev":  "/dev/spidev3.0",
             "lux1310-dac-cs": "/sys/class/gpio/gpio33/value",
             "lux1310-color":  "/sys/class/gpio/gpio66/value"} ):
+        # a flag that's used to tell any while loop to cancel no matter what
+        self.forceCancel = False
+        self._configCalDepth = 0
+
         ## Hardware Resources
         self.spidev = board["lux1310-spidev"]
         self.spics = board["lux1310-dac-cs"]
@@ -103,7 +112,8 @@ class lux1310(api):
         self.regs = lux1310regs.lux1310regs()
         self.wavetables = lux1310wt.wavetables
         self.timing = sensorTiming()
-
+        self.io     = ioInterface()
+        
         ## ADC Calibration state
         self.adcOffsets = [0] * self.HRES_INCREMENT
 
@@ -123,7 +133,12 @@ class lux1310(api):
                                            doc="""Triggered frame mode; on each rising edge or while the trigger is high, the
                                            timing generator will create frames.
                                            - Given to setResolution for determining the type of timing program to use""")
-        
+        self.PROGRAM_N_FRAME_TRIG = property(fget=lambda self: self.timing.PROGRAM_N_FRAME_TRIG,
+                                             doc="""Triggered multiple frame mode; on each rising edge or while the trigger
+                                             is high, the timing generator will create frames.
+                                             - Given to setResolution for determining the type of timing program to use""")
+
+        self.__nTrigFrames = 5
         super().__init__()
 
     def writeDAC(self, dac, voltage):
@@ -144,7 +159,9 @@ class lux1310(api):
     #--------------------------------------------
     def reset(self, fSize=None):
         self.timing.enabled = True
-        self.timing.programStandard(100 * 4000 * 0.9, 100 * 3900 * 0.9)
+
+        self.currentProgram = self.PROGRAM_STANDARD
+        self.timing.programStandard(0.001 * self.LUX1310_SENSOR_HZ, 0.00095 * self.LUX1310_SENSOR_HZ)
         # Disable integration while setup is in progress.
         self.timing.stopTiming(waitUntilStopped=True)
         
@@ -172,10 +189,10 @@ class lux1310(api):
         self.regs.regSresetB = 0
         rev = self.regs.regChipId
         if (rev != self.LUX1310_CHIP_ID):
-            print("LUX1310 regChipId returned an invalid ID (%s)" % (hex(rev)))
+            logging.error("LUX1310 regChipId returned an invalid ID (%s)", hex(rev))
             return False
         else:
-            print("Initializing LUX1310 silicon revision %s" % (self.regs.revChip))
+            logging.info("Initializing LUX1310 silicon revision %s", self.regs.revChip)
         
         # Setup ADC training.
         self.regs.regCustPat = 0xFC0    # Set custom pattern for ADC training.
@@ -193,7 +210,7 @@ class lux1310(api):
         self.regs.regRdoutDly = 80              # Non-overlapping readout delay
         self.regs.regWavetableSize = 80         # Wavetable size
 
-                # Set internal control registers to fine tune the performance of the sensor
+        # Set internal control registers to fine tune the performance of the sensor
         self.regs.regLvDelay = self.LUX1310_LV_DELAY    # Line valid delay to match internal ADC latency
         self.regs.regHblank = self.LUX1310_MIN_HBLANK   # Set horizontal blanking period
 
@@ -213,7 +230,7 @@ class lux1310(api):
             self.regs.reg[0x7B] = 0x3001 # Internal control register
         else:
             # Unknown version - use silicon rev1 configuration
-            print("Found LUX1310 sensor, unknown silicon revision: %s" % (self.regs.revChip))
+            logging.error("Found LUX1310 sensor, unknown silicon revision: %s", self.regs.revChip)
             self.regs.reg[0x5B] = 0x301F # Internal control register
             self.regs.reg[0x7B] = 0x3001 # Internal control register
 
@@ -233,7 +250,11 @@ class lux1310(api):
 
         # Start the FPGA timing engine.
         self.timing.continueTiming()
-        self.timing.programStandard(100 * 4000 * 0.9, 100 * 3900 * 0.9)
+        self.currentProgram = self.PROGRAM_STANDARD
+        self.timing.programStandard(0.001 * self.LUX1310_SENSOR_HZ, 0.00095 * self.LUX1310_SENSOR_HZ)
+
+        self._configCalDepth = 0
+
         return True
 
     ## TODO: I think this whole function is unnecessary on the LUX1310 FPGA
@@ -244,7 +265,7 @@ class lux1310(api):
         self.regs.clkPhase = 0
         self.regs.clkPhase = 1
         self.regs.clkPhase = 0
-        print("Phase calibration dataCorrect=%s" % (self.regs.dataCorrect))
+        logging.info("Phase calibration dataCorrect=%s", self.regs.dataCorrect)
     
     #--------------------------------------------
     # Frame Geometry Configuration Functions
@@ -316,11 +337,21 @@ class lux1310(api):
         # Otherwise, the frame period was probably too short for this resolution.
         else:
             raise ValueError("Frame period too short, no suitable wavetable found")
-
+        
     def updateReadoutWindow(self, size):
         # Configure the image sensor resolution
         hStartBlocks = size.hOffset // self.HRES_INCREMENT
         hWidthBlocks = size.hRes // self.HRES_INCREMENT
+        if hStartBlocks < 0:
+            logging.error('hOffset negative - resetting to 0')
+            hStartBlocks = 0
+        if hWidthBlocks > 80:
+            logging.error('hRes too large - resetting to max')
+            hWidthBlocks = 80
+        if hWidthBlocks < 20:
+            logging.error('hRes too small - resetting to min')
+            hWidthBlocks = 20
+            
         self.regs.regXstart = 0x20 + hStartBlocks * self.HRES_INCREMENT
         self.regs.regXend = 0x20 + (hStartBlocks + hWidthBlocks) * self.HRES_INCREMENT - 1
         self.regs.regYstart = size.vOffset
@@ -328,19 +359,36 @@ class lux1310(api):
         self.regs.regDrkRowsStAddr = self.MAX_VRES + self.MAX_VDARK - size.vDarkRows + 4
         self.regs.regNbDrkRows = size.vDarkRows
 
-    def setResolution(self, size, fPeriod=None, program=0):
+    def setResolution(self, size, fPeriod=None, exposure=None, program=None, nFrames=None, disableFrameTrig=False):
         if (not self.isValidResolution(size)):
-            raise ValueError("Invalid frame resolution")
+            logging.error("Invalid frame resolution: %s", size)
+            return
+            #raise ValueError("Invalid frame resolution")
+
+        logging.debug('exposure type: %s', type(exposure))
         
         # Select the minimum frame period if not specified.
         minPeriod, maxPeriod = self.getPeriodRange(size)
         if (not fPeriod):
-            fClocks = self.getMinFrameClocks(size)
+            fPeriod = self.getCurrentPeriod()
+            fClocks = fPeriod * self.LUX1310_TIMING_HZ
+            if (fClocks >= minPeriod):
+                fClocks = self.getMinFrameClocks(size)
+                fPeriod = fClocks / self.LUX1310_TIMING_HZ
         elif ((fPeriod * self.LUX1310_TIMING_HZ) >= minPeriod):
             fClocks = fPeriod * self.LUX1310_TIMING_HZ
         else:
             raise ValueError("Frame period too short")
 
+        if (not exposure):
+            exposure = self.getCurrentExposure()
+
+        logging.debug('exposure type: %s', type(exposure))
+
+        minExposure, maxExposure = self.getExposureRange(size, fPeriod)
+        if float(exposure) > maxExposure: exposure = maxExposure
+        if float(exposure) < minExposure: exposure = minExposure
+        
         # Disable the FPGA timing engine and wait for the current readout to end.
         self.timing.stopTiming(waitUntilStopped=True)
         time.sleep(0.01) # Extra delay to allow frame readout to finish. 
@@ -350,15 +398,92 @@ class lux1310(api):
         self.updateWavetable(size, frameClocks=fClocks)
         time.sleep(0.01)
 
-        # Switch to the minimum frame period and 180-degree shutter after changing resolution.
-        if program == self.timing.PROGRAM_STANDARD:
-            self.timing.programStandard(fClocks, fClocks * 0.95)
-        elif program == self.timing.PROGRAM_SHUTTER_GATING:
-            self.timing.programShutterGating()
-        elif program == self.timing.PROGRAM_FRAME_TRIG:
-            self.timing.programTriggerFrames(fClocks, fClocks * 0.95)
-        # TODO: implement HDR modes
+        # set the minimum frame period in the timing engine (set using wavetable periods or lines)
+        self.timing.minLines = size.vRes
 
+        if program is None:
+            program = self.currentProgram
+
+        if nFrames is None:
+            nFrames = self.__nTrigFrames
+        else:
+            self.__nTrigFrames = nFrames
+            
+        # Switch to the minimum frame period and 180-degree shutter after changing resolution.
+        if program == self.PROGRAM_STANDARD:
+            self.currentProgram = program
+            self.timing.programStandard(fClocks, exposure * self.LUX1310_TIMING_HZ, disableFrameTrig=disableFrameTrig)
+        elif program == self.PROGRAM_SHUTTER_GATING:
+            self.currentProgram = program
+            self.timing.programShutterGating()
+        elif program == self.PROGRAM_FRAME_TRIG:
+            self.currentProgram = program
+            self.timing.programTriggerFrames(fClocks, exposure * self.LUX1310_TIMING_HZ)
+        elif program == self.PROGRAM_N_FRAME_TRIG:
+            self.currentProgram = program
+            self.timing.programTriggerNFrames(fClocks, exposure * self.LUX1310_TIMING_HZ, nFrames)
+        else:
+            self.timing.continueTiming()
+            raise ValueError("program not supported yet")
+        # TODO: implement HDR modes
+        self.timing.continueTiming()
+
+    def configForCal(self):
+        """This makes sure the sensor is in self-clocked mode.
+        If calibration is done in external clocking mode, it can hang indefinitely
+        sometimes even when timing is coming in correctly"""
+        self._configCalDepth += 1
+        self._backsavedFrameTrig = self.io.shutterTriggersFrame
+        self.io.shutterTriggersFrame = False
+
+        if DEBUGGING_DEPTH:
+            logging.debug("at depth %d, calling function: %s", self._configCalDepth, inspect.stack()[1][3])
+        
+        if self.currentProgram == self.PROGRAM_STANDARD:
+            logging.info('config for cal - current program: Standard')
+        elif self.currentProgram == self.PROGRAM_SHUTTER_GATING:
+            logging.info('config for cal - current program: Shutter Gating')
+        elif self.currentProgram == self.PROGRAM_FRAME_TRIG:
+            logging.info('config for cal - current program: Frame Trig')
+        elif self.currentProgram == self.PROGRAM_N_FRAME_TRIG:
+            logging.info('config for cal - current program: N Frame Trig')
+        else:
+            logging.info('config for cal - current program: Unknown')
+            
+        if self.currentProgram != self.PROGRAM_STANDARD:
+            self.timing.programStandard(self.getCurrentPeriod()   * self.LUX1310_TIMING_HZ,
+                                        self.getCurrentExposure() * self.LUX1310_TIMING_HZ,
+                                        disableFrameTrig=False)
+
+    def returnFromCal(self):
+        """This returns the sensor to normal operation after working in cal mode
+        """
+        if DEBUGGING_DEPTH:
+            logging.debug("leaving depth %d, calling function: %s", self._configCalDepth, inspect.stack()[1][3])
+
+        self._configCalDepth -= 1
+        if self._configCalDepth < 0:
+            logging.error('return called too many times')
+            #raise ValueError("return called too many times")
+        if self._configCalDepth == 0:
+            self.io.shutterTriggersFrame = self._backsavedFrameTrig
+            
+            if self.currentProgram == self.PROGRAM_STANDARD:
+                logging.info('returning to: Standard')
+            elif self.currentProgram == self.PROGRAM_SHUTTER_GATING:
+                logging.info('returning to: Shutter Gating')
+            elif self.currentProgram == self.PROGRAM_FRAME_TRIG:
+                logging.info('returning to: Frame Trig')
+            elif self.currentProgram == self.PROGRAM_N_FRAME_TRIG:
+                logging.info('returning to: N Frame Trig')
+            else:
+                logging.info('returning to: Unknown')
+                
+            if self.currentProgram != self.PROGRAM_STANDARD:
+                self.setResolution(self.getCurrentGeometry())
+        else:
+            logging.info('current depth: %d')
+        
     #--------------------------------------------
     # Frame Timing Configuration Functions
     #--------------------------------------------
@@ -381,8 +506,7 @@ class lux1310(api):
         tFovb = 41      # Duration between PRSTN falling and TXN falling (I think)
         tFrame = tRow * (size.vRes + size.vDarkRows) + tTx + tFovf + tFovb - self.LUX1310_MIN_HBLANK
 
-        # Convert from LUX1310 sensor clocks to FPGA timing clocks.
-        return (tFrame * self.LUX1310_TIMING_HZ) // self.LUX1310_SENSOR_HZ
+        return tFrame
     
     def getPeriodRange(self, fSize):
         # TODO: Need to validate the frame size.
@@ -449,6 +573,7 @@ class lux1310(api):
         fAverage = numpy.zeros((fSize.vDarkRows * fSize.hRes // self.ADC_CHANNELS, self.ADC_CHANNELS), dtype=numpy.uint32)
         seq = sequencer()
         for x in range(0, numFrames):
+            logging.debug("frame %d", x)
             yield from seq.startLiveReadout(fSize.hRes, fSize.vDarkRows)
             fAverage += numpy.reshape(seq.liveResult, (-1, self.ADC_CHANNELS))
         
@@ -479,7 +604,9 @@ class lux1310(api):
         self.regs.regAdcCalEn = True
         for i in range(0, iterations):
             yield tRefresh
+            logging.debug("itteration: %d", i)
             yield from self.autoAdcOffsetIteration(fSize)
+            
 
     def autoAdcGainCal(self, fSize):
         # Setup some math constants
@@ -497,9 +624,12 @@ class lux1310(api):
         self.updateWavetable(fSize, frameClocks=self.timing.frameTime, gaincal=True)
         self.timing.continueTiming()
 
+        logging.debug('search for dummy voltage high reference point')
         # Search for a dummy voltage high reference point.
         vhigh = 31
         while (vhigh > 0):
+            if self.forceCancel:
+                break
             self.regs.regSelVdumrst = vhigh
             yield tRefresh
 
@@ -514,9 +644,12 @@ class lux1310(api):
             else:
                 vhigh -= 1
         
+        logging.debug('search for dummy voltage low reference point')
         # Search for a dummy voltage low reference point.
         vlow = 0
         while (vlow < vhigh):
+            if self.forceCancel:
+                break
             self.regs.regSelVdumrst = vlow
             yield tRefresh
             
@@ -531,6 +664,7 @@ class lux1310(api):
             else:
                 vlow += 1
 
+        logging.debug('get mid')
         # Sample the midpoint, which should be somewhere around quarter scale.
         vmid = (vhigh + 3*vlow) // 4
         self.regs.regSelVdumrst = vmid
@@ -610,11 +744,14 @@ class lux1310(api):
         display = pychronos.display()
         display.gainControl |= display.GAINCTL_3POINT
 
+
     def startAnalogCal(self):     
         # Retrieve the current resolution and frame period.
         fSizePrev = self.getCurrentGeometry()
         fSizeCal = copy.deepcopy(fSizePrev)
         fPeriod = self.timing.frameTime / self.LUX1310_TIMING_HZ
+
+        self.configForCal()
 
         # Enable black bars if not already done.
         if (fSizeCal.vDarkRows == 0):
@@ -644,3 +781,5 @@ class lux1310(api):
         self.updateReadoutWindow(fSizePrev)
         self.updateWavetable(fSizePrev, frameClocks=self.timing.frameTime, gaincal=False)
         self.timing.continueTiming()
+
+        self.returnFromCal()

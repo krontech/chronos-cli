@@ -494,5 +494,5 @@ if __name__ == "__main__":
     obj  = controlApi(bus, '/com/krontech/chronos/control', mainloop, cam)
 
     # Run the mainloop.
-    print("Running control service...")
+    logging.info("Running control service...")
     mainloop.run()
