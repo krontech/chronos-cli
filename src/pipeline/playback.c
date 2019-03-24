@@ -103,7 +103,6 @@ playback_signal_segment(gpointer data)
 static int
 playback_region_add(struct pipeline_state *state)
 {
-    GSource *segsource;
     struct video_segment *seg;
 
     /* Read the FIFO to extract the new region info. */
@@ -123,20 +122,14 @@ playback_region_add(struct pipeline_state *state)
     state->seglist.framesz = state->fpga->seq->frame_size;
     seg = video_segment_add(&state->seglist, start, end, last);
     if (!seg) {
-        return -1;
+        return 0;
     }
 
     /* Capture some metadata too. */
     seg->metadata.exposure = state->fpga->sensor->int_time;
     seg->metadata.interval = state->fpga->sensor->frame_period;
 
-    /* Emit a D-Bus signal from the main loop. */
-    segsource = g_idle_source_new();
-    if (segsource) {
-        g_source_set_callback(segsource, playback_signal_segment, state, NULL);
-        g_source_attach(segsource, g_main_loop_get_context(state->mainloop));
-    }
-    return 0;
+    return 1;
 }
 
 /* Flush recording segment data. */
@@ -435,6 +428,7 @@ playback_thread(void *arg)
     pfd.events = POLLPRI | POLLERR;
     pfd.revents = 0;
     while (1) {
+        int newsegs = 0;
         err = poll(&pfd, 1, PLAYBACK_POLL_INTERVAL);
         if ((err == 0) && (state->mode >= PIPELINE_MODE_PLAY)) watchdog--;
         if (err < 0) {
@@ -451,7 +445,15 @@ playback_thread(void *arg)
 
         /* Grab new regions from the recording sequencer. */
         while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
-            playback_region_add(state);
+            newsegs += playback_region_add(state);
+        }
+        /* Emit a D-Bus signal from the main loop if we got new segments. */
+        if (newsegs > 0) {
+            GSource *segsource = g_idle_source_new();
+            if (segsource) {
+                g_source_set_callback(segsource, playback_signal_segment, state, NULL);
+                g_source_attach(segsource, g_main_loop_get_context(state->mainloop));
+            }
         }
 
         /* Read the current state of the GPIO. */
