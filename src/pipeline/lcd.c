@@ -29,8 +29,8 @@ cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
     gboolean ret;
     GstElement *queue, *scaler, *ctrl, *filter, *sink;
     GstCaps *caps;
-    unsigned int hinput = state->hres;
-    unsigned int vinput = state->vres;
+    unsigned int hinput = state->source.hres;
+    unsigned int vinput = state->source.vres;
     unsigned int houtput, voutput;
     unsigned int hoffset, voffset;
     unsigned int scale_mul = 1, scale_div = 1;
@@ -55,15 +55,15 @@ cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
 
     /* Sanity-check and apply the crop configuration. */
 #ifdef DEBUG
-    fprintf(stderr, "DEBUG: crop = %u,%u@%ux%u\n", state->startx, state->starty, state->cropx, state->cropy);
+    fprintf(stderr, "DEBUG: crop = %u,%u@%ux%u\n", state->source.startx, state->source.starty, state->source.cropx, state->source.cropy);
 #endif
-    while (state->cropx && state->cropy) {
+    while (state->source.cropx && state->source.cropy) {
         char crop[64];
-        if ((state->startx + state->cropx) > state->hres) break;
-        if ((state->starty + state->cropy) > state->vres) break;
-        hinput = state->cropx;
-        vinput = state->cropy;
-        sprintf(crop, "%u,%u@%ux%u", state->startx, state->starty, hinput, vinput);
+        if ((state->source.startx + state->source.cropx) > state->source.hres) break;
+        if ((state->source.starty + state->source.cropy) > state->source.vres) break;
+        hinput = state->source.cropx;
+        vinput = state->source.cropy;
+        sprintf(crop, "%u,%u@%ux%u", state->source.startx, state->source.starty, hinput, vinput);
         g_object_set(G_OBJECT(scaler), "crop-area", crop, NULL);
         break;
     }
@@ -126,16 +126,16 @@ cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *outp
     }
 
     /* Recompute the scaler parameters. */
-    if ((output->hres * state->vres) > (output->vres * state->hres)) {
+    if ((output->hres * state->source.vres) > (output->vres * state->source.hres)) {
         scale_mul = output->vres;
-        scale_div = state->vres;
+        scale_div = state->source.vres;
     }
     else {
         scale_mul = output->hres;
-        scale_div = state->hres;
+        scale_div = state->source.hres;
     }
-    hout = ((state->hres * scale_mul) / scale_div) & ~0xF;
-    vout = ((state->vres * scale_mul) / scale_div) & ~0x1;
+    hout = ((state->source.hres * scale_mul) / scale_div) & ~0xF;
+    vout = ((state->source.vres * scale_mul) / scale_div) & ~0x1;
     hoff = (output->xoff + (output->hres - hout) / 2) & ~0x1;
     voff = (output->yoff + (output->vres - vout) / 2) & ~0x1;
 

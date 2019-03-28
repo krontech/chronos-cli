@@ -242,7 +242,7 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Install the pad callback to generate DNG frames. */
     pad = gst_element_get_static_pad(queue, "src");
-    if (state->color) {
+    if (state->source.color) {
         gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_bayer), state);
     } else {
         gst_pad_add_buffer_probe(pad, G_CALLBACK(dng_probe_greyscale), state);
@@ -489,7 +489,7 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Read the color detection pin. */
     pad = gst_element_get_static_pad(queue, "src");
-    if (state->color) {
+    if (state->source.color) {
         gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_rgb), state);
     } else {
         gst_pad_add_buffer_probe(pad, G_CALLBACK(tiff_probe_grayscale), state);

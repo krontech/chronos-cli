@@ -72,6 +72,39 @@ struct _GstNeonClass {
 
 GType gst_neon_get_type (void);
 
+typedef enum {
+  GST_NEON_FLIP_METHOD_IDENTITY,
+  GST_NEON_FLIP_METHOD_HORIZ,
+  GST_NEON_FLIP_METHOD_VERT,
+  GST_NEON_FLIP_METHOD_180
+} GstNeonFlipMethod;
+
+#define GST_TYPE_NEON_FLIP \
+  (gst_neon_flip_get_type())
+#define GST_NEON_FLIP(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_NEON_FLIP,GstNeonFlip))
+#define GST_NEON_FLIP_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_NEON_FLIP,GstNeonFlipClass))
+#define GST_IS_NEON_FLIP(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_NEON_FLIP))
+#define GST_IS_NEON_FLIP_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_NEON_FLIP))
+
+typedef struct _GstNeonFlip      GstNeonFlip;
+typedef struct _GstNeonFlipClass GstNeonFlipClass;
+
+struct _GstNeonFlip {
+  GstBaseTransform element;
+
+  GstNeonFlipMethod method;
+};
+
+struct _GstNeonFlipClass {
+  GstBaseTransformClass parent_class;
+};
+
+GType gst_neon_flip_get_type (void);
+
 G_END_DECLS
 
 #endif /* __GST_NEON_H__ */

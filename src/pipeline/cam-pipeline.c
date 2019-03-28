@@ -67,41 +67,47 @@ static GstElement *
 cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
-    GstElement *tee;
+    GstElement *tee, *flip;
     GstPad *sinkpad;
     GstPad *tpad;
     GstCaps *caps;
 
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
-    state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
+    state->vidsrc   = gst_element_factory_make("omx_camera",  "vfcc-source");
+    flip            = gst_element_factory_make("neonflip",    "vfcc-flip");
     tee             = gst_element_factory_make("tee",         "tee");
-    if (!state->pipeline || !state->source || !tee) {
+    if (!state->pipeline || !state->vidsrc || !flip || !tee) {
         return NULL;
     }
 
     /* Configure elements. */
-    g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
-    g_object_set(G_OBJECT(state->source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
-    g_object_set(G_OBJECT(state->source), "vif-mode", "24BIT", NULL);
-    g_object_set(G_OBJECT(state->source), "output-buffers", (guint)10, NULL);
-    g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "input-interface", "VIP1_PORTA", NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "vif-mode", "24BIT", NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "output-buffers", (guint)10, NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "skip-frames", (guint)0, NULL);
 
-    gst_bin_add_many(GST_BIN(state->pipeline), state->source, tee, NULL);
+    if (state->source.flip) {
+        g_object_set(G_OBJECT(flip), "method", (guint)GST_NEON_FLIP_METHOD_180, NULL);
+    }
+
+    gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, flip, tee, NULL);
 
     caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC('N', 'V', '1', '2'),
-                "width", G_TYPE_INT, state->hres,
-                "height", G_TYPE_INT, state->vres,
+                "width", G_TYPE_INT, state->source.hres,
+                "height", G_TYPE_INT, state->source.vres,
                 "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                 "buffer-count-requested", G_TYPE_INT, 4,
                 NULL);
-    ret = gst_element_link_filtered(state->source, tee, caps);
+    ret = gst_element_link_filtered(state->vidsrc, flip, caps);
     if (!ret) {
         gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
     gst_caps_unref(caps);
+    gst_element_link_many(flip, tee, NULL);
 
     /* Create a framegrab sink and link it into the pipeline. */
     sinkpad = cam_screencap(state);
@@ -162,20 +168,20 @@ cam_videotest(struct pipeline_state *state)
     if (state->config.gifsplash && (stat(state->config.gifsplash, &st) == 0)) {
         GstElement *queue, *vconvert, *ctrl, *sink;
         /* Build the GStreamer Pipeline */
-        state->source   = gst_element_factory_make("gifsrc",        "test-source");
+        state->vidsrc   = gst_element_factory_make("gifsrc",        "test-source");
         queue           = gst_element_factory_make("queue",         "test-queue");
         vconvert        = gst_element_factory_make("colorspace",    "test-convert");
         ctrl            = gst_element_factory_make("omx_ctrl",      "test-ctrl");
         sink            = gst_element_factory_make("omx_videosink", "test-sink");
-        if (!state->pipeline || !state->source || !vconvert || !queue || !ctrl || !sink) {
+        if (!state->pipeline || !state->vidsrc || !vconvert || !queue || !ctrl || !sink) {
             return NULL;
         }
-        gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, vconvert, ctrl, sink, NULL);
+        gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, queue, vconvert, ctrl, sink, NULL);
 
         /* Configure elements - simple video output to LCD with no scaling.  */
-        g_object_set(G_OBJECT(state->source), "location", state->config.gifsplash, NULL);
-        g_object_set(G_OBJECT(state->source), "cache", (gboolean)TRUE, NULL);
-        g_object_set(G_OBJECT(state->source), "width-align", (guint)16, NULL);
+        g_object_set(G_OBJECT(state->vidsrc), "location", state->config.gifsplash, NULL);
+        g_object_set(G_OBJECT(state->vidsrc), "cache", (gboolean)TRUE, NULL);
+        g_object_set(G_OBJECT(state->vidsrc), "width-align", (guint)16, NULL);
 
         g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
         g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
@@ -187,7 +193,7 @@ cam_videotest(struct pipeline_state *state)
         g_object_set(G_OBJECT(ctrl), "display-mode", "OMX_DC_MODE_1080P_60", NULL);
         g_object_set(G_OBJECT(ctrl), "display-device", "LCD", NULL);
 
-        gst_element_link_many(state->source, queue, vconvert, ctrl, sink, NULL);
+        gst_element_link_many(state->vidsrc, queue, vconvert, ctrl, sink, NULL);
         return state->pipeline;
     }
     /*=====================================================
@@ -200,19 +206,19 @@ cam_videotest(struct pipeline_state *state)
         GstCaps *caps;
 
         /* Build the GStreamer Pipeline */
-        state->source   = gst_element_factory_make("videotestsrc",  "test-source");
+        state->vidsrc   = gst_element_factory_make("videotestsrc",  "test-source");
         queue           = gst_element_factory_make("queue",         "test-queue");
         ctrl            = gst_element_factory_make("omx_ctrl",      "test-ctrl");
         sink            = gst_element_factory_make("omx_videosink", "test-sink");
-        if (!state->source || !queue || !ctrl || !sink) {
+        if (!state->vidsrc || !queue || !ctrl || !sink) {
             return NULL;
         }
-        gst_bin_add_many(GST_BIN(state->pipeline), state->source, queue, ctrl, sink, NULL);
+        gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, queue, ctrl, sink, NULL);
         gst_element_link_many(queue, ctrl, sink, NULL);
 
         /* Configure elements - simple video output to LCD with no scaling.  */
-        g_object_set(G_OBJECT(state->source), "pattern", (guint)0, NULL);
-        g_object_set(G_OBJECT(state->source), "is-live", (gboolean)1, NULL);
+        g_object_set(G_OBJECT(state->vidsrc), "pattern", (guint)0, NULL);
+        g_object_set(G_OBJECT(state->vidsrc), "is-live", (gboolean)1, NULL);
 
         g_object_set(G_OBJECT(sink), "sync", (gboolean)0, NULL);
         g_object_set(G_OBJECT(sink), "colorkey", (gboolean)0, NULL);
@@ -230,7 +236,7 @@ cam_videotest(struct pipeline_state *state)
                     "framerate", GST_TYPE_FRACTION, (LIVE_MAX_FRAMERATE / 2), 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->source, queue, caps);
+        ret = gst_element_link_filtered(state->vidsrc, queue, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
@@ -263,7 +269,7 @@ static GstElement *
 cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
-    GstElement *tee;
+    GstElement *tee, *flip;
     GstPad *sinkpad;
     GstPad *tpad;
     GstPad *pad;
@@ -271,9 +277,10 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
-    state->source   = gst_element_factory_make("omx_camera",  "vfcc-source");
+    state->vidsrc   = gst_element_factory_make("omx_camera",  "vfcc-source");
+    flip            = gst_element_factory_make("neonflip",    "vfcc-flip");
     tee             = gst_element_factory_make("tee",         "tee");
-    if (!state->pipeline || !state->source || !tee) {
+    if (!state->pipeline || !state->vidsrc || !flip || !tee) {
         return NULL;
     }
 
@@ -287,17 +294,21 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     state->phantom = 1;
 
     /* Configure elements. */
-    g_object_set(G_OBJECT(state->source), "input-interface", "VIP1_PORTA", NULL);
-    g_object_set(G_OBJECT(state->source), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
-    g_object_set(G_OBJECT(state->source), "vif-mode", "24BIT", NULL);
-    g_object_set(G_OBJECT(state->source), "output-buffers", (guint)10, NULL);
-    g_object_set(G_OBJECT(state->source), "skip-frames", (guint)0, NULL);
-    g_object_set(G_OBJECT(state->source), "num-buffers", (guint)(args->length + state->phantom), NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "input-interface", "VIP1_PORTA", NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "capture-mode", "SC_DISCRETESYNC_ACTVID_VSYNC", NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "vif-mode", "24BIT", NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "output-buffers", (guint)10, NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "skip-frames", (guint)0, NULL);
+    g_object_set(G_OBJECT(state->vidsrc), "num-buffers", (guint)(args->length + state->phantom), NULL);
 
-    gst_bin_add_many(GST_BIN(state->pipeline), state->source, tee, NULL);
+    if (state->source.flip) {
+        g_object_set(G_OBJECT(flip), "method", (guint)GST_NEON_FLIP_METHOD_180, NULL);
+    }
+
+    gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, flip, tee, NULL);
 
     /* Add a probe to drop the very first frame from the camera */
-    pad = gst_element_get_static_pad(state->source, "src");
+    pad = gst_element_get_static_pad(state->vidsrc, "src");
     gst_pad_add_buffer_probe(pad, G_CALLBACK(buffer_drop_phantom), state);
     gst_object_unref(pad);
 
@@ -317,17 +328,18 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-yuv",
                     "format", GST_TYPE_FOURCC,
                     GST_MAKE_FOURCC('N', 'V', '1', '2'),
-                    "width", G_TYPE_INT, state->hres,
-                    "height", G_TYPE_INT, state->vres,
+                    "width", G_TYPE_INT, state->source.hres,
+                    "height", G_TYPE_INT, state->source.vres,
                     "framerate", GST_TYPE_FRACTION, args->framerate, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->source, tee, caps);
+        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
+        gst_element_link_many(flip, tee, NULL);
 
         /* Create the H.264 sink */
         sinkpad = cam_h264_sink(state, args);
@@ -346,17 +358,18 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     else if ((args->mode == PIPELINE_MODE_DNG) || (args->mode == PIPELINE_MODE_TIFF_RAW)) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
-                    "width", G_TYPE_INT, state->hres,
-                    "height", G_TYPE_INT, state->vres,
+                    "width", G_TYPE_INT, state->source.hres,
+                    "height", G_TYPE_INT, state->source.vres,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->source, tee, caps);
+        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
+        gst_element_link_many(flip, tee, NULL);
 
         /* Create the raw video sink */
         if (args->mode == PIPELINE_MODE_DNG) {
@@ -383,17 +396,18 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     else if ((args->mode == PIPELINE_MODE_RAW16) || (args->mode == PIPELINE_MODE_RAW12)) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
-                    "width", G_TYPE_INT, state->hres,
-                    "height", G_TYPE_INT, state->vres,
+                    "width", G_TYPE_INT, state->source.hres,
+                    "height", G_TYPE_INT, state->source.vres,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->source, tee, caps);
+        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
+        gst_element_link_many(flip, tee, NULL);
 
         /* Create the raw video sink */
         sinkpad = cam_raw_sink(state, args);
@@ -415,17 +429,18 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     else if (args->mode == PIPELINE_MODE_TIFF) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-rgb",
                     "bpp", G_TYPE_INT, 24,
-                    "width", G_TYPE_INT, state->hres,
-                    "height", G_TYPE_INT, state->vres,
+                    "width", G_TYPE_INT, state->source.hres,
+                    "height", G_TYPE_INT, state->source.vres,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->source, tee, caps);
+        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
+        gst_element_link_many(flip, tee, NULL);
 
         /* Create the raw video sink */
         sinkpad = cam_tiff_sink(state, args);
@@ -701,6 +716,7 @@ main(int argc, char * argv[])
     int c, fd;
 
     /* Set default configuration. */
+    memset(&state->source, 0, sizeof(state->source));
     memset(&state->config, 0, sizeof(state->config));
     state->config.hres = CAM_LCD_HRES;
     state->config.vres = CAM_LCD_VRES;
@@ -735,6 +751,9 @@ main(int argc, char * argv[])
     gst_controller_init(NULL, NULL);
     if (!gst_element_register(NULL, "neon", GST_RANK_NONE, GST_TYPE_NEON)) {
         fprintf(stderr, "Failed to register Gstreamer NEON acceleration element.\n");
+    }
+    if (!gst_element_register(NULL, "neonflip", GST_RANK_NONE, GST_TYPE_NEON_FLIP)) {
+        fprintf(stderr, "Failed to register Gstreamer NEON flip element.\n");
     }
     if (!gst_element_register(NULL, "gifsrc", GST_RANK_NONE, GST_TYPE_GIF_SRC)) {
         fprintf(stderr, "Failed to register Gstreamer GIF source element.\n");
@@ -776,12 +795,12 @@ main(int argc, char * argv[])
     }
     
     /* Check if we are attached to a color or monochrome sensor. */
-    state->color = 1;
+    state->source.color = 1;
     fd = ioport_open(state->iops, "lux1310-color", O_RDONLY);
     if (fd >= 0) {
         char buf[2];
         if (read(fd, buf, sizeof(buf)) == sizeof(buf)) {
-            state->color = (buf[0] == '1');
+            state->source.color = (buf[0] == '1');
         }
         close(fd);
     }
@@ -838,7 +857,7 @@ main(int argc, char * argv[])
             }
         }
         /* If the display resolution is unknown, fall back to a test pattern. */
-        else if ((state->hres == 0) || (state->vres == 0)) {
+        else if ((state->source.hres == 0) || (state->source.vres == 0)) {
             state->next = PIPELINE_MODE_PAUSE; /* No video to play. */
             if (!cam_videotest(state)) {
                 dbus_signal_eof(state, state->error);
@@ -886,7 +905,7 @@ main(int argc, char * argv[])
         }
 
         /* Garbage collect the pipeline. */
-        state->source = NULL;
+        state->vidsrc = NULL;
         gst_element_set_state(state->pipeline, GST_STATE_READY);
         gst_element_set_state(state->pipeline, GST_STATE_NULL);
         gst_object_unref(GST_OBJECT(state->pipeline));

@@ -61,6 +61,18 @@ struct pipeline_args {
     unsigned long   bitrate;
 };
 
+struct source_config {
+    unsigned int    color;
+    unsigned int    hres;
+    unsigned int    vres;
+    unsigned int    cropx;
+    unsigned int    cropy;
+    unsigned int    startx;
+    unsigned int    starty;
+    unsigned int    flip;
+    unsigned int    rate;
+};
+
 struct display_config {
     unsigned long hres;
     unsigned long vres;
@@ -88,7 +100,7 @@ struct overlay_config {
 struct pipeline_state {
     GMainLoop           *mainloop;
     GstElement          *pipeline;
-    GstElement          *source;
+    GstElement          *vidsrc;
     GstEvent            *eos;
     struct CamVideo     *video;
     struct fpga         *fpga;
@@ -104,16 +116,6 @@ struct pipeline_state {
     int                 mode;
     int                 next;
     uint32_t            control;
-
-    /* Video format */
-    unsigned int    color;
-    unsigned int    hres;
-    unsigned int    vres;
-    unsigned int    cropx;
-    unsigned int    cropy;
-    unsigned int    startx;
-    unsigned int    starty;
-    unsigned int    vidrate;
 
     /* Frame information */
     struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */
@@ -139,8 +141,9 @@ struct pipeline_state {
     unsigned long   frameival[FRAMERATE_IVAL_BUCKETS]; /* track microseconds between frames. */
     unsigned long long frameisum;   /* Rolling sum of frameival */
 
-    /* Pipeline args */
+    /* Pipeline config */
     struct pipeline_args args;
+    struct source_config source;
     struct display_config config;
     struct overlay_config overlay;
 };

@@ -197,23 +197,23 @@ cam_hdmi_sink(struct pipeline_state *state)
 
 	gst_bin_add_many(GST_BIN(state->pipeline), queue, scaler, ctrl, sink, NULL);
 
-    if ((panel_hres * state->vres) > (panel_vres * state->hres)) {
+    if ((panel_hres * state->source.vres) > (panel_vres * state->source.hres)) {
         scale_mul = panel_vres;
-        scale_div = state->vres;
+        scale_div = state->source.vres;
     }
     else {
         scale_mul = panel_hres;
-        scale_div = state->hres;
+        scale_div = state->source.hres;
     }
-    hout = ((state->hres * scale_mul) / scale_div) & ~0xF;
-    vout = ((state->vres * scale_mul) / scale_div) & ~0x1;
+    hout = ((state->source.hres * scale_mul) / scale_div) & ~0xF;
+    vout = ((state->source.vres * scale_mul) / scale_div) & ~0x1;
     hoff = ((panel_hres - hout) / 2) & ~0x1;
     voff = ((panel_vres - vout) / 2) & ~0x1;
 
 #ifdef DEBUG
     fprintf(stderr, "DEBUG: refresh = %u Hz\n", panel_refresh);
     fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
-    fprintf(stderr, "DEBUG: input = [%lu, %lu]\n", state->hres, state->vres);
+    fprintf(stderr, "DEBUG: input = [%lu, %lu]\n", state->source.hres, state->source.vres);
     fprintf(stderr, "DEBUG: output = [%u, %u]\n", hout, vout);
     fprintf(stderr, "DEBUG: offset = [%u, %u]\n", hoff, voff);
 #endif

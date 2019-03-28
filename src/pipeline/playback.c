@@ -78,24 +78,24 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
     usleep(((unsigned long long)(vPeriod * hPeriod) * 1000000ULL) / pxClock);
 
     /* Calculate the ideal hPeriod and then calculate the matching vPeriod for this framerate. */
-    hPeriod = hSync + hBackPorch + state->hres + hFrontPorch;
+    hPeriod = hSync + hBackPorch + state->source.hres + hFrontPorch;
     vPeriod = pxClock / (hPeriod * maxfps);
-    if (vPeriod < (state->vres + vBackPorch + vSync + vFrontPorch)) {
-        vPeriod = (state->vres + vBackPorch + vSync + vFrontPorch);
+    if (vPeriod < (state->source.vres + vBackPorch + vSync + vFrontPorch)) {
+        vPeriod = (state->source.vres + vBackPorch + vSync + vFrontPorch);
     }
 
     /* Calculate the actual FPS. */
-    state->vidrate = pxClock / (vPeriod * hPeriod);
+    state->source.rate = pxClock / (vPeriod * hPeriod);
     fprintf(stderr, "Setup display timing: %d*%d@%d (%u*%u max: %u)\n",
            (hPeriod - hBackPorch - hSync - hFrontPorch),
            (vPeriod - vBackPorch - vSync - vFrontPorch),
-           state->vidrate, state->hres, state->vres, maxfps);
+           state->source.rate, state->source.hres, state->source.vres, maxfps);
 
     /* Configure the FPGA */
-    state->fpga->display->h_res = state->hres;
-    state->fpga->display->h_out_res = state->hres;
-    state->fpga->display->v_res = state->vres;
-    state->fpga->display->v_out_res = state->vres;
+    state->fpga->display->h_res = state->source.hres;
+    state->fpga->display->h_out_res = state->source.hres;
+    state->fpga->display->v_res = state->source.vres;
+    state->fpga->display->v_out_res = state->source.vres;
 
     state->fpga->display->h_period = hPeriod;
     state->fpga->display->h_sync_len = hSync;
@@ -214,7 +214,7 @@ playback_fsync(struct pipeline_state *state)
     /* Playback mode: Render the next frame. */
     else if (state->mode == PIPELINE_MODE_PLAY) {
         /* Do a quicky delta-sigma to set the framerate. */
-        int inputrate = state->vidrate ? state->vidrate : LIVE_MAX_FRAMERATE;
+        int inputrate = state->source.rate ? state->source.rate : LIVE_MAX_FRAMERATE;
         int nextcount = state->playcounter + state->playrate;
         state->playcounter = nextcount % inputrate;
         playback_frame_seek(state, nextcount / inputrate);
@@ -229,7 +229,7 @@ playback_fsync(struct pipeline_state *state)
             state->buflevel = 10;
             state->fpga->display->pipeline &= ~DISPLAY_PIPELINE_TEST_PATTERN;
             playback_rate_init(state);
-            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+            g_object_get(G_OBJECT(state->vidsrc), "buffer-level", &state->buflevel, NULL);
         }
     }
     /* If the buffer level was high - play the next frame immediately. */
@@ -238,16 +238,16 @@ playback_fsync(struct pipeline_state *state)
         playback_rate_update(state);
         playback_frame_seek(state, 1);
         playback_frame_render(state);
-        if (state->source) {
-            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+        if (state->vidsrc) {
+            g_object_get(G_OBJECT(state->vidsrc), "buffer-level", &state->buflevel, NULL);
         }
     }
     /* Otherwise, wait for more buffers to become available and then play the next frame. */
     else {
         /* Wait for flow control issues to clear. */
-        while (state->source) {
+        while (state->vidsrc) {
             state->buflevel = 10;
-            g_object_get(G_OBJECT(state->source), "buffer-level", &state->buflevel, NULL);
+            g_object_get(G_OBJECT(state->vidsrc), "buffer-level", &state->buflevel, NULL);
             if (state->buflevel > 1) break;
             usleep(10000);
         }
@@ -573,7 +573,7 @@ playback_thread(void *arg)
                     control |= (DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
                     control &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_ZEBRA_ENABLE);
                     state->fpga->display->control = control;
-                    if ((state->hres * state->vres) >= 1750000) {
+                    if ((state->source.hres * state->source.vres) >= 1750000) {
                         /* At about 1.75MP and higher, we must reduce the speed of playback
                          * due to saturation of DDR memory with image data from the sensor.
                          */
@@ -687,7 +687,7 @@ playback_init(struct pipeline_state *state)
 
     /* Start off paused. */
     state->mode = PIPELINE_MODE_PAUSE;
-    state->control = (state->color) ? DISPLAY_CTL_COLOR_MODE : 0;
+    state->control = (state->source.color) ? DISPLAY_CTL_COLOR_MODE : 0;
     state->fpga->display->control = (state->control | DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
 }
 

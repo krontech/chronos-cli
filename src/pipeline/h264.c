@@ -79,7 +79,7 @@ GstPad *
 cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *encoder, *queue, *neon, *parser, *mux, *sink;
-    unsigned int minrate = (state->hres * state->vres * args->framerate / 4); /* Set a minimum quality of 0.25 bpp. */
+    unsigned int minrate = (state->source.hres * state->source.vres * args->framerate / 4); /* Set a minimum quality of 0.25 bpp. */
     int flags = O_RDWR | O_CREAT | O_TRUNC;
 
 #if defined(O_LARGEFILE)

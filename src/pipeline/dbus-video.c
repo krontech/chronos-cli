@@ -171,7 +171,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     state->config.yoff = yoff;
 
     /* Update the live display flags. */
-    state->color = cam_dbus_dict_get_boolean(args, "color", state->color);
+    state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
     state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
@@ -185,7 +185,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
-    if (state->color) {
+    if (state->source.color) {
         state->control |= DISPLAY_CTL_COLOR_MODE;
     } else {
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
@@ -211,6 +211,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
 {
     struct pipeline_state *state = vobj->state;
     unsigned long diff = 0;
+    unsigned int  flip = cam_dbus_dict_get_boolean(args, "flip", state->source.flip);
     unsigned long hres = cam_dbus_dict_get_uint(args, "hres", 0);
     unsigned long vres = cam_dbus_dict_get_uint(args, "vres", 0);
     unsigned long cropx = cam_dbus_dict_get_uint(args, "cropx", 0);
@@ -230,7 +231,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
 
     /* Update the live display flags. */
     state->args.mode = PIPELINE_MODE_PLAY;
-    state->color = cam_dbus_dict_get_boolean(args, "color", state->color);
+    state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
     state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
     state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
     if (state->config.zebra) {
@@ -244,7 +245,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
-    if (state->color) {
+    if (state->source.color) {
         state->control |= DISPLAY_CTL_COLOR_MODE;
     } else {
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
@@ -252,27 +253,29 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
 
     /* Interpret zero size as 'use existing size'. */
     if ((hres == 0) && (vres == 0)) {
-        hres = state->hres;
-        vres = state->vres;
+        hres = state->source.hres;
+        vres = state->source.vres;
     }
 
     /* Check if the FPGA was changed out from under us. */
-    diff |= (state->hres ^ state->fpga->display->h_res);
-    diff |= (state->vres ^ state->fpga->display->v_res);
+    diff |= (state->source.hres ^ state->fpga->display->h_res);
+    diff |= (state->source.vres ^ state->fpga->display->v_res);
 
     /* Check if resolution has changed. */
-    diff |= (hres ^ state->hres);
-    diff |= (vres ^ state->vres);
-    diff |= (cropx ^ state->cropx);
-    diff |= (cropy ^ state->cropy);
-    diff |= (startx ^ state->startx);
-    diff |= (starty ^ state->starty);
-    state->hres = hres;
-    state->vres = vres;
-    state->cropx = cropx;
-    state->cropy = cropy;
-    state->startx = startx;
-    state->starty = starty;
+    diff |= (hres ^ state->source.hres);
+    diff |= (vres ^ state->source.vres);
+    diff |= (flip ^ state->source.flip);
+    diff |= (cropx ^ state->source.cropx);
+    diff |= (cropy ^ state->source.cropy);
+    diff |= (startx ^ state->source.startx);
+    diff |= (starty ^ state->source.starty);
+    state->source.hres = hres;
+    state->source.vres = vres;
+    state->source.flip = flip;
+    state->source.cropx = cropx;
+    state->source.cropy = cropy;
+    state->source.startx = startx;
+    state->source.starty = starty;
 
     /* If not in playback mode, a restart is required. */
     if (state->mode != PIPELINE_MODE_PLAY) {
