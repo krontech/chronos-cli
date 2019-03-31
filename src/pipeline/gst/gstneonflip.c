@@ -191,10 +191,11 @@ gst_neon_flip_rot180(GstBuffer *buf)
     "   vrev64.8 d3, d4             \n"
     "   vstmia %[start]!, {d0-d3}   \n"
     "   vstm %[end],      {d8-d11}  \n"
-    "   subs %[count],%[count], #64 \n"
+    "   cmp %[end], %[start]        \n"
     "   bgt nv12_rot180_luma        \n"
-    : [start]"+r"(start_luma), [end]"+r"(end_luma), [count]"+r"(nluma) :: "cc" );
+    : [start]"+r"(start_luma), [end]"+r"(end_luma) :: "cc" );
 
+#if 1
   /* Copy and reverse the subsampled chroma plane. */
   uint32_t nchroma = (xres * yres) / 2;
   uint8_t *start_chroma = GST_BUFFER_DATA(buf) + (xres * yres);
@@ -213,9 +214,10 @@ gst_neon_flip_rot180(GstBuffer *buf)
     "   vrev64.16 d3, d4            \n"
     "   vstmia %[start]!, {d0-d3}   \n"
     "   vstm %[end],      {d8-d11}  \n"
-    "   subs %[count],%[count], #64 \n"
+    "   cmp %[end], %[start]        \n"
     "   bgt nv12_rot180_chroma      \n"
-    : [start]"+r"(start_chroma), [end]"+r"(end_chroma), [count]"+r"(nchroma) :: "cc" );
+    : [start]"+r"(start_chroma), [end]"+r"(end_chroma) :: "cc" );
+#endif
 }
 
 /* GstBaseTransform vmethod implementations */

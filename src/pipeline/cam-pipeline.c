@@ -363,13 +363,12 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
+        ret = gst_element_link_filtered(state->vidsrc, tee, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
-        gst_element_link_many(flip, tee, NULL);
 
         /* Create the raw video sink */
         if (args->mode == PIPELINE_MODE_DNG) {
@@ -401,13 +400,12 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
+        ret = gst_element_link_filtered(state->vidsrc, tee, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
-        gst_element_link_many(flip, tee, NULL);
 
         /* Create the raw video sink */
         sinkpad = cam_raw_sink(state, args);
@@ -434,13 +432,12 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
+        ret = gst_element_link_filtered(state->vidsrc, tee, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
-        gst_element_link_many(flip, tee, NULL);
 
         /* Create the raw video sink */
         sinkpad = cam_tiff_sink(state, args);
