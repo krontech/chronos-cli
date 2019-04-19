@@ -84,6 +84,8 @@ handle_error(int code, const char *message, unsigned long flags)
 #define JSON_MAX_BUF    4096
 #define JSON_MAX_TOK    128
 
+static char js[JSON_MAX_BUF];
+
 /* Recursive helper to get the real size, in tokens, of a non-trivial token. */
 static inline int
 json_token_size(jsmntok_t *start)
@@ -111,18 +113,117 @@ json_token_size(jsmntok_t *start)
     return 1;
 }
 
-/* Parse JSON args, or return NULL if no args were provided. */
 static GHashTable *
-json_parse(FILE *fp, unsigned long flags)
+json_parse_object(jsmntok_t *tokens, unsigned long flags)
+{
+    int children, i = 1;
+    GHashTable *h = cam_dbus_dict_new();
+    if (!h) {
+        handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+    }
+
+    /* Parse the tokens making up this JSON object. */
+    for (children = 0; children < tokens[0].size; children++) {
+        jsmntok_t   *tok;
+        char        *name;
+        char        *value;
+
+        /* To be a valid JSON object, the first token must be a string. */
+        if (tokens[i].type != JSMN_STRING) {
+            handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
+        }
+        name = &js[tokens[i].start];
+        name[tokens[i].end - tokens[i].start] = '\0';
+        i++;
+
+        /* The following token can be any simple type. */
+        tok = &tokens[i];
+        value = &js[tok->start];
+        value[tok->end - tok->start] = '\0';
+        i += json_token_size(tok);
+
+        if (tok->type == JSMN_STRING) {
+            /* TODO: Deal with escaped UTF-8. This is probably a security hole. */
+            cam_dbus_dict_add_printf(h, name, "%s", value);
+        }
+        else if (tok->type != JSMN_PRIMITIVE) {
+            /* Ignore nested types. */
+            continue;
+        }
+        /* Break it down by primitive types. */
+        else if (*value == 't') {
+            cam_dbus_dict_add_boolean(h, name, 1);
+        } else if (*value == 'f') {
+            cam_dbus_dict_add_boolean(h, name, 0);
+        } else if (*value == 'n') {
+            /* TODO: Explicit NULL types and other magic voodoo? */
+        }
+        /* Below here, we have some kind of numeric type. */
+        else if (strcspn(value, ".eE") != (tok->end - tok->start)) {
+            char *e;
+            double x = strtod(value, &e);
+            if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
+            cam_dbus_dict_add_float(h, name, x);
+        } else if (*value == '-') {
+            /* Use the type 'long long' for negative values. */
+            char *e;
+            long long x = strtoll(value, &e, 0);
+            if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
+            cam_dbus_dict_add_int(h, name, x);
+        } else {
+            char *e;
+            unsigned long long x = strtoull(value, &e, 0);
+            if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
+            cam_dbus_dict_add_uint(h, name, x);
+        }
+    }
+
+    /* Success */
+    return h;
+}
+
+/* Parse a simple JSON array where all members are of the same type. */
+static GPtrArray *
+json_parse_array(jsmntok_t *tokens, GType *ptype, unsigned long flags)
+{
+    int children, i = 1;
+
+    /* String cases - use a GPtrArray */
+    if (tokens[1].type == JSMN_STRING) {
+        GPtrArray *arr = g_ptr_array_sized_new(tokens->size);
+        if (!arr) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+        }
+        g_ptr_array_set_free_func(arr, g_free);
+        *ptype = dbus_g_type_get_collection("GPtrArray", G_TYPE_STRING);
+
+        /* Add all strings to the pointer array.  */
+        for (children = 0; children < tokens[0].size; children++) {
+            jsmntok_t   *tok = &tokens[i];
+            if (tok->type == JSMN_STRING) {
+                char *value = &js[tok->start];
+                value[tok->end - tok->start] = '\0';
+                g_ptr_array_add(arr, g_strdup(value));
+            }
+            i += json_token_size(tok);
+        }
+        return arr;
+    }
+    /* TODO: Handle arrays of other primitive types. */
+    return NULL;
+}
+
+/* Parse JSON args, or return NULL if no args were provided. */
+static void *
+json_parse(FILE *fp, GType *ptype, unsigned long flags)
 {
     jsmn_parser parser;
     jsmntok_t tokens[JSON_MAX_TOK]; /* Should be enough for any crazy API thing. */
-    char    *js = malloc(JSON_MAX_BUF);
     size_t  jslen;
     int     num;
 
     /* Read the file for JSON data. */
-    jslen = fread(js, 1, JSON_MAX_BUF, fp);
+    jslen = fread(js, 1, sizeof(js), fp);
     if (!jslen) {
         /* If we just get an EOF then assume no args. */
         if (feof(fp)) return NULL;
@@ -145,75 +246,14 @@ json_parse(FILE *fp, unsigned long flags)
 
     /* The only encoding we support for now is the JSON object */
     if (tokens[0].type == JSMN_OBJECT) {
-        int children, i = 1;
-        GHashTable *h = cam_dbus_dict_new();
-        if (!h) {
-            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
-        }
-
-        /* Parse the tokens making up this JSON object. */
-        for (children = 0; children < tokens[0].size; children++) {
-            jsmntok_t   *tok;
-            char        *name;
-            char        *value;
-
-            /* To be a valid JSON object, the first token must be a string. */
-            if (tokens[i].type != JSMN_STRING) {
-                handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
-            }
-            name = &js[tokens[i].start];
-            name[tokens[i].end - tokens[i].start] = '\0';
-            i++;
-
-            /* The following token can be any simple type. */
-            tok = &tokens[i];
-            value = &js[tok->start];
-            value[tok->end - tok->start] = '\0';
-            i += json_token_size(tok);
-
-            if (tok->type == JSMN_STRING) {
-                /* TODO: Deal with escaped UTF-8. This is probably a security hole. */
-                cam_dbus_dict_add_printf(h, name, "%s", value);
-            }
-            else if (tok->type != JSMN_PRIMITIVE) {
-                /* Ignore nested types. */
-                continue;
-            }
-            /* Break it down by primitive types. */
-            else if (*value == 't') {
-                cam_dbus_dict_add_boolean(h, name, 1);
-            } else if (*value == 'f') {
-                cam_dbus_dict_add_boolean(h, name, 0);
-            } else if (*value == 'n') {
-                /* TODO: Explicit NULL types and other magic voodoo? */
-            }
-            /* Below here, we have some kind of numeric type. */
-            else if (strcspn(value, ".eE") != (tok->end - tok->start)) {
-                char *e;
-                double x = strtod(value, &e);
-                if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
-                cam_dbus_dict_add_float(h, name, x);
-            } else if (*value == '-') {
-                /* Use the type 'long long' for negative values. */
-                char *e;
-                long long x = strtoll(value, &e, 0);
-                if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
-                cam_dbus_dict_add_int(h, name, x);
-            } else {
-                char *e;
-                unsigned long long x = strtoull(value, &e, 0);
-                if (*e != 0) continue; /* TODO: throw an "invalid JSON"? */
-                cam_dbus_dict_add_uint(h, name, x);
-            }
-        }
-
-        /* Success */
-        free(js);
-        return h;
+        *ptype = CAM_DBUS_HASH_MAP;
+        return json_parse_object(tokens, flags);
+    }
+    if (tokens[0].type == JSMN_ARRAY) {
+        return json_parse_array(tokens, ptype, flags);
     }
 
     /* Not any kind of input that we can make sense of. */
-    free(js);
     return NULL;
 }
 
@@ -240,7 +280,8 @@ main(int argc, char * const argv[])
     DBusGConnection* bus;
     DBusGProxy* proxy;
     GHashTable *h;
-    GHashTable *params = NULL;
+    void *params = NULL;
+    GType paramtype = G_TYPE_INVALID;
     GError* error = NULL;
     gboolean okay;
     const char *service = CAM_DBUS_CONTROL_SERVICE;
@@ -324,7 +365,7 @@ main(int argc, char * const argv[])
             fprintf(stderr, "Failed to open '%s' for reading: %s\n", filename, strerror(errno));
             return EXIT_FAILURE;
         }
-        params = json_parse(fp, flags);
+        params = json_parse(fp, &paramtype, flags);
         fclose(fp);
     }
     
@@ -339,7 +380,7 @@ main(int argc, char * const argv[])
     }
     if (params) {
         okay = dbus_g_proxy_call(proxy, method, &error,
-                CAM_DBUS_HASH_MAP, params, G_TYPE_INVALID,
+                paramtype, params, G_TYPE_INVALID,
                 CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
     } else {
         okay = dbus_g_proxy_call(proxy, method, &error, G_TYPE_INVALID,
