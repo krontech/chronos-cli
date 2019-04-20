@@ -4,6 +4,14 @@
     "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd" >
 <node>
   <interface name="com.krontech.chronos.video">
+    <method name="get">
+      <arg name="names" direction="in" type="as"/>
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
+    <method name="set">
+      <arg name="args" direction="in" type="a{sv}"/>
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
     <method name="status">
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
@@ -41,6 +49,9 @@
     </signal>
     <signal name="segment">
       <arg name="status" direction="out" type="a{sv}"/>
+    </signal>
+    <signal name="notify">
+      <arg name="data" direction="out" type="a{sv}"/>
     </signal>
   </interface>
 </node>

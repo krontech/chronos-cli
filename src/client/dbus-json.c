@@ -21,6 +21,7 @@
 #include <glib.h>
 #include <dbus/dbus-glib.h>
 
+#include "api/cam-rpc.h"
 #include "dbus-json.h"
 
 /* Allow overloading the newline */
@@ -55,7 +56,7 @@ json_printf_utf8(FILE *fp, const gchar *p)
 }
 
 static void
-json_printf_gval(FILE *fp, gconstpointer val)
+json_printf_gval(FILE *fp, gconstpointer val, unsigned int depth)
 {
     if (G_VALUE_HOLDS_STRING(val)) {
         json_printf_utf8(fp, g_value_get_string(val));
@@ -73,11 +74,13 @@ json_printf_gval(FILE *fp, gconstpointer val)
         fprintf(fp, "%g", (double)g_value_get_float(val));
     } else if (G_VALUE_HOLDS_DOUBLE(val)) {
         fprintf(fp, "%g", g_value_get_double(val));
+    } else if (G_VALUE_TYPE(val) == CAM_DBUS_HASH_MAP) {
+        /* Recursively print nested dictionaries. */
+        json_printf_dict(fp, g_value_peek_pointer(val), depth+1);
     } else {
+        /* Default unknown types to null */
         fputs("null", fp);
     }
-    /* TODO: Still need 64-bit support */
-    /* TODO: The magical wonderland of recursion awaits. */
 }
 
 static int
@@ -103,7 +106,7 @@ json_printf_dict(FILE *fp, GHashTable *h, unsigned int depth)
         /* Print out the "name": value pair in JSON form. */
         json_printf_utf8(fp, key);
         fputs(": ", fp);
-        json_printf_gval(fp, value);
+        json_printf_gval(fp, value, depth);
     }
     if (count) json_printf_indent(fp, depth, 0);
     fputs("}", fp);

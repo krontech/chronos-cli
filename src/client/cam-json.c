@@ -146,8 +146,18 @@ json_parse_object(jsmntok_t *tokens, unsigned long flags)
             /* TODO: Deal with escaped UTF-8. This is probably a security hole. */
             cam_dbus_dict_add_printf(h, name, "%s", value);
         }
+        else if (tok->type == JSMN_OBJECT) {
+            GHashTable *h = json_parse_object(tok, flags);
+            GValue *gval = g_new0(GValue, 1);
+            if (!gval) {
+                handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+            }
+            g_value_init_from_instance(gval, h);
+            cam_dbus_dict_add(h, name, gval);
+        }
         else if (tok->type != JSMN_PRIMITIVE) {
-            /* Ignore nested types. */
+            /* Ignore other nested types. */
+            /* I think the only possible types left are arrays. */
             continue;
         }
         /* Break it down by primitive types. */

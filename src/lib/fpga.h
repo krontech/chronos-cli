@@ -52,6 +52,7 @@
 #define FPGA_PIPELINE_BASE          0x7000
 #define FPGA_VIDSRC_BASE            0x7100
 #define FPGA_CALSRC_BASE            0x7200
+#define FPGA_ZEBRA_BASE             0x7800
 #define FPGA_OVERLAY_BASE           0x8000
 #define FPGA_COL_CURVE_BASE         0xD000
 
@@ -207,6 +208,19 @@ struct fpga_vram {
 
 #define VRAM_CTL_TRIG_READ  (1 << 0)
 #define VRAM_CTL_TRIG_WRITE (1 << 1)
+
+/* Zebra-stripes configuration module. */
+struct fpga_zebra {
+    uint32_t identifier;
+    uint32_t version;
+    uint32_t subver;
+    uint32_t status;
+    uint32_t control;
+    uint32_t __reserved0[3];
+    uint8_t  threshold;
+};
+
+#define ZEBRA_IDENTIFIER    0x45
 
 struct fpga_overlay {
     /* Overlay control registers. */
@@ -376,6 +390,7 @@ struct fpga {
     volatile struct fpga_vram   *vram; 
     volatile struct fpga_segments *segments;
     volatile struct fpga_overlay *overlay;
+    volatile struct fpga_zebra  *zebra;
 };
 
 struct fpga *fpga_open(void);

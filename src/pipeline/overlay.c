@@ -37,7 +37,7 @@ overlay_clear(struct pipeline_state *state)
 void
 overlay_setup(struct pipeline_state *state)
 {
-    if (state->overlay.format[0] == '\0') {
+    if (!state->overlay.enable) {
         overlay_clear(state);
     }
     else {

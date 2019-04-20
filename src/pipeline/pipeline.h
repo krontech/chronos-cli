@@ -84,6 +84,7 @@ struct display_config {
 };
 
 struct overlay_config {
+    unsigned char enable;
     unsigned int xoff;
     unsigned int yoff;
     unsigned int width;
@@ -124,8 +125,9 @@ struct pipeline_state {
     /* Playback Mode */
     int             playrate;       /* Playback rate in frames per second. */
     int             playcounter;    /* Internal counter for framerate control. */
-    unsigned long   loopstart;      /* Starting frame to play from when in playback mode. */
-    unsigned long   loopend;        /* Ending frame to play from when in playback mode. */
+    unsigned long   playstart;      /* Starting frame to play from when in playback mode. */
+    unsigned long   playlength;     /* Length of video to play from when in playback mode. */
+    unsigned int    playloop;       /* Loop playback or return to live display. */
     pthread_t       playthread;     /* Thread handle for the playback frame manager. */
 
     /* Recording Mode */
@@ -169,6 +171,7 @@ void dbus_service_launch(struct pipeline_state *state);
 void dbus_signal_sof(struct pipeline_state *state);
 void dbus_signal_eof(struct pipeline_state *state, const char *err);
 void dbus_signal_segment(struct pipeline_state *state);
+void dbus_signal_notify(struct pipeline_state *state, const char **names);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);
@@ -176,6 +179,7 @@ void playback_preroll(struct pipeline_state *state, unsigned int mode);
 void playback_pause(struct pipeline_state *state);
 void playback_live(struct pipeline_state *state);
 void playback_play(struct pipeline_state *state, unsigned long frame, int framerate);
+void playback_play_once(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count);
 void playback_loop(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count);
 void playback_flush(struct pipeline_state *state);
 void playback_cleanup(struct pipeline_state *state);

@@ -116,23 +116,45 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
 static void
 playback_frame_seek(struct pipeline_state *state, int delta)
 {
-    unsigned long playlen = state->loopend - state->loopstart;
+    unsigned long playend = state->playstart + state->playlength;
+    long next = state->position + delta;
 
     /* Do a no-op instead of dividing by zero. */
-    if ((state->position < 0) || (playlen == 0)) {
+    if ((state->position < 0) || (state->playlength == 0)) {
         return;
     }
 
     /* Advance the logical frame number. */
     if (delta > 0) {
-        if (delta >= playlen) delta %= playlen;
-        state->position += delta;
-        if (state->position >= state->loopend) state->position -= playlen;
+        if (next < playend) {
+            state->position = next;
+        }
+        else if (state->playloop) {
+            next = (next - state->playstart) % state->playlength;
+            state->position = next + state->playstart;
+        }
+        else {
+            /* Return to live display. */
+            int command = PLAYBACK_PIPE_LIVE;
+            write(playback_pipe, &command, sizeof(command));
+            state->position = -1;
+        }
     }
     else if (delta < 0) {
-        if (-delta >= playlen) delta %= playlen;
-        if (state->position < (state->loopstart - delta)) state->position += playlen;
-        state->position += delta;
+        if (next >= (long)state->playstart) {
+            state->position = next;
+        }
+        else if (state->playloop) {
+            /* Loop around to the end. */
+            next = (state->playstart - next) % state->playlength;
+            state->position = playend - next;
+        }
+        else {
+            /* Return to live display. */
+            int command = PLAYBACK_PIPE_LIVE;
+            write(playback_pipe, &command, sizeof(command));
+            state->position = -1;
+        }
     }
 }
 
@@ -340,8 +362,9 @@ playback_play(struct pipeline_state *state, unsigned long frame, int framerate)
     /* Update the frame position and then seek zero frames forward. */
     state->playrate = framerate;
     state->playcounter = 0;
-    state->loopstart = 0;
-    state->loopend = state->seglist.totalframes;
+    state->playstart = 0;
+    state->playlength = state->seglist.totalframes;
+    state->playloop = 1;
     state->position = frame;
     write(playback_pipe, &delta, sizeof(delta));
 }
@@ -351,14 +374,30 @@ void
 playback_loop(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count)
 {
     int delta = 0;
+    if (count > state->seglist.totalframes) count = state->seglist.totalframes;
 
     /* Update the frame position and then seek zero frames forward. */
     state->playrate = framerate;
     state->playcounter = 0;
-    state->loopstart = start;
-    state->loopend = start + count;
+    state->playstart = start;
+    state->playlength = count;
+    state->playloop = 1;
+    state->position = start;
+    write(playback_pipe, &delta, sizeof(delta));
+}
 
-    if (state->loopend > state->seglist.totalframes) state->loopend = state->seglist.totalframes;
+void
+playback_play_once(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count)
+{
+    int delta = 0;
+    if (count > state->seglist.totalframes) count = state->seglist.totalframes;
+
+    /* Update the frame position and then seek zero frames forward. */
+    state->playrate = framerate;
+    state->playcounter = 0;
+    state->playstart = start;
+    state->playlength = count;
+    state->playloop = 0;
     state->position = start;
     write(playback_pipe, &delta, sizeof(delta));
 }

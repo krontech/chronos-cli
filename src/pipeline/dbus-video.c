@@ -95,6 +95,89 @@ cam_dbus_parse_focus_peak(GHashTable *dict, const char *name, uint16_t defval)
     return defval;
 }
 
+/* Getter function for the parameter-driven API. */
+static void
+cam_dbus_video_getter(struct pipeline_state *state, const char *name, GHashTable *h)
+{
+    if (strcasecmp(name, "currentVideoState") == 0) {
+        switch (state->mode) {
+            case PIPELINE_MODE_PAUSE:
+                cam_dbus_dict_add_string(h, name, "paused");
+                break;
+            case PIPELINE_MODE_PLAY:
+                cam_dbus_dict_add_string(h, name, (state->position >= 0) ? "playback" : "live");
+                break;
+            default:
+                cam_dbus_dict_add_string(h, name, "filesave");
+                break;
+        }
+    } else if (strcasecmp(name, "overlayEnable") == 0) {
+        cam_dbus_dict_add_boolean(h, name, state->overlay.enable);
+    } else if (strcasecmp(name, "overlayFormat") == 0) {
+        cam_dbus_dict_add_string(h, name, state->overlay.format);
+    }
+    /* Exposure and focus aids*/
+    else if (strcasecmp(name, "focusPeakingColor") == 0) {
+        switch (state->config.peaking) {
+            case DISPLAY_CTL_FOCUS_PEAK_RED:
+                cam_dbus_dict_add_string(h, name, "red");
+                break;
+            case DISPLAY_CTL_FOCUS_PEAK_GREEN:
+                cam_dbus_dict_add_string(h, name, "green");
+                break;
+            case DISPLAY_CTL_FOCUS_PEAK_BLUE:
+                cam_dbus_dict_add_string(h, name, "blue");
+                break;
+            case DISPLAY_CTL_FOCUS_PEAK_CYAN:
+                cam_dbus_dict_add_string(h, name, "cyan");
+                break;
+            case DISPLAY_CTL_FOCUS_PEAK_MAGENTA:
+                cam_dbus_dict_add_string(h, name, "magenta");
+                break;
+            case DISPLAY_CTL_FOCUS_PEAK_YELLOW:
+                cam_dbus_dict_add_string(h, name, "yellow");
+                break;
+            case DISPLAY_CTL_FOCUS_PEAK_WHITE:
+                cam_dbus_dict_add_string(h, name, "white");
+                break;
+            default:
+                cam_dbus_dict_add_string(h, name, "disabled");
+                break;
+        }
+    }
+    else if (strcasecmp(name, "zebraLevel") == 0) {
+        cam_dbus_dict_add_float(h, name, state->config.zebra ? 1.0 : 0.0);
+    }
+    /* Playback position and rate. */
+    else if (strcasecmp(name, "playbackRate") == 0) {
+        cam_dbus_dict_add_int(h, name, state->playrate);
+    } else if (strcasecmp(name, "playbackPosition") == 0) {
+        cam_dbus_dict_add_int(h, name, state->position);
+    } else if (strcasecmp(name, "playbackStart") == 0) {
+        cam_dbus_dict_add_uint(h, name, state->playstart);
+    } else if (strcasecmp(name, "playbackLength") == 0) {
+        cam_dbus_dict_add_uint(h, name, state->playlength);
+    }
+    /* Quantity of recorded video. */
+    else if (strcasecmp(name, "totalFrames") == 0) {
+        cam_dbus_dict_add_uint(h, name, state->seglist.totalframes);
+    } else if (strcasecmp(name, "totalSegments") == 0) {
+        cam_dbus_dict_add_uint(h, name, state->seglist.totalsegs);
+    }
+}
+
+static GHashTable *
+cam_dbus_video_get(struct pipeline_state *state, const char **names)
+{
+    int i;
+    GHashTable *dict = cam_dbus_dict_new();
+    if (!dict) return NULL;
+    for (i = 0; names[i] != NULL; i++) {
+        cam_dbus_video_getter(state, names[i], dict);
+    }
+    return dict;
+}
+
 /*-------------------------------------
  * DBUS Video Control API
  *-------------------------------------
@@ -109,10 +192,27 @@ typedef struct CamVideoClass {
     guint sof_signalid;
     guint eof_signalid;
     guint seg_signalid;
+    guint notify_signalid;
 } CamVideoClass;
 
 static gboolean
 cam_video_status(CamVideo *vobj, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    *data = cam_dbus_video_status(state);
+    return (*data != NULL);
+}
+
+static gboolean
+cam_video_get(CamVideo *vobj, const char **names, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    *data = cam_dbus_video_get(state, names);
+    return (*data != NULL);
+}
+
+static gboolean
+cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error)
 {
     struct pipeline_state *state = vobj->state;
     *data = cam_dbus_video_status(state);
@@ -413,6 +513,7 @@ cam_video_overlay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Overlay format string too long");
         return 0;
     }
+    state->overlay.enable = (*format != '\0');
     strncpy(state->overlay.format, format, sizeof(state->overlay.format));
 
     /* Textbox size, or 0x0 for the full width. */
@@ -474,6 +575,14 @@ cam_video_class_init(CamVideoClass *vclass)
                     1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
 
     vclass->seg_signalid = g_signal_new("segment", G_OBJECT_CLASS_TYPE(vclass),
+                    G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
+                    0,
+                    NULL, NULL,             /* GSignalAccumulator and its user data. */
+                    NULL,                   /* C signal marshaller - should be replaced with static version. */
+                    G_TYPE_NONE,            /* Return GType of the return value. */
+                    1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
+
+    vclass->notify_signalid = g_signal_new("notify", G_OBJECT_CLASS_TYPE(vclass),
                     G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
                     0,
                     NULL, NULL,             /* GSignalAccumulator and its user data. */
@@ -553,4 +662,11 @@ dbus_signal_segment(struct pipeline_state *state)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
     g_signal_emit(state->video, vclass->seg_signalid, 0, cam_dbus_video_status(state));
+}
+
+void
+dbus_signal_notify(struct pipeline_state *state, const char **names)
+{
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
+    g_signal_emit(state->video, vclass->notify_signalid, 0, cam_dbus_video_get(state, names));
 }
