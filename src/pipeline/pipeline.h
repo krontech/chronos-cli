@@ -78,8 +78,9 @@ struct display_config {
     unsigned long vres;
     unsigned long xoff;
     unsigned long yoff;
-    unsigned char zebra;
-    unsigned int  peaking;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
+    unsigned int  peak_color;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
+    double        peak_level;  /* In the range of 0.0 for minimum sensitivity to 1.0 for max. */
+    double        zebra_level; /* Exposure zebra sensitivity level. */
     const char *gifsplash;
 };
 
@@ -123,8 +124,8 @@ struct pipeline_state {
     long            position;       /* Last played frame number, or negative for live display. */
 
     /* Playback Mode */
-    int             playrate;       /* Playback rate in frames per second. */
-    int             playcounter;    /* Internal counter for framerate control. */
+    long            playrate;       /* Playback rate in frames per second. */
+    long            playcounter;    /* Internal counter for framerate control. */
     unsigned long   playstart;      /* Starting frame to play from when in playback mode. */
     unsigned long   playlength;     /* Length of video to play from when in playback mode. */
     unsigned int    playloop;       /* Loop playback or return to live display. */
@@ -171,7 +172,9 @@ void dbus_service_launch(struct pipeline_state *state);
 void dbus_signal_sof(struct pipeline_state *state);
 void dbus_signal_eof(struct pipeline_state *state, const char *err);
 void dbus_signal_segment(struct pipeline_state *state);
-void dbus_signal_notify(struct pipeline_state *state, const char **names);
+void dbus_signal_update(struct pipeline_state *state, const char **names);
+gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
+gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);

@@ -95,85 +95,15 @@ cam_dbus_parse_focus_peak(GHashTable *dict, const char *name, uint16_t defval)
     return defval;
 }
 
-/* Getter function for the parameter-driven API. */
-static void
-cam_dbus_video_getter(struct pipeline_state *state, const char *name, GHashTable *h)
-{
-    if (strcasecmp(name, "currentVideoState") == 0) {
-        switch (state->mode) {
-            case PIPELINE_MODE_PAUSE:
-                cam_dbus_dict_add_string(h, name, "paused");
-                break;
-            case PIPELINE_MODE_PLAY:
-                cam_dbus_dict_add_string(h, name, (state->position >= 0) ? "playback" : "live");
-                break;
-            default:
-                cam_dbus_dict_add_string(h, name, "filesave");
-                break;
-        }
-    } else if (strcasecmp(name, "overlayEnable") == 0) {
-        cam_dbus_dict_add_boolean(h, name, state->overlay.enable);
-    } else if (strcasecmp(name, "overlayFormat") == 0) {
-        cam_dbus_dict_add_string(h, name, state->overlay.format);
-    }
-    /* Exposure and focus aids*/
-    else if (strcasecmp(name, "focusPeakingColor") == 0) {
-        switch (state->config.peaking) {
-            case DISPLAY_CTL_FOCUS_PEAK_RED:
-                cam_dbus_dict_add_string(h, name, "red");
-                break;
-            case DISPLAY_CTL_FOCUS_PEAK_GREEN:
-                cam_dbus_dict_add_string(h, name, "green");
-                break;
-            case DISPLAY_CTL_FOCUS_PEAK_BLUE:
-                cam_dbus_dict_add_string(h, name, "blue");
-                break;
-            case DISPLAY_CTL_FOCUS_PEAK_CYAN:
-                cam_dbus_dict_add_string(h, name, "cyan");
-                break;
-            case DISPLAY_CTL_FOCUS_PEAK_MAGENTA:
-                cam_dbus_dict_add_string(h, name, "magenta");
-                break;
-            case DISPLAY_CTL_FOCUS_PEAK_YELLOW:
-                cam_dbus_dict_add_string(h, name, "yellow");
-                break;
-            case DISPLAY_CTL_FOCUS_PEAK_WHITE:
-                cam_dbus_dict_add_string(h, name, "white");
-                break;
-            default:
-                cam_dbus_dict_add_string(h, name, "disabled");
-                break;
-        }
-    }
-    else if (strcasecmp(name, "zebraLevel") == 0) {
-        cam_dbus_dict_add_float(h, name, state->config.zebra ? 1.0 : 0.0);
-    }
-    /* Playback position and rate. */
-    else if (strcasecmp(name, "playbackRate") == 0) {
-        cam_dbus_dict_add_int(h, name, state->playrate);
-    } else if (strcasecmp(name, "playbackPosition") == 0) {
-        cam_dbus_dict_add_int(h, name, state->position);
-    } else if (strcasecmp(name, "playbackStart") == 0) {
-        cam_dbus_dict_add_uint(h, name, state->playstart);
-    } else if (strcasecmp(name, "playbackLength") == 0) {
-        cam_dbus_dict_add_uint(h, name, state->playlength);
-    }
-    /* Quantity of recorded video. */
-    else if (strcasecmp(name, "totalFrames") == 0) {
-        cam_dbus_dict_add_uint(h, name, state->seglist.totalframes);
-    } else if (strcasecmp(name, "totalSegments") == 0) {
-        cam_dbus_dict_add_uint(h, name, state->seglist.totalsegs);
-    }
-}
-
 static GHashTable *
 cam_dbus_video_get(struct pipeline_state *state, const char **names)
 {
     int i;
     GHashTable *dict = cam_dbus_dict_new();
     if (!dict) return NULL;
+
     for (i = 0; names[i] != NULL; i++) {
-        cam_dbus_video_getter(state, names[i], dict);
+        dbus_get_param(state, names[i], dict);
     }
     return dict;
 }
@@ -192,7 +122,7 @@ typedef struct CamVideoClass {
     guint sof_signalid;
     guint eof_signalid;
     guint seg_signalid;
-    guint notify_signalid;
+    guint update_signalid;
 } CamVideoClass;
 
 static gboolean
@@ -215,6 +145,25 @@ static gboolean
 cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error)
 {
     struct pipeline_state *state = vobj->state;
+    const char **names = (const char **)g_new0(char *, g_hash_table_size(args) + 1);
+    int i = 0;
+
+    GHashTableIter iter;
+    gpointer key, value;
+
+    g_hash_table_iter_init(&iter, args);
+    while (g_hash_table_iter_next(&iter, &key, &value)) {
+        if (dbus_set_param(state, key, value)) {
+            if (names) names[i++] = key;
+        }
+    }
+    
+    /* Generate an update signal for any parameters that were set. */
+    if (names) {
+        if (i) dbus_signal_update(state, names);
+        g_free(names);
+    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -254,6 +203,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     unsigned long vres = cam_dbus_dict_get_uint(args, "vres", state->config.vres);
     unsigned long xoff = cam_dbus_dict_get_uint(args, "xoff", state->config.xoff);
     unsigned long yoff = cam_dbus_dict_get_uint(args, "yoff", state->config.yoff);
+    gboolean zebra_en = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra_level > 0.0);
     unsigned long diff = 0;
 
     /* Sanity-check the new display configuration. */
@@ -272,16 +222,17 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
 
     /* Update the live display flags. */
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
-    state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
-    state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
-    if (state->config.zebra) {
+    state->config.zebra_level = zebra_en ? 0.05 : 0.0;
+    state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
+    if (state->config.zebra_level > 0.0) {
+        state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
         state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
     } else {
         state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
     }
-    if (state->config.peaking) {
+    if (state->config.peak_color) {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
-        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peaking);
+        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
@@ -318,6 +269,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     unsigned long cropy = cam_dbus_dict_get_uint(args, "cropy", 0);
     unsigned long startx = cam_dbus_dict_get_uint(args, "startx", 0);
     unsigned long starty = cam_dbus_dict_get_uint(args, "starty", 0);
+    gboolean zebra_en = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra_level > 0.0);
 
     /* Sanity check the input resolutions. */
     if ((hres == 0) && (vres != 0)) {
@@ -332,16 +284,17 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     /* Update the live display flags. */
     state->args.mode = PIPELINE_MODE_PLAY;
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
-    state->config.zebra = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra);
-    state->config.peaking = cam_dbus_parse_focus_peak(args, "peaking", state->config.peaking);
-    if (state->config.zebra) {
+    state->config.zebra_level = zebra_en ? 0.05 : 0.0;
+    state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
+    if (state->config.zebra_level > 0.0) {
+        state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
         state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
     } else {
         state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
     }
-    if (state->config.peaking) {
+    if (state->config.peak_color) {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
-        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peaking);
+        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
@@ -582,7 +535,7 @@ cam_video_class_init(CamVideoClass *vclass)
                     G_TYPE_NONE,            /* Return GType of the return value. */
                     1, CAM_DBUS_HASH_MAP);  /* Number of parameters and their signatures. */
 
-    vclass->notify_signalid = g_signal_new("notify", G_OBJECT_CLASS_TYPE(vclass),
+    vclass->update_signalid = g_signal_new("update", G_OBJECT_CLASS_TYPE(vclass),
                     G_SIGNAL_RUN_LAST,   /* How and when to run the signal. */
                     0,
                     NULL, NULL,             /* GSignalAccumulator and its user data. */
@@ -665,8 +618,8 @@ dbus_signal_segment(struct pipeline_state *state)
 }
 
 void
-dbus_signal_notify(struct pipeline_state *state, const char **names)
+dbus_signal_update(struct pipeline_state *state, const char **names)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->notify_signalid, 0, cam_dbus_video_get(state, names));
+    g_signal_emit(state->video, vclass->update_signalid, 0, cam_dbus_video_get(state, names));
 }

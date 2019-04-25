@@ -173,7 +173,7 @@ const DBusGObjectInfo dbus_glib_cam_video_object_info = {  1,
   dbus_glib_cam_video_methods,
   10,
 "com.krontech.chronos.video\0get\0S\0names\0I\0as\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0set\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0flush\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0configure\0S\0args\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0livedisplay\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.video\0overlay\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0\0",
-"com.krontech.chronos.video\0sof\0com.krontech.chronos.video\0eof\0com.krontech.chronos.video\0segment\0com.krontech.chronos.video\0notify\0\0",
+"com.krontech.chronos.video\0sof\0com.krontech.chronos.video\0eof\0com.krontech.chronos.video\0segment\0com.krontech.chronos.video\0update\0\0",
 "\0"
 };
 

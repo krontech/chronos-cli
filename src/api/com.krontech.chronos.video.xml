@@ -50,7 +50,7 @@
     <signal name="segment">
       <arg name="status" direction="out" type="a{sv}"/>
     </signal>
-    <signal name="notify">
+    <signal name="update">
       <arg name="data" direction="out" type="a{sv}"/>
     </signal>
   </interface>
