@@ -1,5 +1,18 @@
-chronos-cli (0.3.1~beta88) unstable; urgency=medium
+chronos-cli (0.3.1~beta101) unstable; urgency=medium
 
+  * Update the pipeline README to include properties.
+  * Implement D-Bus set method and update signal.
+  * Add 'get' method to the video API.
+  * Add JSON parsing of D-Bus type 'as'.
+  * Improve JPEG encoding with a little help from NEON.
+  * Fix DNG/TIFF save after adding the NEON flip.
+  * Add NEON video flip element and D-Bus API to enable.
+  * I'm sorry - too many edits all at once Added a whole bunch of stuff for going into and out of calibration mode - this allows calibration to take place while on internal or external timing. Improved overall reliability however there are still issues.
+  * Reduce live display framerate for large video frames.
+  * Allow color/mono config via D-Bus.
+  * Fix permissions when recovering to a UNIX filesystem.
+  * Update recovery tool with segment rollover fixes.
+  * Refactor recording segments to handle rollover of memory.
   * Add video cropping support to the D-Bus livedisplay method.
   * Update recovery tool to apply calibration and segment data.
   * Add splash GIF to packaging.
@@ -90,4 +103,4 @@ chronos-cli (0.3.1~beta88) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Mon, 11 Mar 2019 18:08:39 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Thu, 25 Apr 2019 13:33:31 -0700

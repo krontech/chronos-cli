@@ -1,5 +1,5 @@
-Video Pipeline Interface
-========================
+Video Pipeline Daemon
+=====================
 
 The `cam-pipeline` program is responsible for managing the multimedia pipeline
 of the camera. This program connects the video stream from the FPGA to the
@@ -43,28 +43,35 @@ will encode the current frame as a JPEG and write it into the FIFO. Thus the
 command `cat /tmp/cam-screencap.jpg > somefile.jpg` can be used to take a live
 screenshot from the pipeline.
 
+Video D-Bus Methods
+===================
 The DBus interface to the video pipeline daemon is accessible at
 `/com/krontech/chronos/video` and conforms to the interface given by
 [com.krontech.chronos.video.xml](../../src/api/com.krontech.chronos.video.xml),
 which implements the methods:
 
-* [`status`](#status): Return the status of the video pipeline.
-* [`flush`](#flush): Clear recorded video and return to live display mode.
-* [`playback`](#playback): Control the frame position and playback rate.
-* [`configure`](#configure): Configure video settings.
-* [`livedisplay`](#livedisplay): Switch or configure live display mode.
-* [`recordfile`](#recordfile): Encode and write video to a file.
-* [`stop`](#stop): Terminate video encoding and return to playback mode.
-* [`overlay`](#overlay): Configure an overlay text box for video and frame information.
+| Method Name                   | Input Type | Description
+|:------------------------------|:-----------|:-----------
+| [`status`](#status)           |            | Return the status of the video pipeline.
+| [`get`](#get)                 | `as`       | Retrieve the value of one or more parameters.
+| [`set`](#set)                 | `a{sv}`    | Change the value of one or more parameters.
+| [`flush`](#flush)             |            | Clear recorded video and return to live display mode.
+| [`playback`](#playback)       | `a{sv}`    | Control the frame position and playback rate.
+| [`configure`](#configure)     | `a{sv}`    | Configure video settings.
+| [`livedisplay`](#livedisplay) | `a{sv}`    | Switch or configure live display mode.
+| [`recordfile`](#recordfile)   | `a{sv}`    | Encode and write video to a file.
+| [`stop`](#stop)               |            | Terminate video encoding and return to playback mode.
+| [`overlay`](#overlay)         | `a{sv}`    | Configure an overlay text box for video and frame information.
 
 And emits the DBus signal:
  * [`sof`](#sof): The video pipeline has changed mode, and the video stream has started.
  * [`eof`](#eof): The video stream has ended and the video pipeline is about to change mode.
  * [`segment`](#segment): The video pipeline has received a new video segment from the FPGA.
+ * [`update`](#update): One or more parameters has been updated.
 
-Methods which take arguments accept an array of string variant tuples (D-Bus type code of
-`a{sv}`), forming a hash map of the arguments. All methods return an array of string variant
-tuples, with the same contents as described by the `status` method.
+Methods which take arguments typically accept an array of string variant tuples (D-Bus type
+code of `a{sv}`) that form a hash of the input arguments. All methods and signals return an
+array of string variant tuples.
 
 status
 ------
@@ -83,6 +90,16 @@ arguments, and the returned hash map will contain the following members.
 | `"framerate"`     | `float`   | The target playback rate when in playback mode, or estimated frame rate when in record mode.
 | `"error"`         | `string`  | A description of the error (only present when generated in response to an error).
 | `"filename"`      | `string`  | The name of the file being saved (only present if `"filesave"` is `true`).
+
+get
+---
+This method takes as input an array of strings, naming the parameters to be retrieived
+from the pipeline and returns a hash map containing the current parameter values.
+
+set
+---
+This method takes as input a hash map with the parameter values to be configured on
+the video system.
 
 flush
 -----
@@ -242,6 +259,8 @@ the vertical size. A vertical height of zero will default to the minimum height 
 text without clipping. A horizontal width of zero will extend the text box to use the maximum width of the
 video frame.
 
+Video D-Bus Signals
+===================
 sof
 ---
 The `sof` DBus signal is emittted by the pipeline when video recording has started. Upon emitting the `sof`
@@ -261,3 +280,48 @@ segment
 The `segment` DBus signal is emitted by the pipeline when a new segment of recorded video is received from
 the FPGA. The `segment` signal will include a hash map containing the same values as the [`status`](#status)
 method.
+
+notify
+------
+The `notify` DBus signal is emitted by the pipeline when one or more parameters have been updated. The
+`segments` signal will include a hash map containing the new parameter values.
+
+Video D-Bus Properties
+======================
+
+Each parameter is marked with the following flags:
+
+ * `G`: The parameter's current value can be queried via the `get` command.
+ * `S`: The parameter's value can be updated via the `set` command.
+ * `U`: Changes to the parameter's value will be reported via the `update` signal.
+ * `x`: The parameter is planned, but not yet implemented.
+
+Each parameter also defines a type as follows:
+
+| API Type | D-Bus Signatures   | Python Types | Description
+|:---------|:-------------------|:-------------|:-----------
+| `bool`   | `b`                | `boolean`    | Either `true` or `false`
+| `float`  | `t`                | `float`      | Floating-point number.
+| `int`    | `i`                | `int`        | Integer type, supporting up to 32-bit precision.
+| `enum`   | `i`                | `int`        | The description of each type must specify the allowed values.
+| `array`  | `ad`               | `list`       | An array of floating point values.
+| `string` | `s`                | `str`        | A character string, which should support UTF-8 encoding.
+| `dict`   | `a{sv}`            | `dict`       | An array of name/value pairs. Values may contain any type (including another `dict`).
+
+The available parameters which can be accessed by the [`get`](#get) and [`set`](#set)
+a methods are as follows:
+
+| Parameter         | G | S | U | Type   | Description
+|:----------------- |:--|:--|:--|:-------|:-----------
+| `overlayEnable`   |`G`|`S`|`x`| bool   |
+| `overlayFormat`   |`G`|`S`|`x`| string | A `printf`-style format string to set the overlay text.
+| `zebraLevel`      |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
+| `focusPeakLevel`  |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the rante of 0 to 1.0).
+| `focusPeakColor`  |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Disabled.
+| `videoState`      |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
+| `playbackRate`    |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
+| `playbackPosition`|`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
+| `playbackStart`   |`G`|`S`|`x`| int    | Starting frame number to display when entering `playback`.
+| `playbackLength`  |`G`|`S`|`x`| int    | Number of frames to play when in `playback` before loooping back to `playbackStart`.
+| `totalFrames`     |`G`|   |`x`| int    | Total number of frame captured in the camera's memory.
+| `totalSegments`   |`G`|   |`x`| int    | Total number of recording segments captured in the camera's memory.
