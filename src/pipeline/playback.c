@@ -339,7 +339,7 @@ playback_preroll(struct pipeline_state *state, unsigned int mode)
     if (PIPELINE_IS_SAVING(mode)) {
         /* Inject a 100ms delay before starting a filesave. */
         int delay = PLAYBACK_PIPE_DELAY;
-        write(playback_pipe, &command, sizeof(command));
+        write(playback_pipe, &delay, sizeof(delay));
     }
     state->mode = mode;
     write(playback_pipe, &command, sizeof(command));
