@@ -1,5 +1,6 @@
-chronos-cli (0.3.1~beta102) unstable; urgency=medium
+chronos-cli (0.3.1~beta103) unstable; urgency=medium
 
+  * Fix bug in DBus marshalling of nested dictionaries.
   * Fix double prerolling bug when starting a filesave.
   * Update the pipeline README to include properties.
   * Implement D-Bus set method and update signal.
@@ -104,4 +105,4 @@ chronos-cli (0.3.1~beta102) unstable; urgency=medium
   * upower: Periodically write battery status to /var/run/bmsFifo
   * Upstream release v0.3.1-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Mon, 29 Apr 2019 12:15:07 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Mon, 29 Apr 2019 17:28:10 -0700

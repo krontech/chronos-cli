@@ -147,13 +147,11 @@ json_parse_object(jsmntok_t *tokens, unsigned long flags)
             cam_dbus_dict_add_printf(h, name, "%s", value);
         }
         else if (tok->type == JSMN_OBJECT) {
-            GHashTable *h = json_parse_object(tok, flags);
-            GValue *gval = g_new0(GValue, 1);
-            if (!gval) {
+            GHashTable *obj = json_parse_object(tok, flags);
+            if (!obj) {
                 handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
             }
-            g_value_init_from_instance(gval, h);
-            cam_dbus_dict_add(h, name, gval);
+            cam_dbus_dict_add_dict(h, name, obj);
         }
         else if (tok->type != JSMN_PRIMITIVE) {
             /* Ignore other nested types. */
