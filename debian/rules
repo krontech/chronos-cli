@@ -13,22 +13,9 @@
 # package maintainers to append LDFLAGS
 #export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 
-PY3VERS:=$(shell py3versions -s)
-DESTDIR:=$(shell pwd)/debian/tmp
-
 %:
-	dh $@ --with autotools_dev,python3,systemd
+	dh $@ --with autotools_dev,systemd
 
 override_dh_auto_configure:
 	./bootstrap
 	dh_auto_configure
-
-override_dh_auto_build:
-	dh_auto_build
-	for py in $(PY3VERS); do (cd src/pychronos && $$py setup.py build); done
-
-override_dh_auto_install:
-	dh_auto_install
-	mkdir -p $(DESTDIR)/usr/lib/python3/dist-packages
-	for py in $(PY3VERS); do (cd src/pychronos && $$py setup.py install --prefix=$(DESTDIR)); done
-	for py in $(PY3VERS); do mv $(DESTDIR)/lib/$$py/site-packages/* $(DESTDIR)/usr/lib/python3/dist-packages; done

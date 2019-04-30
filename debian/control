@@ -5,7 +5,6 @@ Maintainer: Owen Kirby <oskirby@gmail.com>
 Build-Depends: debhelper (>= 9), dh-systemd (>= 1.5),
                 autotools-dev, autoconf, automake,
                 libtool, pkg-config,
-		python3-dev,
 		libglib2.0-dev,
 		libdbus-1-dev, libdbus-glib-1-dev,
 		libjpeg-dev,
@@ -39,10 +38,3 @@ Description: Command line tools for the Chronos Camera
  Command line utilites for debugging, diagnostics, and recovery
  on the Chronos high speed camera.
 
-Package: python3-pychronos
-Section: python
-Architecture: armel
-Depends: ${python3:Depends}, ${misc:Depends}
-Description: Python interface to the Chronos FPGA
- This package provides a Python wrapper for accessing the
- FPGA and image sensor on the Chronos high speed cameras.
