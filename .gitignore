@@ -2,7 +2,7 @@
 .*
 *.o
 __pycache__/
-/config.h
+/src/config.h
 /src/cam-daemon
 /src/cam-json
 /src/cam-cli
