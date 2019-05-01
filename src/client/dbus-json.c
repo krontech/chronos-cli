@@ -55,6 +55,13 @@ json_printf_utf8(FILE *fp, const gchar *p)
     fputc('"', fp);
 }
 
+static int
+json_printf_indent(FILE *fp, unsigned int depth, unsigned int comma)
+{
+    fprintf(fp, comma ? ",%s%*.s" : "%s%*.s", json_newline, depth * JSON_TAB_SIZE, "");
+    return 0;
+}
+
 static void
 json_printf_gval(FILE *fp, gconstpointer val, unsigned int depth)
 {
@@ -77,17 +84,61 @@ json_printf_gval(FILE *fp, gconstpointer val, unsigned int depth)
     } else if (G_VALUE_TYPE(val) == CAM_DBUS_HASH_MAP) {
         /* Recursively print nested dictionaries. */
         json_printf_dict(fp, g_value_peek_pointer(val), depth+1);
+    } else if (dbus_g_type_is_collection(G_VALUE_TYPE(val))) {
+        /* We got an array type. */
+        GType subtype = dbus_g_type_get_collection_specialization(G_VALUE_TYPE(val));
+        json_printf_array(fp, g_value_peek_pointer(val), subtype, depth+1);
     } else {
         /* Default unknown types to null */
+        fprintf(stderr, "Unknown type found: %s\n", g_type_name(G_VALUE_TYPE(val)));
         fputs("null", fp);
     }
 }
 
-static int
-json_printf_indent(FILE *fp, unsigned int depth, unsigned int comma)
+static void
+json_printf_arrayval(FILE *fp, GArray *array, GType subtype, guint idx)
 {
-    fprintf(fp, comma ? ",%s%*.s" : "%s%*.s", json_newline, depth * JSON_TAB_SIZE, "");
-    return 0;
+    switch (subtype) {
+        case G_TYPE_INT:
+            fprintf(fp, "%d", g_array_index(array, gint, idx));
+            break;
+        case G_TYPE_UINT:
+            fprintf(fp, "%d", g_array_index(array, guint, idx));
+            break;
+        case G_TYPE_LONG:
+            fprintf(fp, "%ld", g_array_index(array, glong, idx));
+            break;
+        case G_TYPE_ULONG:
+            fprintf(fp, "%ld", g_array_index(array, gulong, idx));
+            break;
+        case G_TYPE_BOOLEAN:
+            fputs(g_array_index(array, gboolean, idx) ? "true" : "false", fp);
+            break;
+        case G_TYPE_FLOAT:
+            fprintf(fp, "%g", (double)g_array_index(array, gfloat, idx));
+            break;
+        case G_TYPE_DOUBLE:
+            fprintf(fp, "%g", g_array_index(array, gdouble, idx));
+            break;
+        default:
+            /* Default unknown types to null */
+            fputs("null", fp);
+            break;
+    }
+}
+
+void
+json_printf_array(FILE *fp, GArray *array, GType subtype, unsigned int depth)
+{
+    guint i;
+
+    fputs("[", fp);
+    for (i = 0; i < array->len; i++) {
+        json_printf_indent(fp, depth+1, (i != 0));
+        json_printf_arrayval(fp, array, subtype, i);
+    }
+    if (array->len) json_printf_indent(fp, depth, 0);
+    fputs("]", fp);
 }
 
 void
