@@ -29,6 +29,7 @@
 
 #define OPT_FLAG_RPC    (1<<0)
 #define OPT_FLAG_CGI    (1<<1)
+#define OPT_FLAG_GET    (1<<2)
 
 /* Standard JSON-RPC Error Codes. */
 #define JSONRPC_ERR_PARSE_ERROR         (-32700)
@@ -268,15 +269,27 @@ json_parse(FILE *fp, GType *ptype, unsigned long flags)
 static void
 usage(FILE *fp, int argc, char * const argv[])
 {
-    fprintf(fp, "Usage: %s [options] METHOD [PARAMS]\n\n", argv[0]);
+    fprintf(fp, "Usage: %s [options] [METHOD [PARAMS]]\n\n", argv[0]);
 
     fprintf(fp, "Make a DBus call to the Chronos camera daemon, and translate\n");
-    fprintf(fp, "the result into JSON. Parameters passed to the RPC call will\n");
-    fprintf(fp, "be parsed from the PARAMS file, if provided.\n\n");
+    fprintf(fp, "the result into JSON.\n\n");
+
+    fprintf(fp, "In normal and JSON-RPC mode, the RPC method is provided as the\n");
+    fprintf(fp, "first positional argument. If the method takes arguments, they\n");
+    fprintf(fp, "will be parsed from the optional PARAMS file (or \'-\' to read\n");
+    fprintf(fp, "from stdin).\n\n");
+
+    fprintf(fp, "In CGI mode, the PATH_INFO environment variable is parsed for\n");
+    fprintf(fp, "the RPC method to call and arguments will be parsed from stdin.\n\n");
+    
+    fprintf(fp, "In get mode, the \'get\' method will be called to retrieive\n");
+    fprintf(fp, "parameters from the DBus interface. The names of the parameters\n");
+    fprintf(fp, "to retrieve are provided as the positional arguments to %s.\n\n", argv[0]);
 
     fprintf(fp, "options:\n");
     fprintf(fp, "\t-r, --rpc     encode the results in JSON-RPC format\n");
     fprintf(fp, "\t-c, --cgi     encode the results in CGI/1.0 format\n");
+    fprintf(fp, "\t-g, --get     get paramereters from the DBus interface\n");
     fprintf(fp, "\t-n, --control connect to the control DBus interface\n");
     fprintf(fp, "\t-v, --video   connect to the video DBus interface\n");
     fprintf(fp, "\t-h, --help    display this help and exit\n");
@@ -299,10 +312,11 @@ main(int argc, char * const argv[])
     unsigned long flags = 0;
     
     /* Option Parsing */
-    const char *short_options = "rvnch";
+    const char *short_options = "rcgvnh";
     const struct option long_options[] = {
         {"rpc",     no_argument,    0, 'r'},
         {"cgi",     no_argument,    0, 'c'},
+        {"get",     no_argument,    0, 'g'},
         {"control", no_argument,    0, 'n'},
         {"video",   no_argument,    0, 'v'},
         {"help",    no_argument,    0, 'h'},
@@ -318,6 +332,10 @@ main(int argc, char * const argv[])
             
             case 'c':
                 flags |= OPT_FLAG_CGI;
+                break;
+            
+            case 'g':
+                flags |= OPT_FLAG_GET;
                 break;
             
             case 'v':
@@ -342,8 +360,24 @@ main(int argc, char * const argv[])
     }
     g_type_init();
 
+    /*
+     * If getting parameters, the method is 'get' and the positional
+     * arguments are the names of the parameters to get.
+     */
+    if (flags & OPT_FLAG_GET) {
+        method = "get";
+        params = g_ptr_array_sized_new(argc - optind);
+        paramtype = dbus_g_type_get_collection("GPtrArray", G_TYPE_STRING);
+        if (!params) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+        }
+        g_ptr_array_set_free_func(params, g_free);
+        while (optind < argc) {
+            g_ptr_array_add(params, g_strdup(argv[optind++]));
+        }
+    }
     /* If CGI, get the requested method from the PATH_INFO variable. */
-    if (flags & OPT_FLAG_CGI) {
+    else if (flags & OPT_FLAG_CGI) {
         method = getenv("PATH_INFO");
         if (!method) {
             fprintf(stderr, "Missing variable: PATH_INFO\n");
@@ -352,6 +386,9 @@ main(int argc, char * const argv[])
         }
         /* Stip leading slashes from PATH_INFO */
         while (*method == '/') method++;
+
+        /* Attempt to parse the method arguments from stdin. */
+        params = json_parse(stdin, &paramtype, flags);
     }
     /* Otherwise, the method name is passed in via the command line. */
     else if (optind >= argc) {
@@ -361,20 +398,20 @@ main(int argc, char * const argv[])
     }
     else {
         method = argv[optind++];
-    }
 
-    /* If yet another parameter is present, it may provide a source file for
-     * the RPC request parameters, or it may be '-' to read paramers from stdin.
-     */
-    if (optind < argc) {
-        const char *filename = argv[optind++];
-        FILE *fp = strcmp(filename, "-") ? fopen(filename, "r") : stdin;
-        if (!fp) {
-            fprintf(stderr, "Failed to open '%s' for reading: %s\n", filename, strerror(errno));
-            return EXIT_FAILURE;
+        /* If yet another parameter is present, it may provide a source file for
+        * the RPC request parameters, or it may be '-' to read paramers from stdin.
+        */
+        if (optind < argc) {
+            const char *filename = argv[optind++];
+            FILE *fp = strcmp(filename, "-") ? fopen(filename, "r") : stdin;
+            if (!fp) {
+                fprintf(stderr, "Failed to open '%s' for reading: %s\n", filename, strerror(errno));
+                return EXIT_FAILURE;
+            }
+            params = json_parse(fp, &paramtype, flags);
+            fclose(fp);
         }
-        params = json_parse(fp, &paramtype, flags);
-        fclose(fp);
     }
     
     /* Initialize the DBus system. */

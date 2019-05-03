@@ -120,6 +120,8 @@ json_printf_arrayval(FILE *fp, GArray *array, GType subtype, guint idx)
         case G_TYPE_DOUBLE:
             fprintf(fp, "%g", g_array_index(array, gdouble, idx));
             break;
+        case G_TYPE_STRING:
+            /* TODO: Implement Me! */
         default:
             /* Default unknown types to null */
             fputs("null", fp);
