@@ -52,7 +52,7 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
     const unsigned int hBackPorch = 64;
     const unsigned int hFrontPorch = 4;
     const unsigned int vSync = 1;
-    const unsigned int vBackPorch = 4;
+    const unsigned int vBackPorch = 8;
     const unsigned int vFrontPorch = 1;
     unsigned int pxClock = 100000000;
     unsigned int minHPeriod;
