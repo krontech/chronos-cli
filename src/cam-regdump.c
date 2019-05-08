@@ -26,6 +26,7 @@
 #include "fpga.h"
 #include "utils.h"
 #include "lux1310.h"
+#include "lux2100.h"
 
 struct regtab {
     const char      *name;
@@ -273,6 +274,36 @@ static const struct regtab overlay_registers[] = {
     {NULL, 0, 0, 0}
 };
 
+
+/*-------------------------------------
+ * Generic Luxima Chip ID registers.
+ *-------------------------------------
+ */
+static const struct regtab luxima_chipid_registers[] = {
+    {
+        .name = "chip_id",
+        .offset = 0x00,
+        .mask = 0xff00,
+        .size = 2,
+        .reg_read = sci_reg_read,
+    },
+    {
+        .name = "rev_chip",
+        .offset = 0x00,
+        .mask = 0x00ff,
+        .size = 2,
+        .reg_read = sci_reg_read,
+    },
+    {NULL, 0, 0, 0}
+};
+
+static unsigned int
+sci_read_chipid(struct fpga *fpga)
+{
+    const struct regtab *r = &luxima_chipid_registers[0];
+    return getbits(sci_reg_read(r, fpga), r->mask);
+}
+
 /*-------------------------------------
  * LUX1310 SCI Registers
  *-------------------------------------
@@ -372,6 +403,89 @@ static const struct regtab lux1310_registers[] = {
     {NULL, 0, 0, 0}
 };
 
+/*-------------------------------------
+ * LUX2100/LUX8M SCI Registers
+ *-------------------------------------
+ */
+#define REG_LUX2100(_reg_, _name_) { \
+    .name = _name_, .offset = (_reg_) >> LUX2100_SCI_REG_ADDR, \
+    .mask = (_reg_) & LUX2100_SCI_REG_MASK, .size = 2, \
+    .reg_read = sci_reg_read \
+}
+
+static const struct regtab lux2100_sensor_registers[] = {
+    REG_LUX2100(LUX2100_SCI_REV_CHIP,       "rev_chip"),
+    REG_LUX2100(LUX2100_SCI_CHIP_ID,        "chip_id"),
+    REG_LUX2100(LUX2100_SCI_TIMING_EN,      "timing_en"),
+    REG_LUX2100(LUX2100_SCI_GLOBAL_SHUTTER, "global_shutter"),
+    REG_LUX2100(LUX2100_SCI_FTR_EN,         "ftr_en"),
+    REG_LUX2100(LUX2100_SCI_FT_RST_EN,      "ft_rst_en"),
+    REG_LUX2100(LUX2100_SCI_ROI_SEL,        "roi_sel"),
+    REG_LUX2100(LUX2100_SCI_INTER_ROI_SP,   "inter_roi_sp"),
+    REG_LUX2100(LUX2100_SCI_DRK_COL_RD,     "drk_col_rd"),
+    REG_LUX2100(LUX2100_SCI_VFLIP,          "vflip"),
+    REG_LUX2100(LUX2100_SCI_HFLIP,          "hflip"),
+    REG_LUX2100(LUX2100_SCI_HBLANK,         "hblank"),
+    REG_LUX2100(LUX2100_SCI_DP_SCIP_EN,     "dp_scip_en"),
+    REG_LUX2100(LUX2100_SCI_SHADOW_REGS,        "shadow_regs"),
+    REG_LUX2100(LUX2100_SCI_X_START,            "x_start"),
+    REG_LUX2100(LUX2100_SCI_X_END,              "x_end"),
+    REG_LUX2100(LUX2100_SCI_Y_START,            "y_start"),
+    REG_LUX2100(LUX2100_SCI_Y_END,              "y_end"),
+    REG_LUX2100(LUX2100_SCI_DRK_ROWS_ST_ADDR_TOP,   "drk_rows_st_addr_top"),
+    REG_LUX2100(LUX2100_SCI_NB_DRK_ROWS_TOP,    "nb_drk_rows_top"),
+    REG_LUX2100(LUX2100_SCI_NEXT_ROW_ADDR_OVR,  "next_row_addr_ovr"),
+    REG_LUX2100(LUX2100_SCI_NEXT_ROW_OVR_EN,    "next_row_ovr_en"),
+    REG_LUX2100(LUX2100_SCI_SOF_DELAY,          "sof_delay"),
+    REG_LUX2100(LUX2100_SCI_FT_TRIG_NB_PULSE,   "ft_trig_nb_pulse"),
+    REG_LUX2100(LUX2100_SCI_FT_RST_NB_PULSE,    "ft_rst_nb_pulse"),
+    REG_LUX2100(LUX2100_SCI_RDOUT_DLY,          "rdout_dly"),
+    REG_LUX2100(LUX2100_SCI_ROW_TIME,           "row_time"),
+    REG_LUX2100(LUX2100_SCI_ABN_SEL,            "abn_sel"),
+    REG_LUX2100(LUX2100_SCI_ABN2_EN,            "abn2_en"),
+    REG_LUX2100(LUX2100_SCI_ABN2_ALT_PAT,       "abn2_alt_pat"),
+    REG_LUX2100(LUX2100_SCI_ABN2_LD,            "abn2_ld"),
+    REG_LUX2100(LUX2100_SCI_X_ORG,              "x_org"),
+    REG_LUX2100(LUX2100_SCI_Y_ORG,              "y_org"),
+    REG_LUX2100(LUX2100_SCI_PCLK_LINEVALID,     "pclk_linevalid"),
+    REG_LUX2100(LUx2100_SCI_PCLK_VBLANK,        "pclk_vblank"),
+    REG_LUX2100(LUX2100_SCI_PCLK_HBLANK,        "pclk_hblank"),
+    REG_LUX2100(LUX2100_SCI_PCLK_OPTICAL_BLACK, "pclk_optical_black"),
+    REG_LUX2100(LUX2100_SCI_MONO,               "mono"),
+    REG_LUX2100(LUX2100_SCI_ROWBIN2,            "rowbin2"),
+    REG_LUX2100(LUX2100_SCI_ROW2EN,             "row2en"),
+    REG_LUX2100(LUX2100_SCI_COLBIN2,            "colbin2"),
+    REG_LUX2100(LUX2100_SCI_COLBIN4,            "colbin4"),
+    REG_LUX2100(LUX2100_SCI_POUTSEL,            "poutsel"),
+    REG_LUX2100(LUX2100_SCI_INVERT_ANALOG,      "invert_analog"),
+    REG_LUX2100(LUX2100_SCI_GAIN_SEL_SAMP,      "gain_sel_samp"),
+    REG_LUX2100(LUX2100_SCI_GAIN_SEL_FB,        "gain_sel_fb"),
+    REG_LUX2100(LUX2100_SCI_GAIN_SERIAL,        "gain_serial"),
+    REG_LUX2100(LUX2100_SCI_LV_DELAY,           "lv_delay"),
+    REG_LUX2100(LUX2100_SCI_CUST_PAT,           "cust_pat"),
+    REG_LUX2100(LUX2100_SCI_TST_PAT,            "tst_pat"),
+    REG_LUX2100(LUX2100_SCI_PWR_EN_SERIALIZER_B, "pwr_en_serializer_b"),
+    REG_LUX2100(LUX2100_SCI_MUX_MODE,           "mux_mod"),
+    REG_LUX2100(LUX2100_SCI_DAC_ILV,            "dac_ilv"),
+    REG_LUX2100(LUX2100_SCI_PCLK_INV,           "pclk_inv"),
+    REG_LUX2100(LUX2100_SCI_DCLK_INV,           "dclk_inv"),
+    REG_LUX2100(LUX2100_SCI_TERMB_DATA,         "termb_data"),
+    REG_LUX2100(LUX2100_SCI_TERMB_CLK,          "termb_clk"),
+    REG_LUX2100(LUX2100_SCI_SEL_VLNKEEP_RST,    "sel_vlnkeep_rst"),
+    REG_LUX2100(LUX2100_SCI_SEL_VDUM,           "sel_vdum"),
+    REG_LUX2100(LUX2100_SCI_SEL_VDUMRST,        "sel_vdumrst"),
+    REG_LUX2100(LUX2100_SCI_SEL_VLNKEEP,        "sel_vlnkeep"),
+    REG_LUX2100(LUX2100_SCI_HIDY_EN,            "hidy_en"),
+    REG_LUX2100(LUX2100_SCI_GLB_FLUSH_EN,       "glb_flush_en"),
+    REG_LUX2100(LUX2100_SCI_SEL_VDR1_WIDTH,     "sel_vdr1_width"),
+    REG_LUX2100(LUX2100_SCI_SEL_VDR2_WIDTH,     "sel_vdr2_width"),
+    REG_LUX2100(LUX2100_SCI_SEL_VDR3_WIDTH,     "sel_vdr3_width"),
+    REG_LUX2100(LUX2100_SCI_ICOL_CAP_EN,        "icol_cap_en"),
+    REG_LUX2100(LUX2100_SCI_SRESET_B,           "sreset_b"),
+    REG_LUX2100(LUX2100_SCI_SER_SYNC,           "ser_sync"),
+    {NULL, 0, 0, 0}
+};
+
 static void
 print_reg_group(FILE *fp, const struct regtab *regs, struct fpga *fpga, const char *groupname)
 {
@@ -392,6 +506,7 @@ print_reg_group(FILE *fp, const struct regtab *regs, struct fpga *fpga, const ch
 int
 main(int argc, char *const argv[])
 {
+    unsigned int chipid;
     struct fpga *fpga = fpga_open();
     if (!fpga) {
         fprintf(stderr, "Failed to open FPGA register space: %s\n", strerror(errno));
@@ -406,7 +521,19 @@ main(int argc, char *const argv[])
     print_reg_group(stdout, config_registers, fpga, "Config");
     print_reg_group(stdout, vram_registers, fpga, "Video RAM");
     print_reg_group(stdout, overlay_registers, fpga, "Overlay");
-    print_reg_group(stdout, lux1310_registers, fpga, "LUX1310");
+
+    /* Read the Luxima chip ID. */
+    chipid = sci_read_chipid(fpga);
+    if (chipid == LUX1310_CHIP_ID) {
+        print_reg_group(stdout, lux1310_registers, fpga, "LUX1310");
+    }
+    else if (chipid == LUX2100_CHIP_ID) {
+        print_reg_group(stdout, lux2100_sensor_registers, fpga, "LUX2100 Sensor");
+        /* TODO: LUX2100 datapath registers. */
+    }
+    else {
+        print_reg_group(stdout, luxima_chipid_registers, fpga, "Unknown Sensor");
+    }
 
     fpga_close(fpga);
     return 0;
