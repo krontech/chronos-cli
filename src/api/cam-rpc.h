@@ -22,12 +22,12 @@
 #include <glib.h>
 #include <dbus/dbus-glib.h>
 
-#define CAM_DBUS_CONTROL_SERVICE    "com.krontech.chronos.control"
-#define CAM_DBUS_CONTROL_PATH       "/com/krontech/chronos/control"
-#define CAM_DBUS_CONTROL_INTERFACE  "com.krontech.chronos.control"
-#define CAM_DBUS_VIDEO_SERVICE      "com.krontech.chronos.video"
-#define CAM_DBUS_VIDEO_PATH         "/com/krontech/chronos/video"
-#define CAM_DBUS_VIDEO_INTERFACE    "com.krontech.chronos.video"
+#define CAM_DBUS_CONTROL_SERVICE    "ca.krontech.chronos.control"
+#define CAM_DBUS_CONTROL_PATH       "/ca/krontech/chronos/control"
+#define CAM_DBUS_CONTROL_INTERFACE  "ca.krontech.chronos.control"
+#define CAM_DBUS_VIDEO_SERVICE      "ca.krontech.chronos.video"
+#define CAM_DBUS_VIDEO_PATH         "/ca/krontech/chronos/video"
+#define CAM_DBUS_VIDEO_INTERFACE    "ca.krontech.chronos.video"
 
 /* Error domains */
 #define CAM_ERROR_PARAMETERS        g_quark_from_static_string("cam-parameters-quark")

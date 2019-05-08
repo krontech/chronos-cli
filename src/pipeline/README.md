@@ -46,8 +46,8 @@ screenshot from the pipeline.
 Video D-Bus Methods
 ===================
 The DBus interface to the video pipeline daemon is accessible at
-`/com/krontech/chronos/video` and conforms to the interface given by
-[com.krontech.chronos.video.xml](../../src/api/com.krontech.chronos.video.xml),
+`/ca/krontech/chronos/video` and conforms to the interface given by
+[ca.krontech.chronos.video.xml](../../src/api/ca.krontech.chronos.video.xml),
 which implements the methods:
 
 | Method Name                   | Input Type | Description

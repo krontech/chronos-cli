@@ -205,16 +205,16 @@ G_END_DECLS
 #include <dbus/dbus-glib.h>
 static const DBusGMethodInfo dbus_glib_cam_control_methods[] = {
   { (GCallback) cam_control_get_video_settings, dbus_glib_marshal_cam_control_BOOLEAN__POINTER_POINTER, 0 },
-  { (GCallback) cam_control_set_video_settings, dbus_glib_marshal_cam_control_BOOLEAN__BOXED_POINTER, 68 },
-  { (GCallback) cam_control_get_camera_data, dbus_glib_marshal_cam_control_BOOLEAN__POINTER_POINTER, 132 },
-  { (GCallback) cam_control_get_sensor_data, dbus_glib_marshal_cam_control_BOOLEAN__POINTER_POINTER, 197 },
-  { (GCallback) cam_control_get_timing_limits, dbus_glib_marshal_cam_control_BOOLEAN__BOXED_POINTER_POINTER, 262 },
+  { (GCallback) cam_control_set_video_settings, dbus_glib_marshal_cam_control_BOOLEAN__BOXED_POINTER, 67 },
+  { (GCallback) cam_control_get_camera_data, dbus_glib_marshal_cam_control_BOOLEAN__POINTER_POINTER, 130 },
+  { (GCallback) cam_control_get_sensor_data, dbus_glib_marshal_cam_control_BOOLEAN__POINTER_POINTER, 194 },
+  { (GCallback) cam_control_get_timing_limits, dbus_glib_marshal_cam_control_BOOLEAN__BOXED_POINTER_POINTER, 258 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_control_object_info = {  1,
   dbus_glib_cam_control_methods,
   5,
-"com.krontech.chronos.control\0get_video_settings\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0set_video_settings\0S\0data\0I\0a{sv}\0\0com.krontech.chronos.control\0get_camera_data\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0get_sensor_data\0S\0data\0O\0F\0N\0a{sv}\0\0com.krontech.chronos.control\0get_timing_limits\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0\0",
+"ca.krontech.chronos.control\0get_video_settings\0S\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.control\0set_video_settings\0S\0data\0I\0a{sv}\0\0ca.krontech.chronos.control\0get_camera_data\0S\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.control\0get_sensor_data\0S\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.control\0get_timing_limits\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0\0",
 "\0",
 "\0"
 };
