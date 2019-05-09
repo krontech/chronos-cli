@@ -159,20 +159,21 @@ G_END_DECLS
 static const DBusGMethodInfo dbus_glib_cam_video_methods[] = {
   { (GCallback) cam_video_get, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 0 },
   { (GCallback) cam_video_set, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 61 },
-  { (GCallback) cam_video_status, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 124 },
-  { (GCallback) cam_video_flush, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 177 },
-  { (GCallback) cam_video_configure, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 231 },
-  { (GCallback) cam_video_playback, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 302 },
-  { (GCallback) cam_video_livedisplay, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 370 },
-  { (GCallback) cam_video_recordfile, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 441 },
-  { (GCallback) cam_video_stop, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 517 },
-  { (GCallback) cam_video_overlay, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 570 },
+  { (GCallback) cam_video_describe, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 124 },
+  { (GCallback) cam_video_status, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 179 },
+  { (GCallback) cam_video_flush, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 232 },
+  { (GCallback) cam_video_configure, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 286 },
+  { (GCallback) cam_video_playback, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 357 },
+  { (GCallback) cam_video_livedisplay, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 425 },
+  { (GCallback) cam_video_recordfile, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 496 },
+  { (GCallback) cam_video_stop, dbus_glib_marshal_cam_video_BOOLEAN__POINTER_POINTER, 572 },
+  { (GCallback) cam_video_overlay, dbus_glib_marshal_cam_video_BOOLEAN__BOXED_POINTER_POINTER, 625 },
 };
 
 const DBusGObjectInfo dbus_glib_cam_video_object_info = {  1,
   dbus_glib_cam_video_methods,
-  10,
-"ca.krontech.chronos.video\0get\0S\0names\0I\0as\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0set\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0flush\0S\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0configure\0S\0args\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0livedisplay\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0overlay\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0\0",
+  11,
+"ca.krontech.chronos.video\0get\0S\0names\0I\0as\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0set\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0describe\0S\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0status\0S\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0flush\0S\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0configure\0S\0args\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0playback\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0livedisplay\0S\0args\0I\0a{sv}\0data\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0recordfile\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0stop\0S\0status\0O\0F\0N\0a{sv}\0\0ca.krontech.chronos.video\0overlay\0S\0settings\0I\0a{sv}\0status\0O\0F\0N\0a{sv}\0\0\0",
 "ca.krontech.chronos.video\0sof\0ca.krontech.chronos.video\0eof\0ca.krontech.chronos.video\0segment\0ca.krontech.chronos.video\0update\0\0",
 "\0"
 };

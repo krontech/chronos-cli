@@ -55,6 +55,7 @@ which implements the methods:
 | [`status`](#status)           |            | Return the status of the video pipeline.
 | [`get`](#get)                 | `as`       | Retrieve the value of one or more parameters.
 | [`set`](#set)                 | `a{sv}`    | Change the value of one or more parameters.
+| [`describe`](#describe)       |            | Return a dictionary describing the available parameters.
 | [`flush`](#flush)             |            | Clear recorded video and return to live display mode.
 | [`playback`](#playback)       | `a{sv}`    | Control the frame position and playback rate.
 | [`configure`](#configure)     | `a{sv}`    | Configure video settings.
@@ -100,6 +101,16 @@ set
 ---
 This method takes as input a hash map with the parameter values to be configured on
 the video system.
+
+describe
+--------
+This method returns a nested dictionary describing the available parameters on the
+video system. Each parameter will be a key in the dictionary, and the value will
+be a nested dictionary containing three booleans:
+ * `get`: Indicates whether the parameter can be retrieved via the `get` method.
+ * `set`: Indicates whether the parameter can be modified via the `set` method.
+ * `notifies`: Indicates whether changes to the parameter's value will be reported
+   with the `update` signal.
 
 flush
 -----

@@ -12,6 +12,9 @@
       <arg name="args" direction="in" type="a{sv}"/>
       <arg name="data" direction="out" type="a{sv}"/>
     </method>
+    <method name="describe">
+      <arg name="data" direction="out" type="a{sv}"/>
+    </method>
     <method name="status">
       <arg name="data" direction="out" type="a{sv}"/>
     </method>

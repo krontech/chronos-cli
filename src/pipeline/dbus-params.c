@@ -209,8 +209,8 @@ cam_playback_length_setter(struct pipeline_state *state, const struct pipeline_p
 }
 
 /* Table of parameters. */
-const struct pipeline_param cam_dbus_params[] = {
-    { "videoState",         G_TYPE_STRING,  0, cam_video_state_getter, NULL },
+static const struct pipeline_param cam_dbus_params[] = {
+    { "videoState",         G_TYPE_STRING,  0, cam_video_state_getter, NULL},
     /* Exposure and focus aids. */
     { "overlayEnable",      G_TYPE_BOOLEAN, offsetof(struct pipeline_state, overlay.enable), NULL, cam_overlay_enable_setter},
     { "overlayFormat",      G_TYPE_STRING,  offsetof(struct pipeline_state, overlay.format), NULL, cam_overlay_format_setter},
@@ -300,4 +300,21 @@ dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval)
     }
     /* Otherwise, no such parameter exists with that name. */
     return FALSE;
+}
+
+GHashTable *
+dbus_describe_params(struct pipeline_state *state)
+{
+    const struct pipeline_param *p;
+    GHashTable *h = cam_dbus_dict_new();
+
+    for (p = cam_dbus_params; p->name; p++) {
+        GHashTable *desc = cam_dbus_dict_new();
+        cam_dbus_dict_add_boolean(desc, "get", TRUE);
+        cam_dbus_dict_add_boolean(desc, "set", p->setter != NULL);
+        /* TODO: Need more implementation for notifies. */
+        cam_dbus_dict_add_boolean(desc, "notifies", FALSE);
+        cam_dbus_dict_add_dict(h, p->name, desc);
+    }
+    return h;
 }

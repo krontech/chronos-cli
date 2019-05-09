@@ -175,6 +175,7 @@ void dbus_signal_segment(struct pipeline_state *state);
 void dbus_signal_update(struct pipeline_state *state, const char **names);
 gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
 gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval);
+GHashTable *dbus_describe_params(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);

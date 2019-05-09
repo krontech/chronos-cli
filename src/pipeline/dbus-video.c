@@ -169,6 +169,13 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
 }
 
 static gboolean
+cam_video_describe(CamVideo *vobj, GHashTable **data, GError *error)
+{
+    *data = dbus_describe_params(vobj->state);
+    return (*data != NULL);
+}
+
+static gboolean
 cam_video_flush(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
