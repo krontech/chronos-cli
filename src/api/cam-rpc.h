@@ -126,13 +126,15 @@ cam_dbus_dict_add_printf(GHashTable *h, const char *name, const char *fmt, ...)
 }
 
 static inline void
-cam_dbus_dict_add_dict(GHashTable *h, const char *name, GHashTable *value)
+cam_dbus_dict_take_boxed(GHashTable *h, const char *name, GType type, gpointer value)
 {
     GValue *gval;
     if (h && (gval = g_new0(GValue, 1))) {
-        g_value_init(gval, CAM_DBUS_HASH_MAP);
-        g_value_take_boxed(gval, g_boxed_copy(G_TYPE_HASH_TABLE, value));
+        g_value_init(gval, type);
+        g_value_take_boxed(gval, value);
         cam_dbus_dict_add(h, name, gval);
+    } else {
+        g_boxed_free(type, value);
     }
 }
 

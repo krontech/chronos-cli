@@ -310,11 +310,12 @@ dbus_describe_params(struct pipeline_state *state)
 
     for (p = cam_dbus_params; p->name; p++) {
         GHashTable *desc = cam_dbus_dict_new();
+        if (!desc) continue;
         cam_dbus_dict_add_boolean(desc, "get", TRUE);
         cam_dbus_dict_add_boolean(desc, "set", p->setter != NULL);
         /* TODO: Need more implementation for notifies. */
         cam_dbus_dict_add_boolean(desc, "notifies", FALSE);
-        cam_dbus_dict_add_dict(h, p->name, desc);
+        cam_dbus_dict_take_boxed(h, p->name, CAM_DBUS_HASH_MAP, desc);
     }
     return h;
 }
