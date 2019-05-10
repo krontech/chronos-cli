@@ -146,14 +146,30 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
     const char **names = (const char **)g_new0(char *, g_hash_table_size(args) + 1);
     int i = 0;
 
+    GHashTable *errdict = cam_dbus_dict_new();
+    char err[PIPELINE_ERROR_MAXLEN];
+    int errcount = 0;
+
     GHashTableIter iter;
     gpointer key, value;
 
     g_hash_table_iter_init(&iter, args);
     while (g_hash_table_iter_next(&iter, &key, &value)) {
-        if (dbus_set_param(state, key, value)) {
+        if (dbus_set_param(state, key, value, err)) {
             if (names) names[i++] = key;
+        } else {
+            err[sizeof(err)-1] = '\0';
+            cam_dbus_dict_add_string(errdict, key, err);
+            errcount++;
         }
+    }
+
+    /* Return the dict of set values. */
+    *data = cam_dbus_video_get(state, names);
+    if (errdict) {
+        cam_dbus_dict_take_boxed(*data, "error", CAM_DBUS_HASH_MAP, errdict);
+    } else {
+        cam_dbus_dict_free(errdict);
     }
     
     /* Generate an update signal for any parameters that were set. */
@@ -161,8 +177,6 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
         if (i) dbus_signal_update(state, names);
         g_free(names);
     }
-
-    *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
 

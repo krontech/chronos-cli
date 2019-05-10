@@ -105,6 +105,8 @@ struct overlay_config {
 #define CAMERA_SERIAL_LENGTH    32
 #define CAMERA_SERIAL_OFFSET    0
 
+#define PIPELINE_ERROR_MAXLEN   80
+
 struct pipeline_state {
     pthread_t           mainthread;
     GMainLoop           *mainloop;
@@ -116,7 +118,7 @@ struct pipeline_state {
     const struct ioport *iops;
     int                 write_fd;
     void *              scratchpad;
-    char                error[80];
+    char                error[PIPELINE_ERROR_MAXLEN];
     
     /* Camera information */
     char                serial[CAMERA_SERIAL_LENGTH+1];
@@ -182,7 +184,7 @@ void dbus_signal_eof(struct pipeline_state *state, const char *err);
 void dbus_signal_segment(struct pipeline_state *state);
 void dbus_signal_update(struct pipeline_state *state, const char **names);
 gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
-gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval);
+gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err);
 GHashTable *dbus_describe_params(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */

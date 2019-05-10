@@ -35,7 +35,7 @@ struct pipeline_param {
     size_t      offset;
     const void *extra;
     /* Complex parameters - callbacks to do translation and stateful stuff. */
-    gboolean    (*setter)(struct pipeline_state *state, const struct pipeline_param *param, GValue *val);
+    gboolean    (*setter)(struct pipeline_state *state, const struct pipeline_param *param, GValue *val, char *err);
 };
 
 struct enumval playback_states[] = {
@@ -50,7 +50,7 @@ struct enumval focus_peak_colors[] = {
     { 0,                            "black"},
     {DISPLAY_CTL_FOCUS_PEAK_RED,    "red"},
     {DISPLAY_CTL_FOCUS_PEAK_GREEN,  "green"},
-    {DISPLAY_CTL_FOCUS_PEAK_RED,    "blue"},
+    {DISPLAY_CTL_FOCUS_PEAK_BLUE,   "blue"},
     {DISPLAY_CTL_FOCUS_PEAK_CYAN,   "cyan"},
     {DISPLAY_CTL_FOCUS_PEAK_MAGENTA, "magenta"},
     {DISPLAY_CTL_FOCUS_PEAK_YELLOW, "yellow"},
@@ -59,47 +59,7 @@ struct enumval focus_peak_colors[] = {
 };
 
 static gboolean
-enumval_parse_gval(const struct enumval *e, GValue *gval, int *result)
-{
-    /* If the value holds a string, search for a match. */
-    if (G_VALUE_HOLDS_STRING(gval)) {
-        const char *name;
-        for (name = g_value_get_string(gval); e->name; e++) {
-            if (strcasecmp(e->name, name) == 0) {
-                *result = e->value;
-                return TRUE;
-            }
-        }
-        return FALSE;
-    }
-    /* Although not recommended, also accept an integer. */
-    if (G_VALUE_HOLDS_UINT(gval)) {
-        *result = (int)g_value_get_uint(gval);
-    }
-    else if (G_VALUE_HOLDS_ULONG(gval)) {
-        *result = (int)g_value_get_ulong(gval);
-    }
-    else if (G_VALUE_HOLDS_INT(gval)) {
-        *result = g_value_get_int(gval);
-    }
-    else if (G_VALUE_HOLDS_LONG(gval)) {
-        *result = (int)g_value_get_long(gval);
-    }
-    else {
-        return FALSE;
-    }
-    /* Finally, ensure it's a valid enumerated value. */
-    while (e->name) {
-        if (e->value == *result) {
-            return TRUE;
-        }
-        e++;
-    }
-    return FALSE;
-}
-
-static gboolean
-cam_focus_peak_color_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_focus_peak_color_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->config.peak_color = g_value_get_int(val);
     state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
@@ -116,7 +76,7 @@ cam_focus_peak_color_setter(struct pipeline_state *state, const struct pipeline_
 }
 
 static gboolean
-cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     /* Parse and set the focus peaking level. */
     double fplevel = g_value_get_double(val);
@@ -142,7 +102,7 @@ cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_
 }
 
 static gboolean
-cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->overlay.enable = g_value_get_boolean(val);
     if (state->playstate == PLAYBACK_STATE_PLAY) overlay_setup(state);
@@ -150,35 +110,35 @@ cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_pa
 }
 
 static gboolean
-cam_overlay_format_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_overlay_format_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     strncpy(state->overlay.format, g_value_get_string(val), sizeof(state->overlay.format));
     return TRUE;
 }
 
 static gboolean
-cam_playback_position_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_playback_position_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->position = g_value_get_long(val);
     return TRUE;
 }
 
 static gboolean
-cam_playback_rate_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_playback_rate_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->playrate = g_value_get_long(val);
     return TRUE;
 }
 
 static gboolean
-cam_playback_start_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_playback_start_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->playstart = g_value_get_ulong(val);
     return TRUE;
 }
 
 static gboolean
-cam_playback_length_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
+cam_playback_length_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->playlength = g_value_get_ulong(val);
     return TRUE;
@@ -244,41 +204,91 @@ dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data)
     return FALSE;
 }
 
+
+static gboolean
+dbus_set_enum(struct pipeline_state *state, const struct pipeline_param *p, GValue *gval, char *err)
+{
+    const struct enumval *e = p->extra;
+    GValue gv_int = G_VALUE_INIT;
+    g_value_init(&gv_int, G_TYPE_INT);
+
+    /* If the value holds a string, search for a match. */
+    if (G_VALUE_HOLDS_STRING(gval)) {
+        const char *ename;
+        for (ename = g_value_get_string(gval); e->name; e++) {
+            if (strcasecmp(e->name, ename) == 0) {
+                g_value_set_int(&gv_int, e->value);
+                return p->setter(state, p, &gv_int, err);
+            }
+        }
+        snprintf(err, PIPELINE_ERROR_MAXLEN, "\'%s\' is not valid for parameter \'%s\'", ename, p->name);
+        return FALSE;
+    }
+
+    /* Although not recommended, also accept an integer. */
+    if (G_VALUE_HOLDS_UINT(gval)) {
+        g_value_set_int(&gv_int, g_value_get_uint(gval));
+    }
+    else if (G_VALUE_HOLDS_ULONG(gval)) {
+        g_value_set_int(&gv_int, g_value_get_ulong(gval));
+    }
+    else if (G_VALUE_HOLDS_INT(gval)) {
+        g_value_set_int(&gv_int, g_value_get_int(gval));
+    }
+    else if (G_VALUE_HOLDS_LONG(gval)) {
+        g_value_set_int(&gv_int, g_value_get_long(gval));
+    }
+    else {
+        return FALSE;
+    }
+
+    /* Finally, ensure it's a valid enumerated value. */
+    while (e->name) {
+        if (e->value == g_value_get_int(&gv_int)) {
+            return p->setter(state, p, &gv_int, err);
+        }
+        e++;
+    }
+    snprintf(err, PIPELINE_ERROR_MAXLEN, "\'%d\' is not valid for parameter \'%s\'", g_value_get_int(&gv_int), p->name);
+    return FALSE;
+}
+
 gboolean
-dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval)
+dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err)
 {
     const struct pipeline_param *p;
-    GValue xform;
+    GValue xform = G_VALUE_INIT;
     void *pvalue;
 
     for (p = cam_dbus_params; p->name; p++) {
         /* Look for a matching parameter by name. */
         if (strcasecmp(p->name, name) != 0) continue;
-        if (!p->setter) return FALSE;
+        if (!p->setter) {
+            snprintf(err, PIPELINE_ERROR_MAXLEN, "parameter \'%s\' is read only", name);
+            return FALSE;
+        }
 
         /* Type transformation if necessary. */
-        memset(&xform, 0, sizeof(xform));
         if (p->type == G_TYPE_ENUM) {
-            int result;
-            if (!enumval_parse_gval(p->extra, gval, &result)) return FALSE;
-            g_value_init(&xform, G_TYPE_INT);
-            g_value_set_int(&xform, result);
-            return p->setter(state, p, &xform);
+            return dbus_set_enum(state, p, gval, err);
         }
         /* If the value holds the expected type - then set it. */
         else if (G_VALUE_HOLDS(gval, p->type)) {
-            return p->setter(state, p, gval);
+            return p->setter(state, p, gval, err);
         }
 
         /* Otherwise, try our best to transform the type and set it. */
         g_value_init(&xform, p->type);
         if (g_value_transform(gval, &xform)) {
-            return p->setter(state, p, &xform);
+            return p->setter(state, p, &xform, err);
         }
         /* The user gave us a type we couldn't make sense of. */
+        snprintf(err, PIPELINE_ERROR_MAXLEN, "unable to parse parameter \'%s\'", name);
         return FALSE;
     }
+
     /* Otherwise, no such parameter exists with that name. */
+    snprintf(err, PIPELINE_ERROR_MAXLEN, "no such parameter \'%s\' exists", name);
     return FALSE;
 }
 
