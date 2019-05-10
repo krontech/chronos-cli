@@ -52,14 +52,18 @@ struct enumval focus_peak_colors[] = {
 static void
 cam_video_state_getter(struct pipeline_state *state, const struct pipeline_param *param, GHashTable *data)
 {
-    switch (state->mode) {
-        case PIPELINE_MODE_PAUSE:
+    switch (state->playstate) {
+        case PLAYBACK_STATE_PAUSE:
+        default:
             cam_dbus_dict_add_string(data, param->name, "paused");
             break;
-        case PIPELINE_MODE_PLAY:
-            cam_dbus_dict_add_string(data, param->name, (state->position >= 0) ? "playback" : "live");
+        case PLAYBACK_STATE_LIVE:
+            cam_dbus_dict_add_string(data, param->name, "live");
             break;
-        default:
+        case PLAYBACK_STATE_PLAY:
+            cam_dbus_dict_add_string(data, param->name, "playback");
+            break;
+        case PLAYBACK_STATE_FILESAVE:
             cam_dbus_dict_add_string(data, param->name, "filesave");
             break;
     }
@@ -140,7 +144,7 @@ cam_focus_peak_color_setter(struct pipeline_state *state, const struct pipeline_
     }
 
     /* Update the FPGA if we're in live mode. */
-    if ((state->mode == PIPELINE_MODE_PLAY) && (state->position < 0)) {
+    if (state->playstate == PLAYBACK_STATE_LIVE) {
         uint32_t dcontrol = state->fpga->display->control;
         dcontrol &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_COLOR_MODE);
         dcontrol &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
@@ -159,7 +163,7 @@ cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_
     state->config.peak_level = fplevel;
 
     /* Update the FPGA directly if already in live mode. */
-    if ((state->mode == PIPELINE_MODE_PLAY) && (state->position < 0)) {
+    if (state->playstate == PLAYBACK_STATE_LIVE) {
         state->fpga->display->peaking_thresh = 35 - (20 * fplevel);
     }
     return TRUE;
@@ -169,7 +173,7 @@ static gboolean
 cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_param *param, GValue *val)
 {
     state->overlay.enable = g_value_get_boolean(val);
-    if (state->mode == PIPELINE_MODE_PLAY) overlay_setup(state);
+    if (state->playstate == PLAYBACK_STATE_PLAY) overlay_setup(state);
     return TRUE;
 }
 
@@ -214,7 +218,7 @@ static const struct pipeline_param cam_dbus_params[] = {
     /* Exposure and focus aids. */
     { "overlayEnable",      G_TYPE_BOOLEAN, offsetof(struct pipeline_state, overlay.enable), NULL, cam_overlay_enable_setter},
     { "overlayFormat",      G_TYPE_STRING,  offsetof(struct pipeline_state, overlay.format), NULL, cam_overlay_format_setter},
-    { "focusPeakingColor",  G_TYPE_STRING,  0, cam_focus_peak_color_getter, cam_focus_peak_color_setter },
+    { "focusPeakingColor",  G_TYPE_STRING,  0, cam_focus_peak_color_getter, cam_focus_peak_color_setter},
     { "focusPeakingLevel",  G_TYPE_DOUBLE,  offsetof(struct pipeline_state, config.peak_level), NULL, cam_focus_peak_level_setter},
     { "zebraLevel",         G_TYPE_DOUBLE,  offsetof(struct pipeline_state, config.zebra_level), NULL, NULL},
     /* Playback position and rate. */

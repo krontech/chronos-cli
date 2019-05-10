@@ -163,17 +163,13 @@ be disabled.
 
 livedisplay
 -----------
-Switches the pipeline to live display mode, and optionally reconfigures the
-video resolution to receive from the FPGA. If both `hres` and `vres` are zero,
-this is interpreted as a request to switch to live display without any
-configuration changes.
+Switches the pipeline to live display mode and optionally configured video cropping
+and setup aids.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
-| `"hres"`          | `int`     | The horizontal resolution of live video.
-| `"vres"`          | `uint`    | The vertical resolution of live video.
 | `"cropx"`         | `uint`    | The horizontal video crop size (default: 0).
 | `"cropy"`         | `uint`    | The vertical video crop size (defualt: 0).
 | `"startx"`        | `uint`    | The horizontal starting offset for cropped video (default: 0).

@@ -226,6 +226,26 @@ static const struct regtab vram_registers[] = {
 };
 
 /*-------------------------------------
+ * Imager Control Registers
+ *-------------------------------------
+ */
+static const struct regtab imager_registers[] = {
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, identifier),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, version),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, subver),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, status),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, control),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, clk_phase),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, sync_token),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, fifo_start),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, fifo_stop),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, hres_count),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, vres_count),
+    REG_STRUCT(struct fpga_imager, FPGA_IMAGER_BASE, data_correct),
+    {NULL, 0, 0, 0}
+};
+
+/*-------------------------------------
  * Overlay Control Registers
  *-------------------------------------
  */
@@ -521,6 +541,7 @@ main(int argc, char *const argv[])
     print_reg_group(stdout, config_registers, fpga, "Config");
     print_reg_group(stdout, vram_registers, fpga, "Video RAM");
     print_reg_group(stdout, overlay_registers, fpga, "Overlay");
+    print_reg_group(stdout, imager_registers, fpga, "Imager");
 
     /* Read the Luxima chip ID. */
     chipid = sci_read_chipid(fpga);

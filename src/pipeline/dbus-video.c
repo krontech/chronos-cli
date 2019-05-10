@@ -42,18 +42,16 @@ static GHashTable *
 cam_dbus_video_status(struct pipeline_state *state)
 {
     GHashTable *dict = cam_dbus_dict_new();
-    int mode = state->mode;
     if (!dict) return NULL;
-    if (mode == PIPELINE_MODE_PAUSE) mode = state->next; /* Transition in progress. */
 
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-    cam_dbus_dict_add_boolean(dict, "playback", (state->mode == PIPELINE_MODE_PLAY) && (state->position >= 0));
-    cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(mode));
+    cam_dbus_dict_add_boolean(dict, "playback", (state->playstate == PLAYBACK_STATE_PLAY));
+    cam_dbus_dict_add_boolean(dict, "filesave", (state->playstate == PLAYBACK_STATE_FILESAVE));
     cam_dbus_dict_add_uint(dict, "totalFrames", state->seglist.totalframes);
     cam_dbus_dict_add_uint(dict, "totalSegments", state->seglist.totalsegs);
     cam_dbus_dict_add_int(dict, "position", state->position);
     cam_dbus_dict_add_uint(dict, "segment", 0);
-    if (PIPELINE_IS_SAVING(mode)) {
+    if (state->playstate == PLAYBACK_STATE_FILESAVE) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
         cam_dbus_dict_add_float(dict, "framerate", estrate);
         cam_dbus_dict_add_string(dict, "filename", state->args.filename);
@@ -250,7 +248,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     }
 
     /* Apply Changes. */
-    if (state->mode == PIPELINE_MODE_PLAY) {
+    if (state->playstate == PLAYBACK_STATE_PLAY) {
         uint32_t dcontrol;
         if (diff) cam_lcd_reconfig(state, &state->config);
 
@@ -270,23 +268,11 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     struct pipeline_state *state = vobj->state;
     unsigned long diff = 0;
     unsigned int  flip = cam_dbus_dict_get_boolean(args, "flip", state->source.flip);
-    unsigned long hres = cam_dbus_dict_get_uint(args, "hres", 0);
-    unsigned long vres = cam_dbus_dict_get_uint(args, "vres", 0);
     unsigned long cropx = cam_dbus_dict_get_uint(args, "cropx", 0);
     unsigned long cropy = cam_dbus_dict_get_uint(args, "cropy", 0);
     unsigned long startx = cam_dbus_dict_get_uint(args, "startx", 0);
     unsigned long starty = cam_dbus_dict_get_uint(args, "starty", 0);
     gboolean zebra_en = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra_level > 0.0);
-
-    /* Sanity check the input resolutions. */
-    if ((hres == 0) && (vres != 0)) {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing argument: hres");
-        return 0;
-    }
-    if ((hres != 0) && (vres == 0)) {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing argument: vres");
-        return 0;
-    }
 
     /* Update the live display flags. */
     state->args.mode = PIPELINE_MODE_PLAY;
@@ -311,26 +297,12 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
     }
 
-    /* Interpret zero size as 'use existing size'. */
-    if ((hres == 0) && (vres == 0)) {
-        hres = state->source.hres;
-        vres = state->source.vres;
-    }
-
-    /* Check if the FPGA was changed out from under us. */
-    diff |= (state->source.hres ^ state->fpga->display->h_res);
-    diff |= (state->source.vres ^ state->fpga->display->v_res);
-
     /* Check if resolution has changed. */
-    diff |= (hres ^ state->source.hres);
-    diff |= (vres ^ state->source.vres);
     diff |= (flip ^ state->source.flip);
     diff |= (cropx ^ state->source.cropx);
     diff |= (cropy ^ state->source.cropy);
     diff |= (startx ^ state->source.startx);
     diff |= (starty ^ state->source.starty);
-    state->source.hres = hres;
-    state->source.vres = vres;
     state->source.flip = flip;
     state->source.cropx = cropx;
     state->source.cropy = cropy;
@@ -338,16 +310,18 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     state->source.starty = starty;
 
     /* If not in playback mode, a restart is required. */
-    if (state->mode != PIPELINE_MODE_PLAY) {
+    state->args.mode = PIPELINE_MODE_LIVE;
+    if ((state->playstate != PLAYBACK_STATE_PLAY) && (state->playstate != PLAYBACK_STATE_LIVE)) {
         cam_pipeline_restart(state);
     }
-    /* If resolution or cropping has changed, a restart is required. */
+    /* If cropping geometry has changed, a restart is required. */
     else if (diff) {
         cam_pipeline_restart(state);
     }
-    
-    /* Go to live. */
-    playback_live(state);
+    /* Otherwise, go directly to live. */
+    else {
+        playback_live(state);
+    }
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -378,7 +352,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     strcpy(state->args.filename, filename);
 
     /* Make sure that an encoding operation is not already in progress. */
-    if (PIPELINE_IS_SAVING(state->mode)) {
+    if (state->playstate == PLAYBACK_STATE_FILESAVE) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Encoding in progress");
         return 0;
     }
@@ -485,7 +459,7 @@ cam_video_overlay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **
     }
 
     /* Update the overlay configuration in playback modes. */
-    if (state->mode == PIPELINE_MODE_PLAY) {
+    if (state->playstate == PLAYBACK_STATE_PLAY) {
         overlay_setup(state);
     }
 
