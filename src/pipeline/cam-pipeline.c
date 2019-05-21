@@ -77,7 +77,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     state->source.vres = state->fpga->imager->vres_count;
     if ((state->source.hres == 0) || (state->source.hres > PIPELINE_MAX_HRES) ||
         (state->source.vres == 0) || (state->source.vres > PIPELINE_MAX_VRES)) {
-        strcpy(state->error, "Invalid source resolution");
+        sprintf(state->error, "Invalid source resolution (%dx%d)", state->source.hres, state->source.vres);
         return NULL;
     }
 
