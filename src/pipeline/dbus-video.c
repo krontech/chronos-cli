@@ -97,12 +97,25 @@ static GHashTable *
 cam_dbus_video_get(struct pipeline_state *state, const char **names)
 {
     int i;
+    int errcount = 0;
     GHashTable *dict = cam_dbus_dict_new();
+    GHashTable *errdict = cam_dbus_dict_new();
     if (!dict) return NULL;
 
     for (i = 0; names[i] != NULL; i++) {
-        dbus_get_param(state, names[i], dict);
+        if (!dbus_get_param(state, names[i], dict)) {
+            cam_dbus_dict_add_string(errdict, names[i], "Unknown parameter");
+            errcount++;
+        }
     }
+
+    /* Include an error dictionary for anything that couldn't be found. */
+    if (errcount) {
+        cam_dbus_dict_take_boxed(dict, "error", CAM_DBUS_HASH_MAP, errdict);
+    } else {
+        cam_dbus_dict_free(errdict);
+    }
+    
     return dict;
 }
 

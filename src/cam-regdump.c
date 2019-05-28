@@ -226,6 +226,22 @@ static const struct regtab vram_registers[] = {
 };
 
 /*-------------------------------------
+ * Sequencer Program Registers
+ *-------------------------------------
+ */
+static const struct regtab seqpgm_registers[] = {
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, identifier),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, version),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, subver),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, control),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, status),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, frame_write),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, frame_read),
+    REG_STRUCT(struct fpga_seqpgm, FPGA_SEQPGM_BASE, block_count),
+    {NULL, 0, 0, 0}
+};
+
+/*-------------------------------------
  * Imager Control Registers
  *-------------------------------------
  */
@@ -540,6 +556,7 @@ main(int argc, char *const argv[])
     print_reg_group(stdout, display_registers, fpga, "Display");
     print_reg_group(stdout, config_registers, fpga, "Config");
     print_reg_group(stdout, vram_registers, fpga, "Video RAM");
+    print_reg_group(stdout, seqpgm_registers, fpga, "Sequencer Program");
     print_reg_group(stdout, overlay_registers, fpga, "Overlay");
     print_reg_group(stdout, imager_registers, fpga, "Imager");
 

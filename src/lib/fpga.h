@@ -210,6 +210,21 @@ struct fpga_vram {
 #define VRAM_CTL_TRIG_READ  (1 << 0)
 #define VRAM_CTL_TRIG_WRITE (1 << 1)
 
+/* Sequencer Programming Registers */
+struct fpga_seqpgm {
+    uint32_t identifier;
+    uint32_t version;
+    uint32_t subver;
+    uint32_t control;
+    uint32_t status;
+    uint32_t frame_write;
+    uint32_t frame_read;
+    uint32_t __reserved0[1];
+    uint32_t block_count;
+};
+
+#define SEQPGM_IDENTIFIER   0x20
+
 /* Zebra-stripes configuration module. */
 struct fpga_zebra {
     uint32_t identifier;
