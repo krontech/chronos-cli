@@ -439,6 +439,16 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
 }
 
 static gboolean
+cam_video_pause(CamVideo *vobj, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    state->args.mode = PIPELINE_MODE_PAUSE;
+    cam_pipeline_restart(state);
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
+}
+
+static gboolean
 cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;

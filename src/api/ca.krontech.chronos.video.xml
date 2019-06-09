@@ -37,6 +37,9 @@
       <arg name="settings" direction="in" type="a{sv}"/>
       <arg name="status" direction="out" type="a{sv}"/>
     </method>
+    <method name="pause">
+      <arg name="status" direction="out" type="a{sv}"/>
+    </method>
     <method name="stop">
       <arg name="status" direction="out" type="a{sv}"/>
     </method>
