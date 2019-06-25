@@ -146,8 +146,8 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
-    /* Attempt to create the TCP sink */
-    sinkpad = cam_network_sink(state);
+    /* Attempt to create a live record sink */
+    sinkpad = cam_liverec_sink(state);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
@@ -937,6 +937,11 @@ main(int argc, char * argv[])
             }
             close(state->write_fd);
             state->write_fd = -1;
+        }
+
+        if (state->liverec_fd >= 0) {
+            close(state->liverec_fd);
+            state->liverec_fd = -1;
         }
 
         /* Add an extra newline thanks to OMX debug crap... */
