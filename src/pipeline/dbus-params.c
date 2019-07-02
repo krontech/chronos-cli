@@ -215,7 +215,7 @@ static gboolean
 dbus_set_enum(struct pipeline_state *state, const struct pipeline_param *p, GValue *gval, char *err)
 {
     const struct enumval *e = p->extra;
-    GValue gv_int = G_VALUE_INIT;
+    GValue gv_int;
     g_value_init(&gv_int, G_TYPE_INT);
 
     /* If the value holds a string, search for a match. */
@@ -263,7 +263,7 @@ gboolean
 dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err)
 {
     const struct pipeline_param *p;
-    GValue xform = G_VALUE_INIT;
+    GValue xform;
     void *pvalue;
 
     for (p = cam_dbus_params; p->name; p++) {

@@ -1,5 +1,6 @@
-chronos-cli (0.4.0~alpha13) unstable; urgency=medium
+chronos-cli (0.4.0~alpha14) unstable; urgency=medium
 
+  * Fix compile errors on Glib version < 2.28
   * Add pause method to disable video stream.
   * Geenrate 'error' when getting non-existent properties.
   * Create parent directories when saving DNG/TIFF.
@@ -15,4 +16,4 @@ chronos-cli (0.4.0~alpha13) unstable; urgency=medium
   * Add DBus-to-JSON parsing for array types.
   * Upstream release v0.4.0-alpha
 
- -- Owen Kirby <oskirby@gmail.com>  Sat, 08 Jun 2019 21:35:49 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Tue, 02 Jul 2019 13:05:57 -0700
