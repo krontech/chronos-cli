@@ -3,5 +3,6 @@ usr/bin/cam-listener
 usr/bin/cam-loader
 usr/bin/cam-recover
 usr/bin/cam-regdump
+usr/bin/fw-logger
 scripts/automount.sh lib/udev
 scripts/90-media-automount.rules lib/udev/rules.d

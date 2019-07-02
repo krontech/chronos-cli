@@ -43,8 +43,6 @@
 #include "gst/gstneon.h"
 #include "gst/gstgifsrc.h"
 
-#define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
-
 /* Signal handlering */
 static struct pipeline_state cam_global_state = {0};
 static sig_atomic_t catch_sigint = 0;
@@ -536,24 +534,6 @@ handle_sighup(gpointer data)
     }
 }
 
-/* In modern Glib, this is a one-line call... */
-//#if GLIB_CHECK_VERSION(2, 30, 0)
-#if 0
-
-#include <glib-unix.h>
-
-static int
-signals_init(struct pipeline_state *state)
-{
-    /* Shutdown and cleanup on SIGINT and SIGTERM  */    
-    g_unix_signal_add(SIGTERM, handle_sigint, state);
-    g_unix_signal_add(SIGINT, handle_sigint, state);
-    /* Reconfigure the pipeline on SIGHUP */
-    g_unix_signal_add(SIGHUP, handle_sighup, state);
-    return 0;
-}
-
-#else
 /*
  * The old Arago-based systems don't have signal handling helpers
  * in Glib so we need to roll our own using the self-pipe trick.
@@ -649,7 +629,6 @@ signals_init(struct pipeline_state *state)
     signal(SIGHUP,  g_unix_signal_handler);
     return 0;
 }
-#endif
 
 /*===============================================
  * Pipeline Main Entry Point
