@@ -3,7 +3,7 @@ Video Pipeline Daemon
 
 The `cam-pipeline` program is responsible for managing the multimedia pipeline
 of the camera. This program connects the video stream from the FPGA to the
-output output devices on the camera. This pipeline can operate in one of three
+output devices on the camera. This pipeline can operate in one of three
 modes at any given time: live display, video playback, and video file saving.
 
 In live display mode, the FPGA is capturing data off the image sensor, and will
@@ -14,7 +14,7 @@ device (LCD, HDMI and RTSP streams).
 In playback mode, the FPGA is replaying video from its internal memory buffer
 and the pipeline daemon is given control of the playback position and framerate
 of the video stream. Upon entering playback mode, the video will be paused on
-the first frame in memory, but the playback rate and position can be cahnged
+the first frame in memory, but the playback rate and position can be changed
 using the `playback` function.
 
 In filesave mode, the FPGA replays video in the same manner as playback mode,
