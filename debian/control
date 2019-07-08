@@ -24,7 +24,7 @@ Description: Video daemon for the Chronos Camera
  playback, encoders and file saving operations for the Chronos
  high speed camera.
 
-Package: chronos-upower
+Package: chronos-pcUtil
 Architecture: armel
 Depends: ${shlib:Depends}, ${misc:Depends}
 Description: Power control daemon for the Chronos Camera

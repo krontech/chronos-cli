@@ -1,6 +1,6 @@
 #!/bin/sh
 ### BEGIN INIT INFO
-# Provides:          chronos-upower
+# Provides:          chronos-pcUtil
 # Required-Start:
 # Required-Stop:
 # Should-Start:
@@ -12,21 +12,21 @@
 
 . /lib/lsb/init-functions
 
-DAEMON=/usr/bin/cam-upower
-PIDFILE=/var/run/cam-upower.pid
+DAEMON=/usr/bin/cam-pcUtil
+PIDFILE=/var/run/cam-pcUtil.pid
 
 test -x $DAEMON || exit 5
 
 case $1 in
 	start)
-		log_daemon_msg "Starting Camera Power daemon" "cam-upower"
+		log_daemon_msg "Starting Camera Power daemon" "cam-pcUtil"
 		start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --startas $DAEMON -- -d
 		status=$?
 		log_end_msg $?
 		;;
 	
 	stop)
-		log_daemon_msg "Stopping Camera Power daemon" "cam-upower"
+		log_daemon_msg "Stopping Camera Power daemon" "cam-pcUtil"
 		start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE
 		log_end_msg $?
 		;;

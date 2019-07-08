@@ -1,6 +1,6 @@
 ## The stuff we want to build.
 noinst_LIBRARIES = libcamera.a
-bin_PROGRAMS = cam-pipeline cam-upower cam-pcUtil
+bin_PROGRAMS = cam-pipeline cam-pcUtil
 bin_PROGRAMS += cam-loader cam-regdump cam-recover
 bin_PROGRAMS += cam-json cam-listener
 bin_PROGRAMS += fw-logger
@@ -112,21 +112,12 @@ cam_pipeline_SOURCES += pipeline/gst/gstneon.c
 cam_pipeline_SOURCES += pipeline/gst/gstneonflip.c
 cam_pipeline_SOURCES += pipeline/gst/gstneon.h
 
-## Power control daemon [will be deprecated soon]
-cam_upower_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
-cam_upower_LDFLAGS = ${AM_LDFLAGS}
-cam_upower_LDADD = -lrt
-cam_upower_SOURCES = upower/cam-upower.c
-cam_upower_SOURCES += upower/pwrcmd.c
-cam_upower_SOURCES += upower/pwrcmd.h
-cam_upower_SOURCES += upower/mbcrc16.c
-cam_upower_SOURCES += upower/mbcrc16.h
-
+## Firmware logger for ti81xx video coprocessor debugging.
 fw_logger_CFLAGS = ${AM_CFLAGS} -I/usr/include/ti81xx
 fw_logger_SOURCES = fwlogger/loggerSMDump.c
 fw_logger_SOURCES += fwlogger/LoggerSM.c
 
-## Power control daemon [NEW]
+## Power control daemon
 cam_pcUtil_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_pcUtil_LDFLAGS = ${AM_LDFLAGS} -all-static
 cam_pcUtil_SOURCES = pcUtil/pcutil.cpp
