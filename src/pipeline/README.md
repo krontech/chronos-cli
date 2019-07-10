@@ -61,6 +61,7 @@ which implements the methods:
 | [`configure`](#configure)     | `a{sv}`    | Configure video settings.
 | [`livedisplay`](#livedisplay) | `a{sv}`    | Switch or configure live display mode.
 | [`recordfile`](#recordfile)   | `a{sv}`    | Encode and write video to a file.
+| [`liverecord`](#liverecord)	| `a{sv}`	 | Continuously record video and audio in real time and write to a file.
 | [`stop`](#stop)               |            | Terminate video encoding and return to playback mode.
 | [`overlay`](#overlay)         | `a{sv}`    | Configure an overlay text box for video and frame information.
 
@@ -209,6 +210,18 @@ The `format` field accepts a string to enumerate the output video format, suppor
 
 The `framerate` and `bitrate` fields are only used for H.264 compressed video formats, and are ignored
 for all other encoding formats.
+
+liverecord
+----------
+Record real-time video and audio and write a .mp4 file to the location provided. Stopping of liverecord
+mode is controlled by the [`stop`](#stop) method.
+
+| Input             | Type      | Description
+|:----------------- |:--------- |:--------------
+| `"filename"`      | `string`  | The destination file or directory to be written.
+| `"framerate"`     | `uint`    | The desired framerate of the encoded video file, in frames per second.
+| `"bitrate"`       | `uint`    | The maximum encoded bitrate for H.264 compressed video, in bits per second.
+| `"maxFilesize"`   | `uint`    | The maximum filesize to record before creating another file, in megabytes.
 
 stop
 ----

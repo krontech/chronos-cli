@@ -146,7 +146,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
-    /* Attempt to create a live record sink */
+    /* Create a live record sink */
     sinkpad = cam_liverec_sink(state);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");

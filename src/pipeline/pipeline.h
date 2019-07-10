@@ -30,6 +30,9 @@
 #define LIVE_MAX_FRAMERATE  60
 #define SAVE_MAX_FRAMERATE  230
 
+#define LIVEREC_MAX_BITRATE  6000000
+#define LIVEREC_MAX_FILESIZE 2147483648
+
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
 
@@ -65,6 +68,7 @@ struct pipeline_args {
     unsigned long   length;
     unsigned int    framerate;
     unsigned long   bitrate;
+    unsigned long   maxFilesize;
 };
 
 struct source_config {
