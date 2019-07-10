@@ -13,14 +13,13 @@
 #include "pcutil.h"
 #include "comms.h"
 #include "IntelHex.h"
+#include "socket.h"
 
 #include <sys/socket.h>
 #include <sys/un.h>
 
-#define error_message printf
 
-#define SOCK_PATH "/tmp/pcUtil.socket"
-#define UNIX_SOCKET_BUFFER_SIZE 256
+#define error_message printf
 
 void* rxThread(void *arg);
 pthread_t rxThreadID;
@@ -90,7 +89,6 @@ set_blocking (int fd, int should_block)
         if (tcsetattr (fd, TCSANOW, &tty) != 0)
                 error_message ("error %d setting term attributes", errno);
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -177,6 +175,7 @@ int main(int argc, char *argv[])
 		close(STDERR_FILENO);
 
     }
+
 
 	//Open serial port
 	sfd = open (portname, O_RDWR | O_NOCTTY | O_SYNC);
@@ -338,175 +337,7 @@ int main(int argc, char *argv[])
 	else if(0 == strcmp("-d", argv[1])) //start daemon, create unix stream socket
 	{
 
-		int sockDesc, connSockDesc, t, len;
-		struct sockaddr_un local, remote;
-		char str[UNIX_SOCKET_BUFFER_SIZE] = {'\0'};
-
-		/* Set up UNIX stream socket */
-		if ((sockDesc = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
-		{
-			perror("socket");
-			exit(1);
-		}
-
-		local.sun_family = AF_UNIX;
-		strcpy(local.sun_path, SOCK_PATH);
-		unlink(local.sun_path);
-		len = strlen(local.sun_path) + sizeof(local.sun_family);
-		if (bind(sockDesc, (struct sockaddr *) &local, len) == -1)
-		{
-			perror("bind");
-			exit(1);
-		}
-
-		if (listen(sockDesc, 1) == -1)
-		{
-			perror("listen");
-			exit(1);
-		}
-
-		for (;;) {
-			int done, numBytesRead;
-			printf("Waiting for a connection...\n");
-			t = sizeof(remote);
-			if ((connSockDesc = accept(sockDesc, (struct sockaddr *) &remote, (socklen_t*) &t)) == -1)
-			{
-				perror("accept");
-				sleep(1); //Accept is set for non-blocking mode, sleep to save cpu cycles.
-			}
-
-			done = 0;
-			do {
-
-				memset(str,'\0',UNIX_SOCKET_BUFFER_SIZE); //clear the buffer before receiving new data
-				numBytesRead = recv(connSockDesc, str, UNIX_SOCKET_BUFFER_SIZE, MSG_DONTWAIT);
-
-				if (numBytesRead <= 0)
-				{
-
-					retVal = getBatteryData(&bd);
-
-					if(retVal)
-					{
-						sprintf(str,
-								"battCapacityPercent %d\nbattSOHPercent %d\nbattVoltage %d\nbattCurrent %d\nbattHiResCap %d\nbattHiResSOC %d\n"
-										"battVoltageCam %d\nbattCurrentCam %d\nmbTemperature %d\nflags %d\nfanPWM %d\n",
-								bd.battCapacityPercent, bd.battSOHPercent,
-								bd.battVoltage, bd.battCurrent, bd.battHiResCap,
-								bd.battHiResSOC, bd.battVoltageCam,
-								bd.battCurrentCam, bd.mbTemperature, bd.flags,
-								bd.fanPWM);
-
-						//Check for the shutdown flag - can also be done as a command and propagated up to a UI screen
-						if(bd.flags & 64)
-						{
-							system("/sbin/shutdown -h now");
-							shutdown();
-						}
-					}
-
-					if(send(connSockDesc, str, UNIX_SOCKET_BUFFER_SIZE, MSG_NOSIGNAL) < 0){
-						done = 1;
-					}
-
-					memset(str,'\0',UNIX_SOCKET_BUFFER_SIZE); //clear the buffer before receiving new data
-					sleep(1); //recv is non-blocking, if no bytes are received, just send the battery data once a second.
-
-				}
-				else
-				{
-
-					//parse and process received commands here, put requested data into str buffer
-					if(0 == strncmp("GET_BATTERY_DATA", str, 16))
-					{
-						retVal = getBatteryData(&bd);
-
-						if(retVal)
-						{
-							/* Flag Map
-							 * ------------------------------
-							 * Bit
-							 * 7 - Not Used
-							 * 6 - Shutdown Requested by PMIC (NEW)
-							 * 5 - Shipping Mode (NEW)
-							 * 4 - Overtemp
-							 * 3 - Auto PWR On
-							 * 2 - Charging
-							 * 1 - AC Plugged In
-							 * 0 - Has Battery
-							 */
-							sprintf(str,
-									"battCapacityPercent %d\nbattSOHPercent %d\nbattVoltage %d\nbattCurrent %d\nbattHiResCap %d\nbattHiResSOC %d\n"
-											"battVoltageCam %d\nbattCurrentCam %d\nmbTemperature %d\nflags %d\nfanPWM %d\n",
-									bd.battCapacityPercent, bd.battSOHPercent,
-									bd.battVoltage, bd.battCurrent, bd.battHiResCap,
-									bd.battHiResSOC, bd.battVoltageCam,
-									bd.battCurrentCam, bd.mbTemperature, bd.flags,
-									bd.fanPWM);
-
-							//Check for the shutdown flag - can also be done as a command and propagated up to a UI screen
-							if(bd.flags & 64)
-							{
-								system("/sbin/shutdown -h now");
-								shutdown();
-							}
-
-						}
-						else
-						{
-							sprintf(str,"getBatteryData() failed");
-						}
-					}
-					else if (!strncmp(str, "SET_SHIPPING_MODE_ENABLED", 25))
-					{
-						setShippingMode(TRUE) ? sprintf(str,"shipping mode enabled") : sprintf(str,"setShippingMode() failed");
-					}
-					else if (!strncmp(str, "SET_SHIPPING_MODE_DISABLED", 26))
-					{
-						setShippingMode(FALSE) ? sprintf(str,"shipping mode disabled") : sprintf(str,"setShippingMode() failed");
-					}
-					else if (!strncmp(str, "SET_POWERUP_MODE_0", 18)) //powerup on ac restore disabled, powerdown on ac remove disabled
-					{
-						setPowerupMode(0) ? sprintf(str,"pwrmode0") : sprintf(str,"setPowerupMode() failed");
-					}
-					else if (!strncmp(str, "SET_POWERUP_MODE_1", 18)) //powerup on ac restore enabled, powerdown on ac remove disabled
-					{
-						setPowerupMode(1) ? sprintf(str,"pwrmode1") : sprintf(str,"setPowerupMode() failed");
-					}
-					else if (!strncmp(str, "SET_POWERUP_MODE_2", 18)) //powerup on ac restore disabled, powerdown on ac remove enabled
-					{
-						setPowerupMode(2) ? sprintf(str,"pwrmode2") : sprintf(str,"setPowerupMode() failed");
-					}
-					else if (!strncmp(str, "SET_POWERUP_MODE_3", 18)) //powerup on ac restore enabled, powerdown on ac remove enabled
-					{
-						setPowerupMode(3) ? sprintf(str,"pwrmode3") : sprintf(str,"setPowerupMode() failed");
-					}
-					else if (!strncmp(str, "SET_FAN_AUTO", 12))
-					{
-						setFanOverrideMode(FALSE, 128) ? sprintf(str,"disabled fan override") : sprintf(str,"setFanOverrideMode() failed");
-					}
-					else if (!strncmp(str, "SET_FAN_OFF", 11))
-					{
-						setFanOverrideMode(TRUE, 0) ? sprintf(str,"enabled fan override") : sprintf(str,"setFanOverrideMode() failed");
-					}
-					else
-					{
-						//ignore invalid commands
-					}
-
-
-				}
-
-				if (!done && numBytesRead > 0)
-					if (send(connSockDesc, str, UNIX_SOCKET_BUFFER_SIZE, 0) < 0)
-					{
-						perror("send");
-						done = 1;
-					}
-			} while (!done);
-
-			close(connSockDesc);
-		}
+		initSocket();
 
 	}
 	else if(0 == strcmp("-q", argv[1]))	//query info
