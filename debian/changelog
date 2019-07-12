@@ -1,5 +1,10 @@
-chronos-cli (0.4.0~alpha16) unstable; urgency=medium
+chronos-cli (0.4.0~alpha21) unstable; urgency=medium
 
+  * Fix issues in pcUtil debian package (now chronos-pwrutil).
+  * Updated pcUtil sources with new socket code.
+  * Removed upower sources, added pcUtil init.
+  * Added pcUtil sources to build cam-pcUtil.
+  * pipeline readme - fix minor mistakes
   * Add build of TI firmware logger tool.
   * Fix compile errors on Glib version < 2.28
   * Added alsaDaemon.c, which is a program that records .wav files when the camera is recording and outputs them to /tmp/audio/. It also monitors the line in/out jacks and automatically switches between line inand mic, and line out and speaker based on whether cables are plugged in. The alsa-utils debian package is required for this program to work correctly.
@@ -18,4 +23,4 @@ chronos-cli (0.4.0~alpha16) unstable; urgency=medium
   * Add DBus-to-JSON parsing for array types.
   * Upstream release v0.4.0-alpha
 
- -- Owen Kirby <oskirby@gmail.com>  Tue, 02 Jul 2019 14:52:15 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Thu, 11 Jul 2019 20:31:04 -0700

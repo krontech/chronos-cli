@@ -20,7 +20,7 @@ test -x $DAEMON || exit 5
 case $1 in
 	start)
 		log_daemon_msg "Starting Camera Power daemon" "cam-pcUtil"
-		start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --startas $DAEMON -- -d
+		start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --startas $DAEMON --
 		status=$?
 		log_end_msg $?
 		;;
