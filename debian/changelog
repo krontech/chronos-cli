@@ -1,5 +1,6 @@
-chronos-cli (0.4.0~alpha21) unstable; urgency=medium
+chronos-cli (0.4.0~alpha22) unstable; urgency=medium
 
+  * Convert chronos-pwrutil to start via systemd.
   * Fix issues in pcUtil debian package (now chronos-pwrutil).
   * Updated pcUtil sources with new socket code.
   * Removed upower sources, added pcUtil init.
@@ -23,4 +24,4 @@ chronos-cli (0.4.0~alpha21) unstable; urgency=medium
   * Add DBus-to-JSON parsing for array types.
   * Upstream release v0.4.0-alpha
 
- -- Owen Kirby <oskirby@gmail.com>  Thu, 11 Jul 2019 20:31:04 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Fri, 12 Jul 2019 15:54:10 -0700
