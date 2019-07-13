@@ -274,8 +274,8 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
     }
 
-    /* Apply Changes. */
-    if (state->playstate == PLAYBACK_STATE_PLAY) {
+    /* Apply all changes immediately when live. */
+    if (state->playstate == PLAYBACK_STATE_LIVE) {
         uint32_t dcontrol;
         if (diff) cam_lcd_reconfig(state, &state->config);
 
@@ -283,6 +283,10 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         dcontrol &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_COLOR_MODE);
         dcontrol &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
         state->fpga->display->control = dcontrol | state->control;
+    }
+    /* Apply geometry changes immediately when in playback. */
+    else if ((state->playstate == PLAYBACK_STATE_PLAY) && (diff)) {
+        cam_lcd_reconfig(state, &state->config);
     }
 
     *data = cam_dbus_video_status(state);
