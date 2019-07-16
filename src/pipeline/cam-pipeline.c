@@ -147,7 +147,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     }
 
     /* Create a live record sink */
-    sinkpad = cam_liverec_sink(state);
+    sinkpad = cam_liverec_sink(state, args);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
@@ -942,6 +942,7 @@ main(int argc, char * argv[])
         if (state->liverec_fd >= 0) {
             close(state->liverec_fd);
             state->liverec_fd = -1;
+            state->args.liverecord = FALSE;
         }
 
         /* Add an extra newline thanks to OMX debug crap... */

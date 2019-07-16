@@ -443,49 +443,52 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
 {
     struct pipeline_state *state = vobj->state;
     GHashTable *dict;
+    state->args.liverecord = cam_dbus_dict_get_boolean(args, "liverecord", FALSE);
     const char *filename = cam_dbus_dict_get_string(args, "filename", NULL);
+    state->args.multifile = cam_dbus_dict_get_boolean(args, "multifile", TRUE);
     unsigned int framerate = cam_dbus_dict_get_uint(args, "framerate", 60);
-    unsigned long bitrate = cam_dbus_dict_get_uint(args, "bitrate", 4000000);
+    unsigned long bitrate = cam_dbus_dict_get_uint(args, "bitrate", 6000000);
     unsigned long maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", 2147483648);
 
-    /* Filename is mandatory. */
-    if(!filename) {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing arguments");
-        return 0;
-    }
+    if(state->args.liverecord){
+        /* Filename is mandatory if liverecord is enabled. */
+        if(!filename) {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing filename");
+            return 0;
+        }
 
-    /* Sanity check the file name. */
-    if(filename[0] != '/') {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename");
-        return 0;
+        /* Sanity check the file name. */
+        if(filename[0] != '/') {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename");
+            return 0;
+        }
+        if (strlen(filename) >= sizeof(state->args.filename)) {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long");
+            return 0;
+        }
+        strcpy(state->args.filename, filename);
     }
-    if (strlen(filename) >= sizeof(state->args.filename)) {
-        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long");
-        return 0;
-    }
-    strcpy(state->args.filename, filename);
 
     /* Framerate is optional, but must be in an acceptable range if specified. */
     if(framerate > LIVE_MAX_FRAMERATE) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid framerate for live recording.");
         return 0;
     }
+    state->args.framerate = framerate;
 
     /* Bitrate is optional, but must be in an acceptable range if specified. */
     if(bitrate > LIVEREC_MAX_BITRATE) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid bitrate for live recording.");
         return 0;
     }
+    state->args.bitrate = bitrate;
 
     /* Maximum filesize for each .mp4 is optional, but must be in an acceptable range if specified. */
     if(maxFilesize > LIVEREC_MAX_FILESIZE) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid max file size for live recording.");
         return 0;
     }
-
-
-    /* TODO: start saving vieo data */
-
+    state->args.maxFilesize = maxFilesize;
 
     /* Restart the pipeline in live display mode */
     state->args.mode = PIPELINE_MODE_LIVE;

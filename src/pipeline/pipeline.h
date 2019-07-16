@@ -69,6 +69,8 @@ struct pipeline_args {
     unsigned int    framerate;
     unsigned long   bitrate;
     unsigned long   maxFilesize;
+    gboolean        liverecord;
+    gboolean        multifile;
 };
 
 struct source_config {
@@ -176,7 +178,7 @@ void    cam_lcd_reconfig(struct pipeline_state *state, const struct display_conf
 GstPad *cam_hdmi_sink(struct pipeline_state *state);
 GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_network_sink(struct pipeline_state *state);
-GstPad *cam_liverec_sink(struct pipeline_state *state);
+GstPad *cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);

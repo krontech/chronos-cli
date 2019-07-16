@@ -173,29 +173,47 @@ cam_network_sink(struct pipeline_state *state)
 }
 
 GstPad *
-cam_liverec_sink(struct pipeline_state *state)
+cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
+
+    /* Check to see if we should start a live recording or not. */
+    if(!args->liverecord){
+        return NULL;
+    }
 
     /* Declare Video Elements */
     GstElement *encoder, *queue, *parser, *neon, *mux, *sink;
 
     /* Declare Audio Elements */
     GstElement *soundsource, *soundcapsfilt, *soundqueue, *soundrate, *soundencoder;
-
     GstCaps *caps;
 
-    char liverec_file_name[64];
+    char timestampStr[32];
     time_t curtime;
     struct tm *loc_time;
+    int flags = O_RDWR | O_CREAT | O_TRUNC;
+
+#if defined(O_LARGEFILE)
+    flags |= O_LARGEFILE;
+#elif defined(__O_LARGEFILE)
+    flags |= __O_LARGEFILE;
+#endif
 
     /* Create a string with the save path and filename with current timestamp */
-    curtime = time (NULL);
-    loc_time = localtime (&curtime);
-    strftime (liverec_file_name, 64, "/tmp/live_%F_%H-%M-%S.mp4", loc_time);
+    if(args->multifile){
+        curtime = time (NULL);
+        loc_time = localtime (&curtime);
+        strftime (timestampStr, 32, "_%F_%H-%M-%S.mp4", loc_time);
+        strcat(args->filename, timestampStr);
+    }
 
-    state->liverec_fd = open(liverec_file_name, O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    /* Set the filename as specified by the user. */
+    state->liverec_fd = open(args->filename, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if(state->liverec_fd < 0) {
-        fprintf(stderr,"Unable to open %s for writing (%s)\n", liverec_file_name, strerror(errno));
+        fprintf(stderr,"Unable to open %s for writing (%s)\n", args->filename, strerror(errno));
+        return NULL;
+    } else {
+        fprintf(stderr,"Live Record file will be saved to %s\n", args->filename);
     }
 
     /* Allocate our segment of the video pipeline. */
@@ -214,17 +232,18 @@ cam_liverec_sink(struct pipeline_state *state)
     /* Configure the H.264 Encoder */
     g_object_set(G_OBJECT(encoder), "force-idr-period", (guint)90, NULL);
     g_object_set(G_OBJECT(encoder), "i-period", (guint)90, NULL);
-    g_object_set(G_OBJECT(encoder), "bitrate", (guint)6000000UL, NULL); //TODO: 6 Mbps -> Usable but can be discussed
+    g_object_set(G_OBJECT(encoder), "bitrate", (guint)args->bitrate, NULL); //TODO: 6 Mbps -> Usable but can be discussed
     g_object_set(G_OBJECT(encoder), "profile", (guint)OMX_H264ENC_PROFILE_HIGH, NULL);
     g_object_set(G_OBJECT(encoder), "level", (guint)OMX_H264ENC_LVL_51, NULL);
     g_object_set(G_OBJECT(encoder), "encodingPreset", (guint)OMX_H264ENC_ENC_PRE_HSMQ, NULL);
-    g_object_set(G_OBJECT(encoder), "framerate", (guint)60, NULL);
+    g_object_set(G_OBJECT(encoder), "framerate", (guint)args->framerate, NULL);
 
     /* Configure the MPEG-4 Multiplexer */
     g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
 
+#ifdef AUDIO
     /* Allocate our segment of the audio pipeline */
-    soundsource =    gst_element_factory_make("alsasrc",       "liverec-alsasrc");
+    soundsource =    gst_element_factory_make("audiotestsrc",  "liverec-alsasrc");
     soundcapsfilt =  gst_element_factory_make("capsfilter",    "liverec-capsfilter");
     soundqueue =     gst_element_factory_make("queue",         "liverec-soundqueue");
     soundrate =      gst_element_factory_make("audiorate",     "liverec-soundrateadj");
@@ -254,10 +273,11 @@ cam_liverec_sink(struct pipeline_state *state)
 
     /* Configure capabilities for the aac encoder */
     g_object_set(G_OBJECT(soundencoder), "bitrate", (guint) 128000, NULL);
+#endif
 
     /* Configure the file sink */
     g_object_set(G_OBJECT(sink), "fd", (gint)state->liverec_fd, NULL);
-    g_object_set (G_OBJECT (sink), "sync", FALSE, NULL);
+    g_object_set (G_OBJECT (sink), "sync", TRUE, NULL);
 
     /* Return the first element of our segment to link with */
     gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, neon, parser, mux, sink, soundsource, soundcapsfilt, soundqueue, soundrate, soundencoder, NULL);
@@ -265,8 +285,10 @@ cam_liverec_sink(struct pipeline_state *state)
     /* Link video elements to mp4mux */
     gst_element_link_many(encoder, queue, neon, parser, mux, NULL);
 
+#ifdef AUDIO
     /* Link audio elements to mp4mux */
     gst_element_link_many(soundsource, soundcapsfilt, soundqueue, soundrate, soundencoder, mux, NULL);
+#endif
 
     /* Link mp4mux to a file sink */
     gst_element_link_many(mux, sink, NULL);
