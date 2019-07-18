@@ -31,7 +31,7 @@
 #define SAVE_MAX_FRAMERATE  230
 
 #define LIVEREC_MAX_BITRATE  6000000
-#define LIVEREC_MAX_FILESIZE 2147483648
+#define LIVEREC_MAX_FILESIZE 4294967295 /* FAT32 Max Size (Bytes) */
 
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
@@ -68,7 +68,8 @@ struct pipeline_args {
     unsigned long   length;
     unsigned int    framerate;
     unsigned long   bitrate;
-    unsigned long   maxFilesize;
+    unsigned int    duration;
+    double          maxFilesize;
     gboolean        liverecord;
     gboolean        multifile;
 };
@@ -211,5 +212,8 @@ void playback_cleanup(struct pipeline_state *state);
 void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
 void overlay_update(struct pipeline_state *state, const struct video_segment *seg);
+
+/* Free space checking. */
+gboolean has_enough_space(const char *pathname, double reqbytes);
 
 #endif /* __PIPELINE */

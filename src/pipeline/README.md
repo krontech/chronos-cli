@@ -224,6 +224,7 @@ stopping.
 | `"multifile"`     | `boolean` | Appends a timestamp to each filename in the format _YYYY-MM-DD_HH-MM-SS.
 | `"framerate"`     | `uint`    | The desired framerate of the encoded video file, in frames per second.
 | `"bitrate"`       | `uint`    | The maximum encoded bitrate for H.264 compressed video, in bits per second.
+| `"duration"`      | `uint`    | The maximum duration to record before creating another file, in seconds.
 | `"maxFilesize"`   | `uint`    | The maximum filesize to record before creating another file, in megabytes.
 
 To start a recording, set `liverecord` to true and specify a filename. If the same parameters are sent again,
@@ -231,6 +232,8 @@ a new .mp4 file will be created automatically with a timestamp appended to the f
 
 If `multifile` is set to false and the liverecord command is sent with an existing filename, the file
 will be overwritten and no timestamp will be appended to the filename.
+
+If `duration` is specified, `maxFilesize` will be deduced automatically.
 
 stop
 ----

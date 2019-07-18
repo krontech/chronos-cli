@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <dbus/dbus-glib.h>
+#include <sys/statvfs.h>
 
 #include "pipeline.h"
 #include "api/cam-rpc.h"
@@ -448,7 +449,8 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     state->args.multifile = cam_dbus_dict_get_boolean(args, "multifile", TRUE);
     unsigned int framerate = cam_dbus_dict_get_uint(args, "framerate", 60);
     unsigned long bitrate = cam_dbus_dict_get_uint(args, "bitrate", 6000000);
-    unsigned long maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", 2147483648);
+    unsigned int duration = cam_dbus_dict_get_uint(args, "duration", 0);
+    double maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", LIVEREC_MAX_FILESIZE); 
 
     if(state->args.liverecord){
         /* Filename is mandatory if liverecord is enabled. */
@@ -483,10 +485,21 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     }
     state->args.bitrate = bitrate;
 
+    /* If the duration parameter is set, it will override the maximum filesize value. */
+    if(duration > 0){
+        maxFilesize = (double)duration * (double)bitrate/8; //TODO: Add some bytes of overhead for headers?
+    }
+
     /* Maximum filesize for each .mp4 is optional, but must be in an acceptable range if specified. */
     if(maxFilesize > LIVEREC_MAX_FILESIZE) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid max file size for live recording.");
         return 0;
+    }
+
+    /* Check if root directory of filepath has enough space */
+    if (!has_enough_space(filename, maxFilesize)){
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Not enough free space on the storage device.");
+        return 0;        
     }
     state->args.maxFilesize = maxFilesize;
 
@@ -701,4 +714,26 @@ dbus_signal_update(struct pipeline_state *state, const char **names)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
     g_signal_emit(state->video, vclass->update_signalid, 0, cam_dbus_video_get(state, names));
+}
+
+gboolean
+has_enough_space(const char *pathname, double reqbytes)
+{   
+    struct statvfs fsInfoBuf;
+    char folderPath[PATH_MAX] = {'\0'};
+    const char *lastDelim;
+
+    lastDelim = strrchr(pathname, '/');
+
+    if(lastDelim != NULL)
+        strncpy(folderPath, pathname, lastDelim-pathname+1);
+
+    if(statvfs(folderPath, &fsInfoBuf) == -1)
+        perror("statvfs() error");
+    else {
+        if (reqbytes < (double)fsInfoBuf.f_bavail * fsInfoBuf.f_frsize)
+            return TRUE;
+    }
+
+    return FALSE;
 }
