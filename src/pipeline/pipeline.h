@@ -124,7 +124,6 @@ struct pipeline_state {
     struct fpga         *fpga;
     const struct ioport *iops;
     int                 write_fd;
-    int                 liverec_fd;
     void *              scratchpad;
     char                error[PIPELINE_ERROR_MAXLEN];
     
@@ -161,6 +160,11 @@ struct pipeline_state {
     unsigned int    frameidx;
     unsigned long   frameival[FRAMERATE_IVAL_BUCKETS]; /* track microseconds between frames. */
     unsigned long long frameisum;   /* Rolling sum of frameival */
+
+    /* Live Recording Mode */
+    int             liverec_fd;
+    char            liverec_filename[PATH_MAX];
+    pthread_t       liverec_sizemon;
 
     /* Pipeline config */
     struct pipeline_args args;
@@ -215,5 +219,8 @@ void overlay_update(struct pipeline_state *state, const struct video_segment *se
 
 /* Free space checking. */
 gboolean has_enough_space(const char *pathname, double reqbytes);
+
+/* Live Recording mode functions. */
+static void * liverec_size_monitor(void *data);
 
 #endif /* __PIPELINE */

@@ -189,6 +189,7 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     GstCaps *caps;
 
     char timestampStr[32];
+    char scratchStr[PATH_MAX] = {'\0'};
     time_t curtime;
     struct tm *loc_time;
     int flags = O_RDWR | O_CREAT | O_TRUNC;
@@ -204,16 +205,20 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
         curtime = time (NULL);
         loc_time = localtime (&curtime);
         strftime (timestampStr, 32, "_%F_%H-%M-%S.mp4", loc_time);
-        strcat(args->filename, timestampStr);
+        strcat(scratchStr, state->args.filename);
+        strcat(scratchStr, timestampStr);
+        strcpy(state->liverec_filename, scratchStr);
+    } else {
+        strcpy(state->liverec_filename, state->args.filename);
     }
 
     /* Set the filename as specified by the user. */
-    state->liverec_fd = open(args->filename, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    state->liverec_fd = open(state->liverec_filename, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if(state->liverec_fd < 0) {
-        fprintf(stderr,"Unable to open %s for writing (%s)\n", args->filename, strerror(errno));
+        fprintf(stderr,"Unable to open %s for writing (%s)\n", state->liverec_filename, strerror(errno));
         return NULL;
     } else {
-        fprintf(stderr,"Live Record file will be saved to %s\n", args->filename);
+        fprintf(stderr,"Live Record file will be saved to %s\n", state->liverec_filename);
     }
 
     /* Allocate our segment of the video pipeline. */
@@ -293,5 +298,41 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     /* Link mp4mux to a file sink */
     gst_element_link_many(mux, sink, NULL);
 
+    /* Create a thread to monitor the file size. */
+    pthread_create(&state->liverec_sizemon, NULL, liverec_size_monitor, state);
+
     return gst_element_get_static_pad(encoder, "sink");
+}
+
+/* Monitor filesize of a live recording on a seperate thread. */
+static void *
+liverec_size_monitor(void *data){
+
+    struct pipeline_state *state = data;
+    struct stat *buf;
+    double currentFileSize = 0;
+
+    buf = malloc(sizeof(struct stat));    
+
+    while(state->args.liverecord){
+        stat(state->liverec_filename, buf);
+        currentFileSize = buf->st_size;
+
+        if(currentFileSize >= state->args.maxFilesize){
+            fprintf(stderr,"liverec_size_monitor: max filesize reached\n");
+
+            /* Gracefully stop and restart the liverec element */
+            if (state->playstate != PLAYBACK_STATE_FILESAVE) {
+                currentFileSize = 0;
+                cam_pipeline_restart(state);
+                break;
+            }
+
+        }
+
+        sleep(1);  
+    }      
+    
+    free(buf);
+    pthread_exit(NULL);
 }

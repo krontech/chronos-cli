@@ -48,6 +48,7 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
     cam_dbus_dict_add_boolean(dict, "playback", (state->playstate == PLAYBACK_STATE_PLAY));
     cam_dbus_dict_add_boolean(dict, "filesave", (state->playstate == PLAYBACK_STATE_FILESAVE));
+    cam_dbus_dict_add_boolean(dict, "liverecord", state->args.liverecord);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->seglist.totalframes);
     cam_dbus_dict_add_uint(dict, "totalSegments", state->seglist.totalsegs);
     cam_dbus_dict_add_int(dict, "position", state->position);
@@ -58,6 +59,9 @@ cam_dbus_video_status(struct pipeline_state *state)
         cam_dbus_dict_add_string(dict, "filename", state->args.filename);
     } else {
         cam_dbus_dict_add_float(dict, "framerate", (double)state->playrate);
+    }
+    if (state->args.liverecord) {
+        cam_dbus_dict_add_string(dict, "liverecordFilename", state->liverec_filename);
     }
     return dict;
 }
@@ -526,6 +530,7 @@ static gboolean
 cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
+    state->args.liverecord = FALSE;
     cam_pipeline_restart(state);
     *data = cam_dbus_video_status(state);
     return (data != NULL);

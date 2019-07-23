@@ -85,6 +85,7 @@ arguments, and the returned hash map will contain the following members.
 | `"apiVersion"`    | `string`  | `"1.0"` for all cameras implemeting this specification.
 | `"playback"`      | `boolean` | `true` if the video pipeline is in playback mode.
 | `"filesave"`      | `boolean` | `true` if the video pipeline is in file saving mode.
+| `"liverecord"`    | `boolean` | `true` if the video pipeline currently recording live video.
 | `"position"`      | `uint`    | The current frame number being display while in playback or record mode.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.

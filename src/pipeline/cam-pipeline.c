@@ -942,7 +942,6 @@ main(int argc, char * argv[])
         if (state->liverec_fd >= 0) {
             close(state->liverec_fd);
             state->liverec_fd = -1;
-            state->args.liverecord = FALSE;
         }
 
         /* Add an extra newline thanks to OMX debug crap... */
@@ -950,6 +949,7 @@ main(int argc, char * argv[])
     } while(catch_sigint == 0);
     
     fprintf(stderr, "Exiting the pipeline...\n");
+    state->args.liverecord = FALSE;
     playback_cleanup(state);
     unlink(SCREENCAP_PATH);
     munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);
