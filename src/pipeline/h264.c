@@ -26,6 +26,8 @@
 
 #include "pipeline.h"
 
+#define AUDIO
+
 enum
 {
 	OMX_H264ENC_PROFILE_BASE =		1,
@@ -244,11 +246,11 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(encoder), "framerate", (guint)args->framerate, NULL);
 
     /* Configure the MPEG-4 Multiplexer */
-    g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
+    g_object_set(G_OBJECT(mux), "dts-method", (guint)1, NULL);
 
 #ifdef AUDIO
     /* Allocate our segment of the audio pipeline */
-    soundsource =    gst_element_factory_make("audiotestsrc",  "liverec-alsasrc");
+    soundsource =    gst_element_factory_make("alsasrc",       "liverec-alsasrc");
     soundcapsfilt =  gst_element_factory_make("capsfilter",    "liverec-capsfilter");
     soundqueue =     gst_element_factory_make("queue",         "liverec-soundqueue");
     soundrate =      gst_element_factory_make("audiorate",     "liverec-soundrateadj");
@@ -259,10 +261,10 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
         return NULL;
     }
 
-    /* Disable buffering in the sound queues */
-    g_object_set(G_OBJECT(soundqueue), "max-size-buffers", (guint) 0, NULL);
-    g_object_set(G_OBJECT(soundqueue), "max-size-bytes", (guint) 0, NULL);
-    g_object_set(G_OBJECT(soundqueue), "max-size-time", (guint) 0, NULL);
+    /* Configure the ALSA sound source */
+    g_object_set(G_OBJECT(soundsource), "buffer-time", (gint64)60000000, NULL);
+    g_object_set(G_OBJECT(soundsource), "latency-time", (gint64)10000, NULL);
+
 
     /* Configure a capabilities filter for alsasrc */
     caps = gst_caps_new_simple( "audio/x-raw-int",
@@ -277,7 +279,9 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     gst_caps_unref(caps);
 
     /* Configure capabilities for the aac encoder */
+    g_object_set(G_OBJECT(soundencoder), "hard-resync", (gboolean) TRUE, NULL);
     g_object_set(G_OBJECT(soundencoder), "bitrate", (guint) 128000, NULL);
+    
 #endif
 
     /* Configure the file sink */
