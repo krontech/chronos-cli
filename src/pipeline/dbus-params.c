@@ -216,6 +216,8 @@ dbus_set_enum(struct pipeline_state *state, const struct pipeline_param *p, GVal
 {
     const struct enumval *e = p->extra;
     GValue gv_int;
+
+    memset(&gv_int, 0, sizeof(gv_int));
     g_value_init(&gv_int, G_TYPE_INT);
 
     /* If the value holds a string, search for a match. */
@@ -284,6 +286,7 @@ dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, cha
         }
 
         /* Otherwise, try our best to transform the type and set it. */
+        memset(&xform, 0, sizeof(xform));
         g_value_init(&xform, p->type);
         if (g_value_transform(gval, &xform)) {
             return p->setter(state, p, &xform, err);
