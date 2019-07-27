@@ -86,8 +86,7 @@ json_printf_gval(FILE *fp, gconstpointer val, unsigned int depth)
         json_printf_dict(fp, g_value_peek_pointer(val), depth+1);
     } else if (dbus_g_type_is_collection(G_VALUE_TYPE(val))) {
         /* We got an array type. */
-        GType subtype = dbus_g_type_get_collection_specialization(G_VALUE_TYPE(val));
-        json_printf_array(fp, g_value_peek_pointer(val), subtype, depth+1);
+        json_printf_array(fp, val, depth+1);
     } else {
         /* Default unknown types to null */
         fprintf(stderr, "Unknown type found: %s\n", g_type_name(G_VALUE_TYPE(val)));
@@ -120,8 +119,6 @@ json_printf_arrayval(FILE *fp, GArray *array, GType subtype, guint idx)
         case G_TYPE_DOUBLE:
             fprintf(fp, "%g", g_array_index(array, gdouble, idx));
             break;
-        case G_TYPE_STRING:
-            /* TODO: Implement Me! */
         default:
             /* Default unknown types to null */
             fputs("null", fp);
@@ -130,17 +127,40 @@ json_printf_arrayval(FILE *fp, GArray *array, GType subtype, guint idx)
 }
 
 void
-json_printf_array(FILE *fp, GArray *array, GType subtype, unsigned int depth)
+json_printf_array(FILE *fp, const GValue *gval, unsigned int depth)
 {
+    const gchar *typename = g_type_name(G_VALUE_TYPE(gval));
+    GType subtype = dbus_g_type_get_collection_specialization(G_VALUE_TYPE(gval));
     guint i;
 
-    fputs("[", fp);
-    for (i = 0; i < array->len; i++) {
-        json_printf_indent(fp, depth+1, (i != 0));
-        json_printf_arrayval(fp, array, subtype, i);
+    /* Complex types encoded as a GPtrArray. */
+    if (g_str_has_prefix(typename, "GPtrArray")) {
+        GPtrArray *array = g_value_peek_pointer(gval);
+        fputs("[", fp);
+        for (i = 0; i < array->len; i++) {
+            GValue gval;
+            
+            memset(&gval, 0, sizeof(gval));
+            g_value_init(&gval, subtype);
+            g_value_set_boxed(&gval, g_ptr_array_index(array, i));
+
+            json_printf_indent(fp, depth+1, (i != 0));
+            json_printf_gval(fp, &gval, depth);
+        }
+        if (array->len) json_printf_indent(fp, depth, 0);
+        fputs("]", fp);
     }
-    if (array->len) json_printf_indent(fp, depth, 0);
-    fputs("]", fp);
+    /* Simple types encoded as a GArray */
+    else {
+        GArray *array = g_value_peek_pointer(gval);
+        fputs("[", fp);
+        for (i = 0; i < array->len; i++) {
+            json_printf_indent(fp, depth+1, (i != 0));
+            json_printf_arrayval(fp, array, subtype, i);
+        }
+        if (array->len) json_printf_indent(fp, depth, 0);
+        fputs("]", fp);
+    }
 }
 
 void

@@ -462,6 +462,16 @@ playback_signal_segment(gpointer data)
 {
     struct pipeline_state *state = data;
     dbus_signal_segment(state);
+    if (FPGA_VERSION_REQUIRE(state->fpga->config, 3, 22)) {
+        /* Generate parameter updates on FPGA version 3.22 and newer. */
+        const char *names[] = {
+            "totalFrames",
+            "totalSegments",
+            "videoSegments",
+            NULL
+        };
+        dbus_signal_update(state, names);;
+    }
     return FALSE;
 }
 

@@ -397,6 +397,15 @@ struct fpga_imager {
 
 #define EEPROM_I2C_BUS          "/dev/i2c-1"
 
+/* FPGA version number comparison  */
+#define FPGA_VERSION_COMPARE(_regs_, _cmp_, _major_, _minor_) \
+    ((_regs_)->version == (_major_) ? \
+        (_regs_)->subver _cmp_ (_minor_) : \
+        (_regs_)->version _cmp_ (_major_))
+
+/* True if the FPGA version number is greater */
+#define FPGA_VERSION_REQUIRE(_regs_, _major_, _minor_) FPGA_VERSION_COMPARE(_regs_, >=, _major_, _minor_)
+
 struct fpga {
     /* Memory mapping. */
     int fd;
