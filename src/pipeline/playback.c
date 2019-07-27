@@ -461,7 +461,7 @@ static gboolean
 playback_signal_segment(gpointer data)
 {
     struct pipeline_state *state = data;
-    dbus_signal_segment(state);
+    dbus_signal_segment(state->video);
     if (FPGA_VERSION_REQUIRE(state->fpga->config, 3, 22)) {
         /* Generate parameter updates on FPGA version 3.22 and newer. */
         const char *names[] = {
@@ -470,7 +470,7 @@ playback_signal_segment(gpointer data)
             "videoSegments",
             NULL
         };
-        dbus_signal_update(state, names);;
+        dbus_signal_update(state->video, names);
     }
     return FALSE;
 }
@@ -483,7 +483,7 @@ playback_signal_state(gpointer data)
         "videoState",
         NULL
     };
-    dbus_signal_update(state, names);
+    dbus_signal_update(state->video, names);
     return FALSE;
 }
 
@@ -604,9 +604,11 @@ playback_thread(void *arg)
          *===============================================
          */
         newsegs = 0;
+        pthread_mutex_lock(&state->segmutex);
         while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
             if (playback_region_add(state) > 0) newsegs++;
         }
+        pthread_mutex_unlock(&state->segmutex);
         /* Emit a signal from the main loop if there were new segments.  */
         if (newsegs) {
             playback_run_hook(state, playback_signal_segment);
@@ -762,6 +764,7 @@ playback_init(struct pipeline_state *state)
      * the playback regions.
      */
     video_segments_init(&state->seglist, 0, 0, state->fpga->seq->frame_size);
+    pthread_mutex_init(&state->segmutex, NULL);
 
     /* Install the desired signal handlers. */
     sigemptyset(&sigact.sa_mask);
@@ -776,13 +779,13 @@ playback_init(struct pipeline_state *state)
     sigaddset(&sigact.sa_mask, SIGUSR2);
     sigprocmask(SIG_BLOCK, &sigact.sa_mask, NULL);
 
-    /* Start the playback thread. */
-    pthread_create(&state->playthread, NULL, playback_thread, state);
-
     /* Start off paused. */
     state->playstate = PLAYBACK_STATE_PAUSE;
     state->control = (state->source.color) ? DISPLAY_CTL_COLOR_MODE : 0;
     state->fpga->display->control = (state->control | DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+
+    /* Start the playback thread. */
+    pthread_create(&state->playthread, NULL, playback_thread, state);
 }
 
 void
@@ -792,4 +795,5 @@ playback_cleanup(struct pipeline_state *state)
     struct timespec ts = {1, 0};
     write(playback_pipe, &command, sizeof(command));
     pthread_timedjoin_np(state->playthread, NULL, &ts);
+    pthread_mutex_destroy(&state->segmutex);
 }

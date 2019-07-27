@@ -479,7 +479,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
                 break;
             }
             if (newstate == GST_STATE_PLAYING) {
-                dbus_signal_sof(state);
+                dbus_signal_sof(state->video);
             }
             fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name (newstate));
             break;
@@ -815,8 +815,8 @@ main(int argc, char * argv[])
     signal(SIGPIPE, SIG_IGN);
 
     /* Launch the HDMI, DBus and Playback threads. */
+    state->video = dbus_service_launch(state);
     hdmi_hotplug_launch(state);
-    dbus_service_launch(state);
     playback_init(state);
 
     do {
@@ -839,7 +839,7 @@ main(int argc, char * argv[])
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
                 /* Throw an EOF and revert to playback. */
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 continue;
             }
         }
@@ -848,7 +848,7 @@ main(int argc, char * argv[])
             if (!cam_pipeline(state, &args)) {
                 /* Throw an EOF and revert to paused. */
                 state->args.mode = PIPELINE_MODE_PAUSE;
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to start pipeline.\n");
                 continue;
             }
@@ -856,7 +856,7 @@ main(int argc, char * argv[])
         /* Otherwise, there is nothing to play, generate a test pattern. */
         else {
             if (!cam_videotest(state)) {
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
                 break;
             }
@@ -886,7 +886,7 @@ main(int argc, char * argv[])
             g_main_loop_run(state->mainloop);
 
             /* Stop the pipeline gracefully. */
-            dbus_signal_eof(state, state->error);
+            dbus_signal_eof(state->video, state->error);
             playback_pause(state);
             gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
             for (i = 0; i < 1000; i++) {
@@ -897,7 +897,7 @@ main(int argc, char * argv[])
             snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
                 gst_element_state_get_name(current), gst_element_state_get_name(pending));
             fprintf(stderr, "%s\n", state->error);
-            dbus_signal_eof(state, state->error);
+            dbus_signal_eof(state->video, state->error);
         }
 
         /* Garbage collect the pipeline. */

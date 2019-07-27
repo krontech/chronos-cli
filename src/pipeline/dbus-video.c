@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <dbus/dbus-glib.h>
+#include <dbus/dbus-glib-lowlevel.h>
 
 #include "pipeline.h"
 #include "api/cam-rpc.h"
@@ -124,7 +125,10 @@ cam_dbus_video_get(struct pipeline_state *state, const char **names)
  *-------------------------------------
  */
 typedef struct CamVideo {
-    GObjectClass parent;
+    GObjectClass    parent;
+    pthread_t       thread;
+    GMainContext    *mainctx;
+    GMainLoop       *mainloop;
     struct pipeline_state *state;
 } CamVideo;
 
@@ -187,7 +191,7 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
     
     /* Generate an update signal for any parameters that were set. */
     if (names) {
-        if (i) dbus_signal_update(state, names);
+        if (i) dbus_signal_update(vobj, names);
         g_free(names);
     }
     return (data != NULL);
@@ -570,18 +574,30 @@ cam_video_class_init(CamVideoClass *vclass)
 
 G_DEFINE_TYPE(CamVideo, cam_video, G_TYPE_OBJECT)
 
-void
+static void *
+dbus_thread(void *ctx)
+{
+    CamVideo *video = ctx;
+    g_main_loop_run(video->mainloop);
+    return NULL;
+}
+
+struct CamVideo *
 dbus_service_launch(struct pipeline_state *state)
 {
+    struct CamVideo *video;
     DBusGConnection *bus = NULL;
     DBusGProxy *proxy = NULL;
     GError* error = NULL;
     guint result;
 
-    /* Init glib */
+    /* Init glib and start the D-Bus worker thread. */
     g_type_init();
-    state->video = g_object_new(CAM_VIDEO_TYPE, NULL);
-    state->video->state = state;
+    video = g_object_new(CAM_VIDEO_TYPE, NULL);
+    video->state = state;
+    video->mainctx = g_main_context_new();
+    video->mainloop = g_main_loop_new(video->mainctx, FALSE);
+    pthread_create(&video->thread, NULL, dbus_thread, video);
 
     /* Bring up DBus and register with the system. */
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -589,6 +605,7 @@ dbus_service_launch(struct pipeline_state *state)
         g_printerr("Failed to get a bus D-Bus (%s)\n", error->message);
         exit(EXIT_FAILURE);
     }
+    dbus_connection_setup_with_g_main(dbus_g_connection_get_connection(bus), video->mainctx);
 
     proxy = dbus_g_proxy_new_for_name(bus, DBUS_SERVICE_DBUS, DBUS_PATH_DBUS, DBUS_INTERFACE_DBUS);
     if (proxy == NULL) {
@@ -610,38 +627,40 @@ dbus_service_launch(struct pipeline_state *state)
         g_printerr("D-Bus.RequstName call failed for %s\n", CAM_DBUS_VIDEO_SERVICE);
         exit(EXIT_FAILURE);
     }
-    dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(state->video));
+    dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(video));
     printf("Registered video control device at %s\n", CAM_DBUS_VIDEO_PATH);
+
+    return video;
 }
 
 void
-dbus_signal_sof(struct pipeline_state *state)
+dbus_signal_sof(CamVideo *video)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->sof_signalid, 0, cam_dbus_video_status(state));
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    g_signal_emit(video, vclass->sof_signalid, 0, cam_dbus_video_status(video->state));
 }
 
 void
-dbus_signal_eof(struct pipeline_state *state, const char *err)
+dbus_signal_eof(CamVideo *video, const char *err)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    GHashTable *status = cam_dbus_video_status(state);
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    GHashTable *status = cam_dbus_video_status(video->state);
     if (err && strlen(err)) {
         cam_dbus_dict_add_string(status, "error", err);
     }
-    g_signal_emit(state->video, vclass->eof_signalid, 0, status);
+    g_signal_emit(video, vclass->eof_signalid, 0, status);
 }
 
 void
-dbus_signal_segment(struct pipeline_state *state)
+dbus_signal_segment(CamVideo *video)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->seg_signalid, 0, cam_dbus_video_status(state));
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    g_signal_emit(video, vclass->seg_signalid, 0, cam_dbus_video_status(video->state));
 }
 
 void
-dbus_signal_update(struct pipeline_state *state, const char **names)
+dbus_signal_update(CamVideo *video, const char **names)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->update_signalid, 0, cam_dbus_video_get(state, names));
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    g_signal_emit(video, vclass->update_signalid, 0, cam_dbus_video_get(video->state, names));
 }

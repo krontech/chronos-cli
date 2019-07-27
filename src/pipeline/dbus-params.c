@@ -158,7 +158,7 @@ cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_pa
     struct video_segment *seg;
     unsigned long offset = 0;
 
-    /* TODO: This probably needs some locking in case the segment data gets updated. */
+    pthread_mutex_lock(&state->segmutex);
     array = g_ptr_array_sized_new(state->seglist.totalsegs);
     for (seg = state->seglist.head; seg; seg = seg->next) {
         GHashTable *hash = cam_dbus_dict_new();
@@ -172,6 +172,7 @@ cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_pa
 
         offset += seg->nframes;
     }
+    pthread_mutex_unlock(&state->segmutex);
 
     vboxed = g_new0(GValue, 1);
     if (!vboxed) {

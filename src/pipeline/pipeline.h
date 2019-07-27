@@ -130,6 +130,7 @@ struct pipeline_state {
 
     /* Frame information */
     struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */
+    pthread_mutex_t segmutex;       /* Lock access to the segment list. */
     long            position;       /* Last played frame number, or negative for live display. */
 
     /* Playback Mode */
@@ -177,15 +178,17 @@ GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_tiffraw_sink(struct pipeline_state *state, struct pipeline_args *args);
 
 /* Some background elements. */
-void hdmi_hotplug_launch(struct pipeline_state *state);
-void dbus_service_launch(struct pipeline_state *state);
-void dbus_signal_sof(struct pipeline_state *state);
-void dbus_signal_eof(struct pipeline_state *state, const char *err);
-void dbus_signal_segment(struct pipeline_state *state);
-void dbus_signal_update(struct pipeline_state *state, const char **names);
+struct CamVideo *dbus_service_launch(struct pipeline_state *state);
+void dbus_signal_sof(struct CamVideo *video);
+void dbus_signal_eof(struct CamVideo *video, const char *err);
+void dbus_signal_segment(struct CamVideo *video);
+void dbus_signal_update(struct CamVideo *video, const char **names);
 gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
 gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err);
 GHashTable *dbus_describe_params(struct pipeline_state *state);
+
+/* HDMI Hotplug watcher needs to be in its own thread. */
+void hdmi_hotplug_launch(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);
