@@ -53,11 +53,22 @@ cam_pipeline_state(void)
     return &cam_global_state;
 }
 
-void
-cam_pipeline_restart(struct pipeline_state *state)
+static gboolean
+do_pipeline_restart(struct pipeline_state *state)
 {
     gst_event_ref(state->eos);
     gst_element_send_event(state->pipeline, state->eos);
+    return FALSE;
+}
+
+void
+cam_pipeline_restart(struct pipeline_state *state)
+{
+    GSource *source = g_idle_source_new();
+    if (source) {
+        g_source_set_callback(source, (GSourceFunc)do_pipeline_restart, state, NULL);
+        g_source_attach(source, g_main_loop_get_context(state->mainloop));
+    }
 }
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
@@ -529,7 +540,7 @@ static gboolean
 handle_sighup(gpointer data)
 {
     struct pipeline_state *state = data;
-    if (state->playstate != PLAYBACK_STATE_FILESAVE) {
+    if (!PIPELINE_IS_SAVING(state->runmode)) {
         cam_pipeline_restart(state);
     }
 }
@@ -665,26 +676,6 @@ parse_resolution(const char *str, const char *name, unsigned long *x, unsigned l
     exit(EXIT_FAILURE);
 } /* parse_resolution */
 
-/* Perform disk synchronization in a separate thread. */
-static void *
-fsync_worker(void *arg)
-{
-    struct pipeline_state *state = arg;
-    struct stat st;
-    while (!g_main_loop_is_running(state->mainloop)) {
-        usleep(100); /* Ensure the main thread gets to g_main_loop_run. */
-    }
-    memset(&st, 0, sizeof(st));
-    if ((fstat(state->write_fd, &st) != 0) || S_ISDIR(st.st_mode)) {
-        /* TODO: Test for availability of syncfs(). */
-        sync();
-    } else {
-        fsync(state->write_fd);
-    }
-    g_main_loop_quit(state->mainloop);
-    return NULL;
-}
-
 int
 main(int argc, char * argv[])
 {
@@ -750,6 +741,7 @@ main(int argc, char * argv[])
     state->eos = gst_event_new_eos();
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
+    state->runmode = PIPELINE_MODE_PAUSE;
     state->write_fd = -1;
     state->control = 0;
     if (!state->fpga) {
@@ -831,6 +823,7 @@ main(int argc, char * argv[])
         /* Pause playback while we get setup. */
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
+        state->runmode = state->args.mode;
         playback_pause(state);
 
         /* File saving modes should fail gracefully back to playback. */
@@ -886,7 +879,6 @@ main(int argc, char * argv[])
             g_main_loop_run(state->mainloop);
 
             /* Stop the pipeline gracefully. */
-            dbus_signal_eof(state->video, state->error);
             playback_pause(state);
             gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
             for (i = 0; i < 1000; i++) {
@@ -897,7 +889,6 @@ main(int argc, char * argv[])
             snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
                 gst_element_state_get_name(current), gst_element_state_get_name(pending));
             fprintf(stderr, "%s\n", state->error);
-            dbus_signal_eof(state->video, state->error);
         }
 
         /* Garbage collect the pipeline. */
@@ -909,14 +900,21 @@ main(int argc, char * argv[])
 
         /* Close output files that might be in progress. */
         if (state->write_fd >= 0) {
-            pthread_t tid;
-            if (pthread_create(&tid, NULL, fsync_worker, state)  == 0) {
-                g_main_loop_run(state->mainloop);
-                pthread_join(tid, NULL);
+            struct stat st;
+            memset(&st, 0, sizeof(st));
+            if ((fstat(state->write_fd, &st) != 0) || S_ISDIR(st.st_mode)) {
+                /* TODO: Test for availability of syncfs(). */
+                sync();
+            } else {
+                fsync(state->write_fd);
             }
+
             close(state->write_fd);
             state->write_fd = -1;
         }
+
+        /* Signal end of video after teardown and syncing output files. */
+        dbus_signal_eof(state->video, state->error);
 
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");

@@ -46,13 +46,13 @@ cam_dbus_video_status(struct pipeline_state *state)
     if (!dict) return NULL;
 
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-    cam_dbus_dict_add_boolean(dict, "playback", (state->playstate == PLAYBACK_STATE_PLAY));
-    cam_dbus_dict_add_boolean(dict, "filesave", (state->playstate == PLAYBACK_STATE_FILESAVE));
+    cam_dbus_dict_add_boolean(dict, "playback", (state->runmode == PIPELINE_MODE_PLAY));
+    cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(state->runmode));
     cam_dbus_dict_add_uint(dict, "totalFrames", state->seglist.totalframes);
     cam_dbus_dict_add_uint(dict, "totalSegments", state->seglist.totalsegs);
     cam_dbus_dict_add_int(dict, "position", state->position);
     cam_dbus_dict_add_uint(dict, "segment", 0);
-    if (state->playstate == PLAYBACK_STATE_FILESAVE) {
+    if (PIPELINE_IS_SAVING(state->runmode)) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
         cam_dbus_dict_add_float(dict, "framerate", estrate);
         cam_dbus_dict_add_string(dict, "filename", state->args.filename);
@@ -346,7 +346,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
 
     /* If not in playback mode, a restart is required. */
     state->args.mode = PIPELINE_MODE_LIVE;
-    if ((state->playstate != PLAYBACK_STATE_PLAY) && (state->playstate != PLAYBACK_STATE_LIVE)) {
+    if ((state->runmode != PIPELINE_MODE_PLAY) && (state->runmode != PIPELINE_MODE_LIVE)) {
         cam_pipeline_restart(state);
     }
     /* If cropping geometry has changed, a restart is required. */
@@ -387,7 +387,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     strcpy(state->args.filename, filename);
 
     /* Make sure that an encoding operation is not already in progress. */
-    if (state->playstate == PLAYBACK_STATE_FILESAVE) {
+    if (PIPELINE_IS_SAVING(state->runmode)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Encoding in progress");
         return 0;
     }

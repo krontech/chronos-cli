@@ -116,6 +116,7 @@ struct pipeline_state {
     struct CamVideo     *video;
     struct fpga         *fpga;
     const struct ioport *iops;
+    int                 runmode;
     int                 write_fd;
     void *              scratchpad;
     char                error[PIPELINE_ERROR_MAXLEN];
@@ -124,8 +125,6 @@ struct pipeline_state {
     char                serial[CAMERA_SERIAL_LENGTH+1];
 
     /* Display control config */
-    int                 mode;
-    int                 next;
     uint32_t            control;
 
     /* Frame information */
