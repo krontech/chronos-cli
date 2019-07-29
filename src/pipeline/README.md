@@ -83,7 +83,7 @@ arguments, and the returned hash map will contain the following members.
 | `"apiVersion"`    | `string`  | `"1.0"` for all cameras implemeting this specification.
 | `"playback"`      | `boolean` | `true` if the video pipeline is in playback mode.
 | `"filesave"`      | `boolean` | `true` if the video pipeline is in file saving mode.
-| `"position"`      | `uint`    | The current frame number being display while in playback or record mode.
+| `"position"`      | `uint`    | The current frame number being displayed while in playback or record mode.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.
 | `"totalSegments"` | `uint`    | The total number of segments recorded in memory.
@@ -311,17 +311,17 @@ Each parameter also defines a type as follows:
 The available parameters which can be accessed by the [`get`](#get) and [`set`](#set)
 a methods are as follows:
 
-| Parameter         | G | S | U | Type   | Description
-|:----------------- |:--|:--|:--|:-------|:-----------
-| `overlayEnable`   |`G`|`S`|`x`| bool   |
-| `overlayFormat`   |`G`|`S`|`x`| string | A `printf`-style format string to set the overlay text.
-| `zebraLevel`      |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
-| `focusPeakLevel`  |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the rante of 0 to 1.0).
-| `focusPeakColor`  |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Disabled.
-| `videoState`      |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
-| `playbackRate`    |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
-| `playbackPosition`|`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
-| `playbackStart`   |`G`|`S`|`x`| int    | Starting frame number to display when entering `playback`.
-| `playbackLength`  |`G`|`S`|`x`| int    | Number of frames to play when in `playback` before loooping back to `playbackStart`.
-| `totalFrames`     |`G`|   |`x`| int    | Total number of frame captured in the camera's memory.
-| `totalSegments`   |`G`|   |`x`| int    | Total number of recording segments captured in the camera's memory.
+| Parameter           | G | S | U | Type   | Description
+|:-----------------   |:--|:--|:--|:-------|:-----------
+| `overlayEnable`     |`G`|`S`|`x`| bool   | Hide or show the stamp data layer.
+| `overlayFormat`     |`G`|`S`|`x`| string | A `printf`-style format string to set the overlay text.
+| `zebraLevel`        |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
+| `focusPeakingLevel` |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the range of 0 to 1.0). 0 means "off".
+| `focusPeakingColor` |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Black.
+| `videoState`        |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
+| `playbackRate`      |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
+| `playbackPosition`  |`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
+| `playbackStart`     |`G`|`S`|`x`| int    | Starting frame number to display when entering `playback`.
+| `playbackLength`    |`G`|`S`|`x`| int    | Number of frames to play when in `playback` before looping back to `playbackStart`.
+| `totalFrames`       |`G`|   |`x`| int    | Total number of frame captured in the camera's memory.
+| `totalSegments`     |`G`|   |`x`| int    | Total number of recording segments captured in the camera's memory.
