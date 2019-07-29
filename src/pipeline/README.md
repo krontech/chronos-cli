@@ -3,7 +3,7 @@ Video Pipeline Daemon
 
 The `cam-pipeline` program is responsible for managing the multimedia pipeline
 of the camera. This program connects the video stream from the FPGA to the
-output output devices on the camera. This pipeline can operate in one of three
+output devices on the camera. This pipeline can operate in one of three
 modes at any given time: live display, video playback, and video file saving.
 
 In live display mode, the FPGA is capturing data off the image sensor, and will
@@ -14,7 +14,7 @@ device (LCD, HDMI and RTSP streams).
 In playback mode, the FPGA is replaying video from its internal memory buffer
 and the pipeline daemon is given control of the playback position and framerate
 of the video stream. Upon entering playback mode, the video will be paused on
-the first frame in memory, but the playback rate and position can be cahnged
+the first frame in memory, but the playback rate and position can be changed
 using the `playback` function.
 
 In filesave mode, the FPGA replays video in the same manner as playback mode,
@@ -46,8 +46,8 @@ screenshot from the pipeline.
 Video D-Bus Methods
 ===================
 The DBus interface to the video pipeline daemon is accessible at
-`/com/krontech/chronos/video` and conforms to the interface given by
-[com.krontech.chronos.video.xml](../../src/api/com.krontech.chronos.video.xml),
+`/ca/krontech/chronos/video` and conforms to the interface given by
+[ca.krontech.chronos.video.xml](../../src/api/ca.krontech.chronos.video.xml),
 which implements the methods:
 
 | Method Name                   | Input Type | Description
@@ -55,6 +55,7 @@ which implements the methods:
 | [`status`](#status)           |            | Return the status of the video pipeline.
 | [`get`](#get)                 | `as`       | Retrieve the value of one or more parameters.
 | [`set`](#set)                 | `a{sv}`    | Change the value of one or more parameters.
+| [`describe`](#describe)       |            | Return a dictionary describing the available parameters.
 | [`flush`](#flush)             |            | Clear recorded video and return to live display mode.
 | [`playback`](#playback)       | `a{sv}`    | Control the frame position and playback rate.
 | [`configure`](#configure)     | `a{sv}`    | Configure video settings.
@@ -100,6 +101,16 @@ set
 ---
 This method takes as input a hash map with the parameter values to be configured on
 the video system.
+
+describe
+--------
+This method returns a nested dictionary describing the available parameters on the
+video system. Each parameter will be a key in the dictionary, and the value will
+be a nested dictionary containing three booleans:
+ * `get`: Indicates whether the parameter can be retrieved via the `get` method.
+ * `set`: Indicates whether the parameter can be modified via the `set` method.
+ * `notifies`: Indicates whether changes to the parameter's value will be reported
+   with the `update` signal.
 
 flush
 -----
@@ -152,17 +163,13 @@ be disabled.
 
 livedisplay
 -----------
-Switches the pipeline to live display mode, and optionally reconfigures the
-video resolution to receive from the FPGA. If both `hres` and `vres` are zero,
-this is interpreted as a request to switch to live display without any
-configuration changes.
+Switches the pipeline to live display mode and optionally configured video cropping
+and setup aids.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
-| `"hres"`          | `int`     | The horizontal resolution of live video.
-| `"vres"`          | `uint`    | The vertical resolution of live video.
 | `"cropx"`         | `uint`    | The horizontal video crop size (default: 0).
 | `"cropy"`         | `uint`    | The vertical video crop size (defualt: 0).
 | `"startx"`        | `uint`    | The horizontal starting offset for cropped video (default: 0).

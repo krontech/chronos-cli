@@ -166,8 +166,12 @@ static void
 gst_gif_src_finalize (GObject * object)
 {
   GstGifSrc *src = GST_GIF_SRC (object);
+  GList *item;
 
-  g_list_free_full(src->cachelist, (GDestroyNotify)gst_buffer_unref);
+  while ((item = g_list_first(src->cachelist)) != NULL) {
+    gst_buffer_unref(item->data);
+    src->cachelist = g_list_delete_link(src->cachelist, item);
+  }
   g_free (src->filename);
 
   G_OBJECT_CLASS (parent_class)->finalize (object);
@@ -353,8 +357,12 @@ static gboolean
 gst_gif_src_stop (GstBaseSrc * basesrc)
 {
   GstGifSrc *src = GST_GIF_SRC (basesrc);
+  GList *item;
 
-  g_list_free_full(src->cachelist, (GDestroyNotify)gst_buffer_unref);
+  while ((item = g_list_first(src->cachelist)) != NULL) {
+    gst_buffer_unref(item->data);
+    src->cachelist = g_list_delete_link(src->cachelist, item);
+  }
   g_free(src->frame);
   gd_close_gif(src->gif);
   

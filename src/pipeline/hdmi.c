@@ -37,6 +37,7 @@
 static void *
 hdmi_hotplug_thread(void *arg)
 {
+    struct pipeline_state *state = arg;
     int err;
     int prev = -1;
 
@@ -68,7 +69,7 @@ hdmi_hotplug_thread(void *arg)
         next = (hpd.hpd_status & (TI81XXHDMI_HPD_HIGH | TI81XXHDMI_HPD_MODIFY)) != 0;
         if (prev != next) {
             fprintf(stderr, "HDMI Hotplug Event 0x%02x\n", hpd.hpd_status);
-            pthread_kill((uintptr_t)arg, SIGHUP);
+            pthread_kill(state->mainthread, SIGHUP);
         }
         prev = next;
     }
@@ -78,9 +79,8 @@ hdmi_hotplug_thread(void *arg)
 void
 hdmi_hotplug_launch(struct pipeline_state *state)
 {
-    pthread_t main_thread = pthread_self();
     pthread_t hdmi_thread;
-    pthread_create(&hdmi_thread, NULL, hdmi_hotplug_thread, (void *)(uintptr_t)pthread_self());
+    pthread_create(&hdmi_thread, NULL, hdmi_hotplug_thread, state);
 }
 
 static int

@@ -41,14 +41,20 @@
 
 struct CamVideo;
 
+#define PLAYBACK_STATE_PAUSE    0   /* Paused - no video output. */
+#define PLAYBACK_STATE_LIVE     1   /* Live display of video from the image sensor. */
+#define PLAYBACK_STATE_PLAY     2   /* Playback of recorded frames from memory. */
+#define PLAYBACK_STATE_FILESAVE 3   /* Encoding video data into a file. */
+
 #define PIPELINE_MODE_PAUSE     0   /* Paused - no video output. */
-#define PIPELINE_MODE_PLAY      1   /* Playing live or recoded frames to the display device. */
-#define PIPELINE_MODE_H264      2
-#define PIPELINE_MODE_RAW16     3   /* 16-bit raw data (padded with zeros LSB) */
-#define PIPELINE_MODE_RAW12     4   /* 12-bit packed data */
-#define PIPELINE_MODE_DNG       5
-#define PIPELINE_MODE_TIFF      6   /* Processed 8-bit TIFF format. */
-#define PIPELINE_MODE_TIFF_RAW  7   /* Linear RAW 16-bit TIFF format. */
+#define PIPELINE_MODE_LIVE      1   /* Live display of video from the image sensor. */
+#define PIPELINE_MODE_PLAY      2   /* Playback of recorded frames from memory. */
+#define PIPELINE_MODE_H264      3
+#define PIPELINE_MODE_RAW16     4   /* 16-bit raw data (padded with zeros LSB) */
+#define PIPELINE_MODE_RAW12     5   /* 12-bit packed data */
+#define PIPELINE_MODE_DNG       6
+#define PIPELINE_MODE_TIFF      7   /* Processed 8-bit TIFF format. */
+#define PIPELINE_MODE_TIFF_RAW  8   /* Linear RAW 16-bit TIFF format. */
 
 #define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PLAY)
 
@@ -99,7 +105,10 @@ struct overlay_config {
 #define CAMERA_SERIAL_LENGTH    32
 #define CAMERA_SERIAL_OFFSET    0
 
+#define PIPELINE_ERROR_MAXLEN   80
+
 struct pipeline_state {
+    pthread_t           mainthread;
     GMainLoop           *mainloop;
     GstElement          *pipeline;
     GstElement          *vidsrc;
@@ -109,7 +118,7 @@ struct pipeline_state {
     const struct ioport *iops;
     int                 write_fd;
     void *              scratchpad;
-    char                error[80];
+    char                error[PIPELINE_ERROR_MAXLEN];
     
     /* Camera information */
     char                serial[CAMERA_SERIAL_LENGTH+1];
@@ -121,9 +130,11 @@ struct pipeline_state {
 
     /* Frame information */
     struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */
+    pthread_mutex_t segmutex;       /* Lock access to the segment list. */
     long            position;       /* Last played frame number, or negative for live display. */
 
     /* Playback Mode */
+    int             playstate;      /* Playback state machine. */
     long            playrate;       /* Playback rate in frames per second. */
     long            playcounter;    /* Internal counter for framerate control. */
     unsigned long   playstart;      /* Starting frame to play from when in playback mode. */
@@ -167,19 +178,23 @@ GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_tiffraw_sink(struct pipeline_state *state, struct pipeline_args *args);
 
 /* Some background elements. */
-void hdmi_hotplug_launch(struct pipeline_state *state);
-void dbus_service_launch(struct pipeline_state *state);
-void dbus_signal_sof(struct pipeline_state *state);
-void dbus_signal_eof(struct pipeline_state *state, const char *err);
-void dbus_signal_segment(struct pipeline_state *state);
-void dbus_signal_update(struct pipeline_state *state, const char **names);
+struct CamVideo *dbus_service_launch(struct pipeline_state *state);
+void dbus_signal_sof(struct CamVideo *video);
+void dbus_signal_eof(struct CamVideo *video, const char *err);
+void dbus_signal_segment(struct CamVideo *video);
+void dbus_signal_update(struct CamVideo *video, const char **names);
 gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
-gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval);
+gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err);
+GHashTable *dbus_describe_params(struct pipeline_state *state);
+
+/* HDMI Hotplug watcher needs to be in its own thread. */
+void hdmi_hotplug_launch(struct pipeline_state *state);
 
 /* Functions for controlling the playback rate. */
 void playback_init(struct pipeline_state *state);
-void playback_preroll(struct pipeline_state *state, unsigned int mode);
+void playback_preroll(struct pipeline_state *state);
 void playback_pause(struct pipeline_state *state);
+void playback_seek(struct pipeline_state *state, int delta);
 void playback_live(struct pipeline_state *state);
 void playback_play(struct pipeline_state *state, unsigned long frame, int framerate);
 void playback_play_once(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count);

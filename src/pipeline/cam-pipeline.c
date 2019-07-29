@@ -43,8 +43,6 @@
 #include "gst/gstneon.h"
 #include "gst/gstgifsrc.h"
 
-#define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
-
 /* Signal handlering */
 static struct pipeline_state cam_global_state = {0};
 static sig_atomic_t catch_sigint = 0;
@@ -71,6 +69,15 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     GstPad *sinkpad;
     GstPad *tpad;
     GstCaps *caps;
+
+    /* Get the active video size. */
+    state->source.hres = state->fpga->imager->hres_count;
+    state->source.vres = state->fpga->imager->vres_count;
+    if ((state->source.hres == 0) || (state->source.hres > PIPELINE_MAX_HRES) ||
+        (state->source.vres == 0) || (state->source.vres > PIPELINE_MAX_VRES)) {
+        sprintf(state->error, "Invalid source resolution (%dx%d)", state->source.hres, state->source.vres);
+        return NULL;
+    }
 
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
@@ -472,7 +479,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
                 break;
             }
             if (newstate == GST_STATE_PLAYING) {
-                dbus_signal_sof(state);
+                dbus_signal_sof(state->video);
             }
             fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name (newstate));
             break;
@@ -522,28 +529,11 @@ static gboolean
 handle_sighup(gpointer data)
 {
     struct pipeline_state *state = data;
-    if (!PIPELINE_IS_SAVING(state->mode)) {
+    if (state->playstate != PLAYBACK_STATE_FILESAVE) {
         cam_pipeline_restart(state);
     }
 }
 
-/* In modern Glib, this is a one-line call... */
-#if GLIB_CHECK_VERSION(2, 30, 0)
-
-#include <glib-unix.h>
-
-static int
-signals_init(struct pipeline_state *state)
-{
-    /* Shutdown and cleanup on SIGINT and SIGTERM  */    
-    g_unix_signal_add(SIGTERM, handle_sigint, state);
-    g_unix_signal_add(SIGINT, handle_sigint, state);
-    /* Reconfigure the pipeline on SIGHUP */
-    g_unix_signal_add(SIGHUP, handle_sighup, state);
-    return 0;
-}
-
-#else
 /*
  * The old Arago-based systems don't have signal handling helpers
  * in Glib so we need to roll our own using the self-pipe trick.
@@ -639,7 +629,6 @@ signals_init(struct pipeline_state *state)
     signal(SIGHUP,  g_unix_signal_handler);
     return 0;
 }
-#endif
 
 /*===============================================
  * Pipeline Main Entry Point
@@ -756,6 +745,7 @@ main(int argc, char * argv[])
     if (!gst_element_register(NULL, "gifsrc", GST_RANK_NONE, GST_TYPE_GIF_SRC)) {
         fprintf(stderr, "Failed to register Gstreamer GIF source element.\n");
     }
+    state->mainthread = pthread_self();
     state->mainloop = g_main_loop_new(NULL, FALSE);
     state->eos = gst_event_new_eos();
     state->fpga = fpga_open();
@@ -825,8 +815,8 @@ main(int argc, char * argv[])
     signal(SIGPIPE, SIG_IGN);
 
     /* Launch the HDMI, DBus and Playback threads. */
+    state->video = dbus_service_launch(state);
     hdmi_hotplug_launch(state);
-    dbus_service_launch(state);
     playback_init(state);
 
     do {
@@ -846,28 +836,27 @@ main(int argc, char * argv[])
         /* File saving modes should fail gracefully back to playback. */
         if (PIPELINE_IS_SAVING(args.mode)) {
             /* Return to playback mode after saving. */
-            state->next = args.mode;
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
                 /* Throw an EOF and revert to playback. */
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 continue;
             }
         }
-        /* If the display resolution is unknown, fall back to a test pattern. */
-        else if ((state->source.hres == 0) || (state->source.vres == 0)) {
-            state->next = PIPELINE_MODE_PAUSE; /* No video to play. */
-            if (!cam_videotest(state)) {
-                dbus_signal_eof(state, state->error);
-                fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
-                break;
+        /* Launch the video pipeline in live and playback modes. */
+        else if (args.mode != PIPELINE_MODE_PAUSE) {
+            if (!cam_pipeline(state, &args)) {
+                /* Throw an EOF and revert to paused. */
+                state->args.mode = PIPELINE_MODE_PAUSE;
+                dbus_signal_eof(state->video, state->error);
+                fprintf(stderr, "Failed to start pipeline.\n");
+                continue;
             }
         }
-        /* Live display and playback modes should only return fatal errors. */
+        /* Otherwise, there is nothing to play, generate a test pattern. */
         else {
-            state->next = PIPELINE_MODE_PLAY;
-            if (!cam_pipeline(state, &args)) {
-                dbus_signal_eof(state, state->error);
+            if (!cam_videotest(state)) {
+                dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
                 break;
             }
@@ -882,7 +871,14 @@ main(int argc, char * argv[])
         watchid = gst_bus_add_watch(bus, cam_bus_watch, state);
         gst_object_unref(bus);
 
-        playback_preroll(state, state->next);
+        /* Unpause the playback to begin rendering frames. */
+        if (args.mode == PIPELINE_MODE_LIVE) {
+            playback_live(state);
+        } else if (args.mode == PIPELINE_MODE_PLAY) {
+            playback_seek(state, 0);
+        } else if (PIPELINE_IS_SAVING(args.mode)) {
+            playback_preroll(state);
+        }
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         gst_element_get_state(state->pipeline, &current, &pending, 10ULL * 1000000000ULL);
         if (current == GST_STATE_PLAYING) {
@@ -890,6 +886,7 @@ main(int argc, char * argv[])
             g_main_loop_run(state->mainloop);
 
             /* Stop the pipeline gracefully. */
+            dbus_signal_eof(state->video, state->error);
             playback_pause(state);
             gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
             for (i = 0; i < 1000; i++) {
@@ -900,6 +897,7 @@ main(int argc, char * argv[])
             snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
                 gst_element_state_get_name(current), gst_element_state_get_name(pending));
             fprintf(stderr, "%s\n", state->error);
+            dbus_signal_eof(state->video, state->error);
         }
 
         /* Garbage collect the pipeline. */
@@ -919,7 +917,6 @@ main(int argc, char * argv[])
             close(state->write_fd);
             state->write_fd = -1;
         }
-        dbus_signal_eof(state, state->error);
 
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");

@@ -3,7 +3,7 @@
     "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
     "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd" >
 <node>
-  <interface name="com.krontech.chronos.control">
+  <interface name="ca.krontech.chronos.control">
     <method name="get_video_settings">
       <arg name="data" direction="out" type="a{sv}"/>
     </method>

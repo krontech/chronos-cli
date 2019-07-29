@@ -114,6 +114,81 @@ json_token_size(jsmntok_t *start)
     return 1;
 }
 
+/* Parse a simple JSON array where all members are of the same type. */
+static gpointer
+json_parse_array(jsmntok_t *tokens, GType *ptype, unsigned long flags)
+{
+    int children, i = 1;
+
+    /* String cases - use a GPtrArray */
+    if (tokens[1].type == JSMN_STRING) {
+        GPtrArray *arr = g_ptr_array_sized_new(tokens->size);
+        if (!arr) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+        }
+        g_ptr_array_set_free_func(arr, g_free);
+        *ptype = dbus_g_type_get_collection("GPtrArray", G_TYPE_STRING);
+
+        /* Add all strings to the pointer array.  */
+        for (children = 0; children < tokens->size; children++) {
+            jsmntok_t *tok = &tokens[i];
+            if (tok->type == JSMN_STRING) {
+                char *value = &js[tok->start];
+                value[tok->end - tok->start] = '\0';
+                g_ptr_array_add(arr, g_strdup(value));
+            }
+            i += json_token_size(tok);
+        }
+        return arr;
+    }
+    else if (tokens[1].type != JSMN_PRIMITIVE) {
+        /* Arrays of complex types are not supported. */
+        return NULL;
+    }
+    /* If the first token is 'true', 'false', or 'null' then build an array of booleans. */
+    else if (memchr("tfn", js[tokens[1].start], 3) != NULL) {
+        GArray *arr = g_array_sized_new(FALSE, TRUE, sizeof(gboolean), tokens->size);
+        if (!arr) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+        }
+        *ptype = dbus_g_type_get_collection("GArray", G_TYPE_BOOLEAN);
+        g_array_set_size(arr, tokens->size);
+        
+        /* Add all doubles to the pointer array. */
+        for (children = 0; children < tokens->size; children++) {
+            jsmntok_t *tok = &tokens[i];
+            if (tok->type == JSMN_PRIMITIVE) {
+                g_array_index(arr, gboolean, children) = (js[tok->start] == 't');
+            }
+            i += json_token_size(tok);
+        }
+    }
+    /*
+     * Otherwise, the array could contain integers or floats, choose
+     * the lowest common denominator and build an array of doubles.
+     */
+    else {
+        GArray *arr = g_array_sized_new(FALSE, TRUE, sizeof(gdouble), tokens->size);
+        if (!arr) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+        }
+        *ptype = dbus_g_type_get_collection("GArray", G_TYPE_DOUBLE);
+        g_array_set_size(arr, tokens->size);
+
+        /* Add all doubles to the pointer array. */
+        for (children = 0; children < tokens->size; children++) {
+            jsmntok_t *tok = &tokens[i];
+            if (tok->type == JSMN_PRIMITIVE) {
+                char *value = &js[tok->start];
+                value[tok->end - tok->start] = '\0';
+                g_array_index(arr, gdouble, children) = strtod(value, NULL);
+            }
+            i += json_token_size(tok);
+        }
+        return arr;
+    }
+}
+
 static GHashTable *
 json_parse_object(jsmntok_t *tokens, unsigned long flags)
 {
@@ -152,7 +227,15 @@ json_parse_object(jsmntok_t *tokens, unsigned long flags)
             if (!obj) {
                 handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
             }
-            cam_dbus_dict_add_dict(h, name, obj);
+            cam_dbus_dict_take_boxed(h, name, CAM_DBUS_HASH_MAP, obj);
+        }
+        else if (tok->type == JSMN_ARRAY) {
+            GType arraytype;
+            gpointer *array = json_parse_array(tok, &arraytype, flags);
+            if (!array) {
+                handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+            }
+            cam_dbus_dict_take_boxed(h, name, arraytype, array);
         }
         else if (tok->type != JSMN_PRIMITIVE) {
             /* Ignore other nested types. */
@@ -189,37 +272,6 @@ json_parse_object(jsmntok_t *tokens, unsigned long flags)
 
     /* Success */
     return h;
-}
-
-/* Parse a simple JSON array where all members are of the same type. */
-static GPtrArray *
-json_parse_array(jsmntok_t *tokens, GType *ptype, unsigned long flags)
-{
-    int children, i = 1;
-
-    /* String cases - use a GPtrArray */
-    if (tokens[1].type == JSMN_STRING) {
-        GPtrArray *arr = g_ptr_array_sized_new(tokens->size);
-        if (!arr) {
-            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
-        }
-        g_ptr_array_set_free_func(arr, g_free);
-        *ptype = dbus_g_type_get_collection("GPtrArray", G_TYPE_STRING);
-
-        /* Add all strings to the pointer array.  */
-        for (children = 0; children < tokens[0].size; children++) {
-            jsmntok_t   *tok = &tokens[i];
-            if (tok->type == JSMN_STRING) {
-                char *value = &js[tok->start];
-                value[tok->end - tok->start] = '\0';
-                g_ptr_array_add(arr, g_strdup(value));
-            }
-            i += json_token_size(tok);
-        }
-        return arr;
-    }
-    /* TODO: Handle arrays of other primitive types. */
-    return NULL;
 }
 
 /* Parse JSON args, or return NULL if no args were provided. */

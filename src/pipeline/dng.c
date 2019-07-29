@@ -33,6 +33,49 @@
 #define KPAGE_SIZE          4096
 #define TIFF_HDR_SIZE       KPAGE_SIZE
 
+/* Recursive version of mkdir to create an enitre path. */
+static int
+dng_mkdir(const char *path, mode_t mode)
+{
+    char pathbuf[PATH_MAX+1];
+    char *pathseg;
+
+    /* Copy the string and start parsing it into path segments. */
+    if (strlen(path) > PATH_MAX) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strncpy(pathbuf, path, PATH_MAX);
+    pathbuf[PATH_MAX] = '\0';
+    pathseg = pathbuf;
+
+    for (;;) {
+        /* Parse out the next path segment. */
+        char *end;
+        while (*pathseg == '/') pathseg++;  /* skip passed leading slashes. */
+        end = strchr(pathseg, '/');         /* find the end of the segment. */
+        if (!end) break;                    /* handle the last segment outside the loop. */
+        *end = '\0';
+
+        /* Assume the parent directories already exist. */
+        if ((strcmp(pathseg, ".") == 0) || (strcmp(pathseg, "..") == 0)) {
+            *end = '/';
+            pathseg = end;
+            continue;
+        }
+        /* Try creating the directory. */
+        if (mkdir(pathbuf, mode) != 0) {
+            /* It's okay for the directory to exist, but otherwise it's a failure. */
+            if (errno != EEXIST) return -1;
+        }
+        *end = '/';
+        pathseg = end;
+    }
+
+    /* Create the final directory in the path. */
+    return mkdir(path, mode);
+}
+
 static gboolean
 dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
 {
@@ -216,7 +259,7 @@ cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args)
     GstPad *pad;
     int ret;
 
-    ret = mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    ret = dng_mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (ret < 0) {
         strcpy(state->error, strerror(errno));
         fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
@@ -464,7 +507,7 @@ cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args)
     GstPad *pad;
     int ret;
 
-    ret = mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    ret = dng_mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (ret < 0) {
         strcpy(state->error, strerror(errno));
         fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);
@@ -508,7 +551,7 @@ cam_tiffraw_sink(struct pipeline_state *state, struct pipeline_args *args)
     GstPad *pad;
     int ret;
 
-    ret = mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+    ret = dng_mkdir(args->filename, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
     if (ret < 0) {
         strcpy(state->error, strerror(errno));
         fprintf(stderr, "Unable to create directory %s (%s)\n", args->filename, state->error);

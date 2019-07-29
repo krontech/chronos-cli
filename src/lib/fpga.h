@@ -49,6 +49,7 @@
 #define FPGA_COL_OFFSET_BASE        0x5000
 #define FPGA_IO_BASE                0x6000
 #define FPGA_TIMING_BASE            0x6100
+#define FPGA_IMAGER_BASE            0x6500
 #define FPGA_PIPELINE_BASE          0x7000
 #define FPGA_VIDSRC_BASE            0x7100
 #define FPGA_CALSRC_BASE            0x7200
@@ -209,6 +210,21 @@ struct fpga_vram {
 #define VRAM_CTL_TRIG_READ  (1 << 0)
 #define VRAM_CTL_TRIG_WRITE (1 << 1)
 
+/* Sequencer Programming Registers */
+struct fpga_seqpgm {
+    uint32_t identifier;
+    uint32_t version;
+    uint32_t subver;
+    uint32_t control;
+    uint32_t status;
+    uint32_t frame_write;
+    uint32_t frame_read;
+    uint32_t __reserved0[1];
+    uint32_t block_count;
+};
+
+#define SEQPGM_IDENTIFIER   0x20
+
 /* Zebra-stripes configuration module. */
 struct fpga_zebra {
     uint32_t identifier;
@@ -331,6 +347,25 @@ struct fpga_config {
 #define MMU_INVERT_CS                   (1 << 0)
 #define MMU_SWITCH_STUFFED              (1 << 1)
 
+/* Imager register block. */
+struct fpga_imager {
+    uint16_t identifier;
+    uint16_t version;
+    uint16_t subver;
+    uint16_t status;
+    uint16_t control;
+    uint16_t clk_phase;
+    uint16_t sync_token;
+    uint16_t fifo_start;
+    uint16_t fifo_stop;
+    uint16_t hres_count;
+    uint16_t vres_count;
+    uint16_t __reserved0[5];
+    uint64_t data_correct;
+};
+
+#define IMAGER_IDENTIFER    0x000E
+
 #define SENSOR_DATA_WIDTH		        12
 #define COLOR_MATRIX_INT_BITS	        3
 #define COLOR_MATRIX_FRAC_BITS          12
@@ -362,6 +397,15 @@ struct fpga_config {
 
 #define EEPROM_I2C_BUS          "/dev/i2c-1"
 
+/* FPGA version number comparison  */
+#define FPGA_VERSION_COMPARE(_regs_, _cmp_, _major_, _minor_) \
+    ((_regs_)->version == (_major_) ? \
+        (_regs_)->subver _cmp_ (_minor_) : \
+        (_regs_)->version _cmp_ (_major_))
+
+/* True if the FPGA version number is greater */
+#define FPGA_VERSION_REQUIRE(_regs_, _major_, _minor_) FPGA_VERSION_COMPARE(_regs_, >=, _major_, _minor_)
+
 struct fpga {
     /* Memory mapping. */
     int fd;
@@ -383,14 +427,15 @@ struct fpga {
     } gpio;
 
     /* Structured access to FPGA registers. */
-    volatile struct fpga_sensor *sensor;
-    volatile struct fpga_seq    *seq;
-    volatile struct fpga_display *display;
-    volatile struct fpga_config *config;
-    volatile struct fpga_vram   *vram; 
-    volatile struct fpga_segments *segments;
-    volatile struct fpga_overlay *overlay;
-    volatile struct fpga_zebra  *zebra;
+    volatile struct fpga_sensor     *sensor;
+    volatile struct fpga_seq        *seq;
+    volatile struct fpga_display    *display;
+    volatile struct fpga_config     *config;
+    volatile struct fpga_vram       *vram; 
+    volatile struct fpga_segments   *segments;
+    volatile struct fpga_overlay    *overlay;
+    volatile struct fpga_zebra      *zebra;
+    volatile struct fpga_imager     *imager;
 };
 
 struct fpga *fpga_open(void);
