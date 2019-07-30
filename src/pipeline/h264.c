@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <setjmp.h>
 #include <gst/gst.h>
+#include <arpa/inet.h>
 
 #include "pipeline.h"
 
@@ -140,34 +141,40 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 GstPad *
 cam_network_sink(struct pipeline_state *state)
 {
-    GstElement *encoder, *queue, *parser, *neon, *mux, *sink;
+    GstElement *encoder, *queue, *parser, *neon, *payload, *sink;
+    struct in_addr addr;
+
+    /* Do nothing unless we were given an IP address. */
+    if (inet_aton(state->nethost, &addr) < 0) {
+        return NULL;
+    }
 
     /* Allocate our segment of the video pipeline. */
     queue =   gst_element_factory_make("queue",       "net-queue");
     encoder = gst_element_factory_make("omx_h264enc", "net-encoder");
     neon =    gst_element_factory_make("neon",        "net-neon");
     parser =  gst_element_factory_make("h264parse",   "net-parse");
-    mux =     gst_element_factory_make("mpegtsmux",   "net-mux");
-    sink =    gst_element_factory_make("tcpserversink", "net-sink");
-    if (!queue || !encoder || !neon || !parser || !mux || !sink) {
+    payload = gst_element_factory_make("rtph264pay",  "net-payload");
+    sink =    gst_element_factory_make("udpsink",     "net-sink");
+    if (!queue || !encoder || !neon || !parser || !payload || !sink) {
         return NULL;
     }
 
     /* Configure the H264 encoder for low-latency low-birate operation. */
     g_object_set(G_OBJECT(encoder), "force-idr-period", (guint)90, NULL);
     g_object_set(G_OBJECT(encoder), "i-period", (guint)90, NULL);
-    g_object_set(G_OBJECT(encoder), "bitrate", (guint)500000, NULL);
+    g_object_set(G_OBJECT(encoder), "bitrate", (guint)5000000, NULL);
     g_object_set(G_OBJECT(encoder), "profile", (guint)OMX_H264ENC_PROFILE_HIGH, NULL);
     g_object_set(G_OBJECT(encoder), "level", (guint)OMX_H264ENC_LVL_51, NULL);
     g_object_set(G_OBJECT(encoder), "encodingPreset", (guint)OMX_H264ENC_ENC_PRE_HSMQ, NULL);
     g_object_set(G_OBJECT(encoder), "rateControlPreset", (guint)OMX_H264ENC_RATE_LOW_DELAY, NULL);
-    g_object_set(G_OBJECT(encoder), "framerate", (guint)LIVE_MAX_FRAMERATE/2, NULL);
+    g_object_set(G_OBJECT(encoder), "framerate", (guint)LIVE_MAX_FRAMERATE, NULL);
     
-    g_object_set(G_OBJECT(sink), "recover-policy", (guint)3, NULL); /* Recover by syncing to last keyframe. */
-    g_object_set(G_OBJECT(sink), "sync-method", (guint)2, NULL);    /* Sync clients from the last keyframe. */
+    /* Configure the network destination. */
+    g_object_set(G_OBJECT(sink), "host", state->nethost, NULL);
     g_object_set(G_OBJECT(sink), "port", (guint)NETWORK_STREAM_PORT, NULL);
 
-    gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, mux, sink, NULL);
-    gst_element_link_many(queue, encoder, neon, parser, mux, sink, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, payload, sink, NULL);
+    gst_element_link_many(queue, encoder, neon, parser, payload, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 }

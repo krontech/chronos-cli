@@ -37,7 +37,7 @@
 #define PIPELINE_MAX_VRES   1080
 #define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES * 4)
 
-#define NETWORK_STREAM_PORT 4953
+#define NETWORK_STREAM_PORT 5000
 
 struct CamVideo;
 
@@ -126,6 +126,9 @@ struct pipeline_state {
 
     /* Display control config */
     uint32_t            control;
+
+    /* Destination address for UDP/network stream. */
+    char            nethost[128];
 
     /* Frame information */
     struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */

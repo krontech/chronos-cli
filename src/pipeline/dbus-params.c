@@ -119,6 +119,7 @@ static gboolean
 cam_overlay_format_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     strncpy(state->overlay.format, g_value_get_string(val), sizeof(state->overlay.format));
+    state->overlay.format[sizeof(state->overlay.format)-1] = '\0';
     return TRUE;
 }
 
@@ -186,6 +187,23 @@ cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_pa
     return vboxed;
 }
 
+static gboolean
+cam_netstream_host_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
+{
+    strncpy(state->nethost, g_value_get_string(val), sizeof(state->nethost));
+    state->nethost[sizeof(state->nethost)-1] = '\0';
+    return TRUE;
+}
+
+static GValue *
+cam_netstream_sdp_getter(struct pipeline_state *state, const struct pipeline_param *p)
+{
+    GValue *gval = g_new0(GValue, 1);
+    g_value_init(gval, G_TYPE_STRING);
+    g_value_take_string(gval, g_strdup_printf("v=0\nm=video %d RTP/AVP 96\na=rtpmap:96 H264/9000\n", NETWORK_STREAM_PORT));
+    return gval;
+}
+
 /* This is really just here to keep the lines shorter. */
 #define param_offset(_member_) offsetof(struct pipeline_state, _member_)
 
@@ -207,6 +225,9 @@ static const struct pipeline_param cam_dbus_params[] = {
     { "totalFrames",        G_TYPE_LONG,    0,              param_offset(seglist.totalframes), NULL,               NULL},
     { "totalSegments",      G_TYPE_LONG,    0,              param_offset(seglist.totalsegs),   NULL,               NULL},
     { "videoSegments",      G_TYPE_BOXED,   0,              0,                                 cam_video_segments_getter, NULL},
+    /* Network stream parameters. */
+    { "netStreamDest",      G_TYPE_STRING,  PARAM_F_NOTIFY, param_offset(nethost),             NULL,               cam_netstream_host_setter},
+    { "netStreamSDP",       G_TYPE_BOXED,   PARAM_F_NOTIFY, param_offset(nethost),             cam_netstream_sdp_getter, NULL},
     { NULL, G_TYPE_INVALID, 0, 0, NULL, NULL}
 };
 
