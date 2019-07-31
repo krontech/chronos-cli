@@ -809,6 +809,7 @@ main(int argc, char * argv[])
 
     /* Launch the HDMI, DBus and Playback threads. */
     state->video = dbus_service_launch(state);
+    state->rtsp = rtsp_server_launch(state);
     hdmi_hotplug_launch(state);
     playback_init(state);
 
@@ -923,6 +924,7 @@ main(int argc, char * argv[])
     
     fprintf(stderr, "Exiting the pipeline...\n");
     playback_cleanup(state);
+    rtsp_server_cleanup(state->rtsp);
     dbus_service_cleanup(state->video);
     unlink(SCREENCAP_PATH);
     munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);

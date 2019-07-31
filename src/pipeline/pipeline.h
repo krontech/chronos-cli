@@ -40,6 +40,7 @@
 #define NETWORK_STREAM_PORT 5000
 
 struct CamVideo;
+struct rtsp_ctx;
 
 #define PLAYBACK_STATE_PAUSE    0   /* Paused - no video output. */
 #define PLAYBACK_STATE_LIVE     1   /* Live display of video from the image sensor. */
@@ -115,6 +116,7 @@ struct pipeline_state {
     GstElement          *vidsrc;
     GstEvent            *eos;
     struct CamVideo     *video;
+    struct rtsp_ctx     *rtsp;
     struct fpga         *fpga;
     const struct ioport *iops;
     int                 runmode;
@@ -210,5 +212,9 @@ void playback_cleanup(struct pipeline_state *state);
 void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
 void overlay_update(struct pipeline_state *state, const struct video_segment *seg);
+
+/* RTSP live streaming */
+struct rtsp_ctx *rtsp_server_launch(struct pipeline_state *state);
+void rtsp_server_cleanup(struct rtsp_ctx *ctx);
 
 #endif /* __PIPELINE */

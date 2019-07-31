@@ -101,6 +101,9 @@ cam_pipeline_SOURCES += pipeline/lcd.c
 cam_pipeline_SOURCES += pipeline/overlay.c
 cam_pipeline_SOURCES += pipeline/playback.c
 cam_pipeline_SOURCES += pipeline/raw.c
+cam_pipeline_SOURCES += pipeline/rtsp-server.c
+cam_pipeline_SOURCES += pipeline/rtsp-methods.c
+cam_pipeline_SOURCES += pipeline/rtsp-private.h
 cam_pipeline_SOURCES += pipeline/screencap.c
 cam_pipeline_SOURCES += pipeline/pipeline.h
 # Private gstreamer elements.
