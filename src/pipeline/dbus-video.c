@@ -221,12 +221,26 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
     unsigned long loopcount = cam_dbus_dict_get_uint(args, "loopcount", 0);
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
-    if (loopcount) {
-        playback_loop(state, position, framerate, loopcount);
-    } else {
-        playback_play(state, position, framerate);
-    }
     state->args.mode = PIPELINE_MODE_PLAY;
+
+    /* If we're in playback or live, send a seek command. */
+    if ((state->playstate == PLAYBACK_STATE_LIVE) || (state->playstate == PLAYBACK_STATE_PLAY)) {
+        if (loopcount) {
+            playback_loop(state, position, framerate, loopcount);
+        } else {
+            playback_play(state, position, framerate);
+        }
+    }
+    /* Otherwise, unless we're saving, give the video system a reboot. */
+    else if (!PIPELINE_IS_SAVING(state->runmode)) {
+        /* Setup the playback parameters. */
+        state->playrate = framerate;
+        state->playstart = position;
+        state->playloop = (loopcount != 0);
+        state->playlength = (loopcount == 0) ? state->seglist.totalframes : loopcount;
+        cam_pipeline_restart(state);
+    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -310,7 +324,6 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     gboolean zebra_en = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra_level > 0.0);
 
     /* Update the live display flags. */
-    state->args.mode = PIPELINE_MODE_PLAY;
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
     state->config.zebra_level = zebra_en ? 0.05 : 0.0;
     state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
@@ -344,19 +357,22 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     state->source.startx = startx;
     state->source.starty = starty;
 
-    /* If not in playback mode, a restart is required. */
-    state->args.mode = PIPELINE_MODE_LIVE;
-    if ((state->runmode != PIPELINE_MODE_PLAY) && (state->runmode != PIPELINE_MODE_LIVE)) {
+    /* If we're in playback or live, send a seek command. */
+    state->args.mode = PLAYBACK_STATE_LIVE;
+    if ((state->playstate == PLAYBACK_STATE_LIVE) || (state->playstate == PLAYBACK_STATE_PLAY)) {
+        if (diff) {
+            /* A change of video geometry will require a restart. */
+            cam_pipeline_restart(state);
+        } else {
+            /* Otherwise, seek directly to live. */
+            playback_live(state);
+        }
+    }
+    /* Otherwise, unless we're saving, give the video system a reboot. */
+    else if (!PIPELINE_IS_SAVING(state->runmode)) {
         cam_pipeline_restart(state);
     }
-    /* If cropping geometry has changed, a restart is required. */
-    else if (diff) {
-        cam_pipeline_restart(state);
-    }
-    /* Otherwise, go directly to live. */
-    else {
-        playback_live(state);
-    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
