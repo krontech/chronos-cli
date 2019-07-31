@@ -121,10 +121,12 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(encoder), "encodingPreset", (guint)OMX_H264ENC_ENC_PRE_HSMQ, NULL);
     g_object_set(G_OBJECT(encoder), "framerate", (guint)args->framerate, NULL);
 
-    /* Configure the H.264 Parser. */
+    /* Configure the H.264 Parser */
+#if !GST_CHECK_VERSION(0,10,36)
     g_object_set(G_OBJECT(parser), "split-packetized", (gboolean)FALSE, NULL);
     g_object_set(G_OBJECT(parser), "access-unit", (gboolean)TRUE, NULL);
     g_object_set(G_OBJECT(parser), "output-format", (guint)0, NULL);
+#endif
 
     /* Configure the MPEG-4 Multiplexer */
     g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
