@@ -491,7 +491,7 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
 
     /* If the duration parameter is set, it will override the maximum filesize value. */
     if(duration > 0){
-        maxFilesize = (double)duration * (double)bitrate/8; //TODO: Add some bytes of overhead for headers?
+        maxFilesize = (double)duration * (double)bitrate/8;
     }
 
     /* Maximum filesize for each .mp4 is optional, but must be in an acceptable range if specified. */

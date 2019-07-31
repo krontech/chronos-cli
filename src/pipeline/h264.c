@@ -187,7 +187,7 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     GstElement *encoder, *queue, *parser, *neon, *mux, *sink;
 
     /* Declare Audio Elements */
-    GstElement *soundsource, *soundcapsfilt, *soundqueue, *soundencoder, *soundparser;
+    GstElement *soundsource, *soundcapsfilt, *soundprequeue, *soundqueue, *soundencoder, *soundparser, *soundrate;
     GstCaps *caps;
 
     char timestampStr[32];
@@ -246,16 +246,17 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(encoder), "framerate", (guint)args->framerate, NULL);
 
     /* Configure the MPEG-4 Multiplexer */
-    g_object_set(G_OBJECT(mux), "dts-method", (guint)1, NULL);
+    g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
 
     /* Allocate our segment of the audio pipeline */
     soundsource =    gst_element_factory_make("alsasrc",       "liverec-alsasrc");
     soundcapsfilt =  gst_element_factory_make("capsfilter",    "liverec-capsfilter");
+    soundprequeue =  gst_element_factory_make("queue",         "liverec-soundprequeue");
     soundencoder =   gst_element_factory_make("omx_aacenc",    "liverec-soundencoder");
     soundqueue =     gst_element_factory_make("queue",         "liverec-soundqueue");
     soundparser =    gst_element_factory_make("aacparse",      "liverec-soundparser");
 
-    if(!soundsource || !soundcapsfilt || !soundqueue || !soundencoder || !soundparser){
+    if(!soundsource || !soundcapsfilt || !soundprequeue || !soundqueue || !soundencoder || !soundparser){
         close(state->liverec_fd);
         return NULL;
     }
@@ -264,6 +265,8 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(soundsource), "buffer-time", (gint64)800000, NULL);
     g_object_set(G_OBJECT(soundsource), "latency-time", (gint64)20000, NULL);
     g_object_set(G_OBJECT(soundsource), "provide-clock", (gboolean)FALSE, NULL);
+    g_object_set(G_OBJECT(soundsource), "slave-method", (guint)0, NULL);
+    g_object_set(G_OBJECT(soundsource), "do-timestamp", (gboolean)TRUE, NULL);
 
     /* Configure a capabilities filter for alsasrc */
     caps = gst_caps_new_simple( "audio/x-raw-int",
@@ -276,6 +279,11 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(soundcapsfilt), "caps", caps, NULL);
     gst_caps_unref(caps);
 
+    /* Configure sound prequeue */
+    g_object_set(G_OBJECT(soundprequeue), "max-size-bytes",     (guint)4294967294, NULL);
+    g_object_set(G_OBJECT(soundprequeue), "max-size-time",      (guint64)1844674407370955161, NULL);
+    g_object_set(G_OBJECT(soundprequeue), "max-size-buffers",   (guint)4294967294, NULL);
+
     /* Configure the omx aac encoder */
     g_object_set(G_OBJECT(soundencoder), "output-format", (gint)4, NULL);
 
@@ -284,13 +292,13 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set (G_OBJECT (sink), "sync", FALSE, NULL);
 
     /* Return the first element of our segment to link with */
-    gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, neon, parser, mux, sink, soundsource, soundcapsfilt, soundqueue, soundencoder, soundparser, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, neon, parser, mux, sink, soundsource, soundcapsfilt, soundprequeue, soundqueue, soundencoder, soundparser, NULL);
 
     /* Link video elements to mp4mux */
     gst_element_link_many(encoder, queue, neon, parser, mux, NULL);
 
     /* Link audio elements to mp4mux */
-    gst_element_link_many(soundsource, soundcapsfilt, soundencoder, soundqueue, soundparser, mux, NULL);
+    gst_element_link_many(soundsource, soundcapsfilt, soundprequeue, soundencoder, soundqueue, soundparser, mux, NULL);
 
     /* Link mp4mux to a file sink */
     gst_element_link_many(mux, sink, NULL);
