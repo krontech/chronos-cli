@@ -72,6 +72,8 @@ void
 rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
     char host[INET6_ADDRSTRLEN];
+    const char *transport = rtsp_header_find(conn, "Transport");
+    unsigned int port = 5000;
     
     /* We don't support merging of streams. */
     if (rtsp_header_find(conn, "Session")) {
@@ -79,9 +81,24 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
         return;
     }
 
-    /* Get the transport options and see if the client has a preferred port. */
-    /* TODO: Parse this messy thing. */
-    //const char *transport = rtsp_header_find(conn, "Transport");
+    /* Check for a preferred client port. */
+    if (transport) {
+        char pvalue[32];
+        if (rtsp_param_find(transport, "client_port", pvalue, sizeof(pvalue))) {
+            char *portend;
+            unsigned int lowport = strtoul(pvalue, &portend, 0);
+            unsigned int highport = lowport;
+            /* Check for an optional port range. */
+            if (*portend == '-') {
+                highport = strtoul(portend+1, &portend, 0);
+            }
+            /* If we got valid ports, use one from the client's range. */
+            if ((*portend == '\0') && (lowport != 0) && (highport >= lowport)) {
+                port = lowport + (rand() % (highport - lowport));
+            }
+            fprintf(stderr, "DEBUG: choosing client port between %d and %d\n", lowport, highport);
+        }
+    }
 
     /* Generate a new session ID. */
     ctx->session_id = rand();
@@ -89,7 +106,7 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
     if (conn->addr.ss_family == AF_INET) {
         struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
         sin->sin_family = AF_INET;
-        sin->sin_port = htons(5000);
+        sin->sin_port = htons(port);
         sin->sin_addr = ((struct sockaddr_in *)&conn->addr)->sin_addr;
         inet_ntop(AF_INET, &sin->sin_addr, host, sizeof(host));
     }
@@ -100,7 +117,7 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
 
     rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "Session: %d", ctx->session_id);
-    rtsp_write_header(conn, "Transport: RTP/AVP;unicast;client_port=5000;server_port=5000;host=%s", host);
+    rtsp_write_header(conn, "Transport: RTP/AVP;unicast;client_port=%d;server_port=5000;host=%s", port, host);
     rtsp_write_header(conn, "");
 }
 
@@ -109,4 +126,7 @@ rtsp_method_play(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *paylo
 {
     rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "");
+
+    /* Evil Hack! */
+    cam_pipeline_restart(cam_pipeline_state());
 }

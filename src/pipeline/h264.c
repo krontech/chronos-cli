@@ -140,6 +140,13 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     return gst_element_get_static_pad(encoder, "sink");
 }
 
+static void
+cam_network_sink_add_host(const char *host, int port, void *closure)
+{
+    GstElement *sink = closure;
+    g_signal_emit_by_name(G_OBJECT(sink), "add", host, port, NULL);
+}
+
 GstPad *
 cam_network_sink(struct pipeline_state *state)
 {
@@ -157,7 +164,7 @@ cam_network_sink(struct pipeline_state *state)
     neon =    gst_element_factory_make("neon",        "net-neon");
     parser =  gst_element_factory_make("h264parse",   "net-parse");
     payload = gst_element_factory_make("rtph264pay",  "net-payload");
-    sink =    gst_element_factory_make("udpsink",     "net-sink");
+    sink =    gst_element_factory_make("multiudpsink", "net-sink");
     if (!queue || !encoder || !neon || !parser || !payload || !sink) {
         return NULL;
     }
@@ -171,10 +178,9 @@ cam_network_sink(struct pipeline_state *state)
     g_object_set(G_OBJECT(encoder), "encodingPreset", (guint)OMX_H264ENC_ENC_PRE_HSMQ, NULL);
     g_object_set(G_OBJECT(encoder), "rateControlPreset", (guint)OMX_H264ENC_RATE_LOW_DELAY, NULL);
     g_object_set(G_OBJECT(encoder), "framerate", (guint)LIVE_MAX_FRAMERATE, NULL);
-    
-    /* Configure the network destination. */
-    g_object_set(G_OBJECT(sink), "host", state->nethost, NULL);
-    g_object_set(G_OBJECT(sink), "port", (guint)NETWORK_STREAM_PORT, NULL);
+
+    /* Register RTSP clients. */
+    rtsp_session_foreach(state->rtsp, cam_network_sink_add_host, sink);
 
     gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, payload, sink, NULL);
     gst_element_link_many(queue, encoder, neon, parser, payload, sink, NULL);

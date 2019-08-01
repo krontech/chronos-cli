@@ -44,6 +44,37 @@ rtsp_header_find(struct rtsp_conn *conn, const char *name)
     return NULL;
 }
 
+
+char *
+rtsp_param_find(const char *start, const char *name, char *value, size_t len)
+{
+    size_t namelen;
+    for (namelen = strlen(name); *start != '\0'; start += strcspn(start, ";")) {
+        /* Skip any leading semicolons. */
+        while (*start == ';') start++;
+
+        /* Check the start of the string for a matching name. */
+        if (memcmp(start, name, namelen) != 0) continue; /* Definitely not a match. */
+        if ((start[namelen] == ';') || (start[namelen] == '\0')) {
+            /* Got a match with no value. */
+            *value = '\0';
+            return value;
+        }
+
+        if (start[namelen] == '=') {
+            /* Got a match with a value. */
+            const char *vstart = start + namelen + 1;
+            size_t vlen = strcspn(vstart, ";");
+            if (vlen > len) vlen = len;
+            value[vlen] = '\0';
+            return memcpy(value, start + namelen + 1, vlen);
+        }
+    }
+
+    /* No such parameter */
+    return NULL;
+}
+
 static void
 rtsp_client_close(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
 {
@@ -506,4 +537,20 @@ rtsp_server_cleanup(struct rtsp_ctx *ctx)
     /* TODO: Signal the thread to exit correctly. */
     close(ctx->server_sock);
     //pthread_timedjoin_np(ctx->thread, NULL, &ts);
+}
+
+/* Iterate on the session list */
+void
+rtsp_session_foreach(struct rtsp_ctx *ctx, void (*callback)(const char *host, int port, void *closure), void *closure)
+{
+    char tmp[INET6_ADDRSTRLEN];
+
+    if (ctx->dest.ss_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
+        callback(inet_ntop(AF_INET, &sin->sin_addr, tmp, sizeof(tmp)), htons(sin->sin_port), closure);
+    }
+    else if (ctx->dest.ss_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->dest;
+        callback(inet_ntop(AF_INET6, &sin6->sin6_addr, tmp, sizeof(tmp)), htons(sin6->sin6_port), closure);
+    }
 }

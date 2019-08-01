@@ -85,9 +85,12 @@ void rtsp_client_error(struct rtsp_conn *conn, int code, const char *message);
 void rtsp_start_response(struct rtsp_conn *conn, int code, const char *status);
 
 char *rtsp_header_find(struct rtsp_conn *conn, const char *name);
+char *rtsp_param_find(const char *start, const char *name, char *value, size_t len);
 void rtsp_write_header(struct rtsp_conn *conn, const char *fmt, ...);
 void rtsp_write_payload(struct rtsp_conn *conn, const char *fmt, ...);
 void rtsp_finish_payload(struct rtsp_conn *conn);
+
+char *rtsp_parse_param(const char *start, const char **savep, char *out, size_t len);
 
 /* RTSP method functions. */
 /* TODO: Maybe these should be dynamically registered in a list somewhere. */

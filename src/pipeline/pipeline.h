@@ -216,5 +216,6 @@ void overlay_update(struct pipeline_state *state, const struct video_segment *se
 /* RTSP live streaming */
 struct rtsp_ctx *rtsp_server_launch(struct pipeline_state *state);
 void rtsp_server_cleanup(struct rtsp_ctx *ctx);
+void rtsp_session_foreach(struct rtsp_ctx *ctx, void (*callback)(const char *host, int port, void *closure), void *closure);
 
 #endif /* __PIPELINE */
