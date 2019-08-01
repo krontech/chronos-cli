@@ -21,6 +21,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 
+#include "pipeline.h"
+
 #define RTSP_SERVER_PORT    554
 #define RTSP_SOCKET_BACKLOG 4
 
@@ -73,8 +75,11 @@ struct rtsp_ctx {
     int server_sock;
 
     /* Single session supported for now. */
-    int session_id;
     struct sockaddr_storage dest;
+    int session_id;
+    int session_state;
+    rtsp_session_hook_t hook;
+    void *closure;
 
     struct rtsp_conn *conn_head;
     struct rtsp_conn *conn_tail;
@@ -100,5 +105,7 @@ void rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char 
 void rtsp_method_play(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_pause(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_teardown(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
+
+void rtsp_server_run_hook(struct rtsp_ctx *ctx);
 
 #endif /* __RTSP_PRIVATE_H */

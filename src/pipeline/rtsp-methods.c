@@ -96,8 +96,13 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
             if ((*portend == '\0') && (lowport != 0) && (highport >= lowport)) {
                 port = lowport + (rand() % (highport - lowport));
             }
-            fprintf(stderr, "DEBUG: choosing client port between %d and %d\n", lowport, highport);
         }
+    }
+
+    /* If an existing session is in progress, clear it. */
+    if (ctx->session_state != RTSP_SESSION_TEARDOWN) {
+        ctx->session_state = RTSP_SESSION_TEARDOWN;
+        rtsp_server_run_hook(ctx);
     }
 
     /* Generate a new session ID. */
@@ -119,14 +124,50 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
     rtsp_write_header(conn, "Session: %d", ctx->session_id);
     rtsp_write_header(conn, "Transport: RTP/AVP;unicast;client_port=%d;server_port=5000;host=%s", port, host);
     rtsp_write_header(conn, "");
+
+    /* The session is now in the SETUP state. */
+    ctx->session_state = RTSP_SESSION_SETUP;
+    rtsp_server_run_hook(ctx);
 }
 
 void
 rtsp_method_play(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
+    /* HACK: The worlds laziest implementation. */
     rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "");
 
-    /* Evil Hack! */
-    cam_pipeline_restart(cam_pipeline_state());
+    /* The session is now in the PLAY state. */
+    if (ctx->session_state != RTSP_SESSION_PLAY) {
+        ctx->session_state = RTSP_SESSION_PLAY;
+        rtsp_server_run_hook(ctx);
+    }
+}
+
+void
+rtsp_method_pause(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
+{
+    /* HACK: The worlds laziest implementation. */
+    rtsp_start_response(conn, 200, "OK");
+    rtsp_write_header(conn, "");
+
+    /* The session is now in the PLAY state. */
+    if (ctx->session_state != RTSP_SESSION_PAUSE) {
+        ctx->session_state = RTSP_SESSION_PAUSE;
+        rtsp_server_run_hook(ctx);
+    }
+}
+
+void
+rtsp_method_teardown(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
+{
+    /* HACK: The worlds laziest implementation. */
+    rtsp_start_response(conn, 200, "OK");
+    rtsp_write_header(conn, "");
+
+    /* The session is now in the PLAY state. */
+    if (ctx->session_state != RTSP_SESSION_TEARDOWN) {
+        ctx->session_state = RTSP_SESSION_TEARDOWN;
+        rtsp_server_run_hook(ctx);
+    }
 }

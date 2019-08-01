@@ -895,6 +895,7 @@ main(int argc, char * argv[])
 
         /* Garbage collect the pipeline. */
         state->vidsrc = NULL;
+        rtsp_server_clear_hook(state->rtsp);
         gst_element_set_state(state->pipeline, GST_STATE_READY);
         gst_element_set_state(state->pipeline, GST_STATE_NULL);
         gst_object_unref(GST_OBJECT(state->pipeline));

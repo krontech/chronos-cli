@@ -508,6 +508,7 @@ rtsp_server_launch(struct pipeline_state *state)
         fprintf(stderr, "Failed to allocate RTSP server context.\n");
         return NULL;
     }
+    ctx->session_state = RTSP_SESSION_TEARDOWN;
     ctx->server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (ctx->server_sock < 0) {
         fprintf(stderr, "Failed to create RTSP server socket.\n");
@@ -541,16 +542,60 @@ rtsp_server_cleanup(struct rtsp_ctx *ctx)
 
 /* Iterate on the session list */
 void
-rtsp_session_foreach(struct rtsp_ctx *ctx, void (*callback)(const char *host, int port, void *closure), void *closure)
+rtsp_session_foreach(struct rtsp_ctx *ctx, rtsp_session_hook_t hook, void *closure)
 {
-    char tmp[INET6_ADDRSTRLEN];
+    struct rtsp_session sess;
+    if (ctx->session_state == RTSP_SESSION_TEARDOWN) return;
 
     if (ctx->dest.ss_family == AF_INET) {
         struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
-        callback(inet_ntop(AF_INET, &sin->sin_addr, tmp, sizeof(tmp)), htons(sin->sin_port), closure);
+
+        inet_ntop(AF_INET, &sin->sin_addr, sess.host, sizeof(sess.host));
+        sess.port = htons(sin->sin_port);
+        sess.state = ctx->session_state;
+
+        hook(&sess, closure);
     }
     else if (ctx->dest.ss_family == AF_INET6) {
         struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->dest;
-        callback(inet_ntop(AF_INET6, &sin6->sin6_addr, tmp, sizeof(tmp)), htons(sin6->sin6_port), closure);
+
+        inet_ntop(AF_INET6, &sin6->sin6_addr, sess.host, sizeof(sess.host));
+        sess.port = htons(sin6->sin6_port);
+        sess.state = ctx->session_state;
+
+        hook(&sess, closure);
+    }
+}
+
+void
+rtsp_server_set_hook(struct rtsp_ctx *ctx, rtsp_session_hook_t hook, void *closure)
+{
+    ctx->hook = hook;
+    ctx->closure = closure;
+}
+
+void
+rtsp_server_run_hook(struct rtsp_ctx *ctx)
+{
+    struct rtsp_session sess;
+    if (!ctx->hook) return;
+
+    if (ctx->dest.ss_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
+
+        inet_ntop(AF_INET, &sin->sin_addr, sess.host, sizeof(sess.host));
+        sess.port = htons(sin->sin_port);
+        sess.state = ctx->session_state;
+
+        ctx->hook(&sess, ctx->closure);
+    }
+    else if (ctx->dest.ss_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->dest;
+
+        inet_ntop(AF_INET6, &sin6->sin6_addr, sess.host, sizeof(sess.host));
+        sess.port = htons(sin6->sin6_port);
+        sess.state = ctx->session_state;
+
+        ctx->hook(&sess, ctx->closure);
     }
 }

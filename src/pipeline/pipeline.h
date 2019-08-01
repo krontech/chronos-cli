@@ -42,6 +42,19 @@
 struct CamVideo;
 struct rtsp_ctx;
 
+/* RTSP Session Information */
+#define RTSP_SESSION_SETUP      0
+#define RTSP_SESSION_PLAY       1
+#define RTSP_SESSION_PAUSE      2
+#define RTSP_SESSION_TEARDOWN   3
+
+struct rtsp_session {
+    char    host[64];
+    int     port;
+    int     state;
+};
+typedef void (*rtsp_session_hook_t)(const struct rtsp_session *sess, void *closure);
+
 #define PLAYBACK_STATE_PAUSE    0   /* Paused - no video output. */
 #define PLAYBACK_STATE_LIVE     1   /* Live display of video from the image sensor. */
 #define PLAYBACK_STATE_PLAY     2   /* Playback of recorded frames from memory. */
@@ -216,6 +229,8 @@ void overlay_update(struct pipeline_state *state, const struct video_segment *se
 /* RTSP live streaming */
 struct rtsp_ctx *rtsp_server_launch(struct pipeline_state *state);
 void rtsp_server_cleanup(struct rtsp_ctx *ctx);
-void rtsp_session_foreach(struct rtsp_ctx *ctx, void (*callback)(const char *host, int port, void *closure), void *closure);
+void rtsp_session_foreach(struct rtsp_ctx *ctx, rtsp_session_hook_t callback, void *closure);
+void rtsp_server_set_hook(struct rtsp_ctx *ctx, rtsp_session_hook_t callback, void *closure);
+#define rtsp_server_clear_hook(_ctx_) rtsp_server_set_hook(_ctx_, NULL, NULL)
 
 #endif /* __PIPELINE */

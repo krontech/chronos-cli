@@ -141,10 +141,24 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 }
 
 static void
-cam_network_sink_add_host(const char *host, int port, void *closure)
+cam_network_sink_add_host(const struct rtsp_session *sess, void *closure)
 {
     GstElement *sink = closure;
-    g_signal_emit_by_name(G_OBJECT(sink), "add", host, port, NULL);
+    if (sess->state == RTSP_SESSION_PLAY) {
+        g_signal_emit_by_name(G_OBJECT(sink), "add", sess->host, sess->port, NULL);
+    }
+}
+
+static void
+cam_network_sink_update(const struct rtsp_session *sess, void *closure)
+{
+    GstElement *sink = closure;
+    if (sess->state == RTSP_SESSION_PLAY) {
+        g_signal_emit_by_name(G_OBJECT(sink), "add", sess->host, sess->port, NULL);
+    }
+    else {
+        g_signal_emit_by_name(G_OBJECT(sink), "remove", sess->host, sess->port, NULL);
+    }
 }
 
 GstPad *
@@ -181,6 +195,7 @@ cam_network_sink(struct pipeline_state *state)
 
     /* Register RTSP clients. */
     rtsp_session_foreach(state->rtsp, cam_network_sink_add_host, sink);
+    rtsp_server_set_hook(state->rtsp, cam_network_sink_update, sink);
 
     gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, payload, sink, NULL);
     gst_element_link_many(queue, encoder, neon, parser, payload, sink, NULL);
