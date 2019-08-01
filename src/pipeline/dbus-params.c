@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
 #include <dbus/dbus-glib.h>
 
 #include "pipeline.h"

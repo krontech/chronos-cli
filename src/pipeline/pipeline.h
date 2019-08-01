@@ -109,6 +109,7 @@ struct overlay_config {
 
 struct pipeline_state {
     pthread_t           mainthread;
+    GMainContext        *mainctx;
     GMainLoop           *mainloop;
     GstElement          *pipeline;
     GstElement          *vidsrc;
@@ -181,6 +182,7 @@ GstPad *cam_tiffraw_sink(struct pipeline_state *state, struct pipeline_args *arg
 
 /* Some background elements. */
 struct CamVideo *dbus_service_launch(struct pipeline_state *state);
+void dbus_service_cleanup(struct CamVideo *video);
 void dbus_signal_sof(struct CamVideo *video);
 void dbus_signal_eof(struct CamVideo *video, const char *err);
 void dbus_signal_segment(struct CamVideo *video);

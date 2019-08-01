@@ -493,7 +493,7 @@ playback_run_hook(struct pipeline_state *state, GSourceFunc func)
     GSource *source = g_idle_source_new();
     if (source) {
         g_source_set_callback(source, func, state, NULL);
-        g_source_attach(source, g_main_loop_get_context(state->mainloop));
+        g_source_attach(source, state->mainctx);
     }
 }
 

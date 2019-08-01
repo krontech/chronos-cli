@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
 #include <dbus/dbus-glib.h>
 #include <dbus/dbus-glib-lowlevel.h>
 
@@ -611,7 +612,7 @@ dbus_service_launch(struct pipeline_state *state)
     g_type_init();
     video = g_object_new(CAM_VIDEO_TYPE, NULL);
     video->state = state;
-    video->mainctx = g_main_context_new();
+    video->mainctx =  g_main_context_default(); /* Arago issue: D-Bus only runs properly in the default context. */
     video->mainloop = g_main_loop_new(video->mainctx, FALSE);
     pthread_create(&video->thread, NULL, dbus_thread, video);
 
@@ -647,6 +648,13 @@ dbus_service_launch(struct pipeline_state *state)
     printf("Registered video control device at %s\n", CAM_DBUS_VIDEO_PATH);
 
     return video;
+}
+
+void
+dbus_service_cleanup(struct CamVideo *video)
+{
+    g_main_loop_quit(video->mainloop);
+    pthread_join(video->thread, NULL);
 }
 
 void

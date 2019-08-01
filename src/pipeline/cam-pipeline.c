@@ -67,7 +67,7 @@ cam_pipeline_restart(struct pipeline_state *state)
     GSource *source = g_idle_source_new();
     if (source) {
         g_source_set_callback(source, (GSourceFunc)do_pipeline_restart, state, NULL);
-        g_source_attach(source, g_main_loop_get_context(state->mainloop));
+        g_source_attach(source, state->mainctx);
     }
 }
 
@@ -632,7 +632,7 @@ signals_init(struct pipeline_state *state)
     signal_pfd.events = G_IO_IN;
     signal_pfd.revents = 0;
     g_source_add_poll(source, &signal_pfd);
-    g_source_attach(source, g_main_loop_get_context(state->mainloop));
+    g_source_attach(source, state->mainctx);
 
     /* Install the POSIX signal handlers. */
     signal(SIGTERM, g_unix_signal_handler);
@@ -737,7 +737,8 @@ main(int argc, char * argv[])
         fprintf(stderr, "Failed to register Gstreamer GIF source element.\n");
     }
     state->mainthread = pthread_self();
-    state->mainloop = g_main_loop_new(NULL, FALSE);
+    state->mainctx = g_main_context_new();
+    state->mainloop = g_main_loop_new(state->mainctx, FALSE);
     state->eos = gst_event_new_eos();
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
@@ -922,6 +923,7 @@ main(int argc, char * argv[])
     
     fprintf(stderr, "Exiting the pipeline...\n");
     playback_cleanup(state);
+    dbus_service_cleanup(state->video);
     unlink(SCREENCAP_PATH);
     munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);
     g_main_loop_unref(state->mainloop);
