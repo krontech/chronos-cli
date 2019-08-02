@@ -42,6 +42,9 @@
 struct CamVideo;
 struct rtsp_ctx;
 
+/* Only enable RTSP for sufficiently "new" versions of GStreamer. */
+#define ENABLE_RTSP_SERVER  GST_CHECK_VERSION(0,10,36)
+
 /* RTSP Session Information */
 #define RTSP_SESSION_SETUP      0
 #define RTSP_SESSION_PLAY       1

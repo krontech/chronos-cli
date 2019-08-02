@@ -32,6 +32,8 @@
 #include "rtsp-private.h"
 #include "pipeline.h"
 
+#if ENABLE_RTSP_SERVER
+
 char *
 rtsp_header_find(struct rtsp_conn *conn, const char *name)
 {
@@ -279,7 +281,10 @@ rtsp_client_process(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
             /* Search for a line-ending. */
             char *line = rtsp_getline(conn);
             if (!line) return; /* Need more data. */
-            fprintf(stderr, "DEBUG: rtsp_client_process line=%s\n", line);
+
+#ifdef DEBUG
+            fprintf(stderr, "DEBUG: rtsp_client_process request=%s\n", line);
+#endif
             
             /* First token should be the request method. */
             conn->method = line;
@@ -309,7 +314,9 @@ rtsp_client_process(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
             /* Search for a line-ending. */
             char *name = rtsp_getline(conn);
             char *value;
+#ifdef DEBUG
             fprintf(stderr, "DEBUG: rtsp_client_process header=%s\n", name);
+#endif
 
             if (!name) return; /* Need more data. */
             if (strlen(name) == 0) {
@@ -365,7 +372,6 @@ rtsp_client_recv(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
         }
 
         len = recv(conn->sock, conn->rxbuffer + conn->rxlength, sizeof(conn->rxbuffer) - conn->rxlength, 0);
-        fprintf(stderr, "DEBUG: rtsp_client_recv got %d bytes\n", len);
         if (len == 0) {
             /* Connection was closed. */
             rtsp_client_close(ctx, conn);
@@ -599,3 +605,17 @@ rtsp_server_run_hook(struct rtsp_ctx *ctx)
         ctx->hook(&sess, ctx->closure);
     }
 }
+
+#else /* ENABLE_RTSP_SERVER */
+
+struct rtsp_ctx *
+rtsp_server_launch(struct pipeline_state *state)
+{
+    return (struct rtsp_ctx *)0xdeadbeef;
+}
+
+void rtsp_server_cleanup(struct rtsp_ctx *ctx) { /* no-op */ }
+void rtsp_session_foreach(struct rtsp_ctx *ctx, rtsp_session_hook_t hook, void *closure) { /* no-op */ }
+void rtsp_server_set_hook(struct rtsp_ctx *ctx, rtsp_session_hook_t hook, void *closure) { /* no-op */ }
+
+#endif /* ENABLE_RTSP_SERVER */

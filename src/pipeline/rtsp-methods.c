@@ -33,6 +33,8 @@
 #include "rtsp-private.h"
 #include "pipeline.h"
 
+#if ENABLE_RTSP_SERVER
+
 void
 rtsp_method_options(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
@@ -171,3 +173,5 @@ rtsp_method_teardown(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *p
         rtsp_server_run_hook(ctx);
     }
 }
+
+#endif /* ENABLE_RTSP_SERVER */

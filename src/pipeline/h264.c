@@ -140,6 +140,8 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     return gst_element_get_static_pad(encoder, "sink");
 }
 
+#if ENABLE_RTSP_SERVER
+
 static void
 cam_network_sink_add_host(const struct rtsp_session *sess, void *closure)
 {
@@ -201,3 +203,10 @@ cam_network_sink(struct pipeline_state *state)
     gst_element_link_many(queue, encoder, neon, parser, payload, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 }
+#else /* ENABLE_RTSP_SERVER */
+GstPad *
+cam_network_sink(struct pipeline_state *state)
+{
+    return NULL;
+}
+#endif
