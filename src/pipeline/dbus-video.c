@@ -449,12 +449,12 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     struct pipeline_state *state = vobj->state;
     GHashTable *dict;
     state->args.liverecord = cam_dbus_dict_get_boolean(args, "liverecord", FALSE);
-    const char *filename = cam_dbus_dict_get_string(args, "filename", NULL);
+    const char *filename = cam_dbus_dict_get_string(args, "liverec_filename", NULL);
     state->args.multifile = cam_dbus_dict_get_boolean(args, "multifile", TRUE);
     unsigned int framerate = cam_dbus_dict_get_uint(args, "framerate", 30);
     unsigned long bitrate = cam_dbus_dict_get_uint(args, "bitrate", 6000000);
     unsigned int duration = cam_dbus_dict_get_uint(args, "duration", 0);
-    double maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", LIVEREC_MAX_FILESIZE); 
+    double maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", LIVEREC_MAX_FILESIZE);
 
     if(state->args.liverecord){
         /* Filename is mandatory if liverecord is enabled. */
@@ -472,7 +472,7 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
             *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long");
             return 0;
         }
-        strcpy(state->args.filename, filename);
+        strcpy(state->args.live_filename, filename);
     }
 
     /* Framerate is optional, but must be in an acceptable range if specified. */

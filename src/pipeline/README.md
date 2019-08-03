@@ -218,15 +218,15 @@ Record real-time video and audio and write a .mp4 file to the location provided.
 mode is controlled by the [`stop`](#stop) method. A new recording will not be started automatically after
 stopping.
 
-| Input             | Type      | Description
-|:----------------- |:--------- |:--------------
-| `"liverecord"`    | `boolean` | Enables or outputs recording of live video to the specified file.
-| `"filename"`      | `string`  | The destination file or directory to be written, without file extension.
-| `"multifile"`     | `boolean` | Appends a timestamp to each filename in the format _YYYY-MM-DD_HH-MM-SS.
-| `"framerate"`     | `uint`    | The desired framerate of the encoded video file, in frames per second.
-| `"bitrate"`       | `uint`    | The maximum encoded bitrate for H.264 compressed video, in bits per second.
-| `"duration"`      | `uint`    | The maximum duration to record before creating another file, in seconds.
-| `"maxFilesize"`   | `uint`    | The maximum filesize to record before creating another file, in megabytes.
+| Input                	| Type      | Description
+|:--------------------- |:--------- |:--------------
+| `"liverecord"`       	| `boolean` | Enables or outputs recording of live video to the specified file.
+| `"liverec_filename"` 	| `string`  | The destination file or directory to be written, without file extension.
+| `"multifile"`     	| `boolean` | Appends a timestamp to each filename in the format _YYYY-MM-DD_HH-MM-SS.
+| `"framerate"`     	| `uint`    | The desired framerate of the encoded video file, in frames per second.
+| `"bitrate"`       	| `uint`    | The maximum encoded bitrate for H.264 compressed video, in bits per second.
+| `"duration"`      	| `uint`    | The maximum duration to record before creating another file, in seconds.
+| `"maxFilesize"`   	| `uint`    | The maximum filesize to record before creating another file, in megabytes.
 
 To start a recording, set `liverecord` to true and specify a filename. If the same parameters are sent again,
 a new .mp4 file will be created automatically with a timestamp appended to the filename.

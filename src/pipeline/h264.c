@@ -207,11 +207,11 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
         curtime = time (NULL);
         loc_time = localtime (&curtime);
         strftime (timestampStr, 32, "_%F_%H-%M-%S.mp4", loc_time);
-        strcat(scratchStr, state->args.filename);
+        strcat(scratchStr, state->args.live_filename);
         strcat(scratchStr, timestampStr);
         strcpy(state->liverec_filename, scratchStr);
     } else {
-        strcpy(state->liverec_filename, state->args.filename);
+        strcpy(state->liverec_filename, state->args.live_filename);
     }
 
     /* Set the filename as specified by the user. */

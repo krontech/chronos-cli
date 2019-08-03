@@ -64,6 +64,7 @@ struct CamVideo;
 struct pipeline_args {
     unsigned int    mode;
     char            filename[PATH_MAX];
+    char            live_filename[PATH_MAX];
     unsigned long   start;
     unsigned long   length;
     unsigned int    framerate;
