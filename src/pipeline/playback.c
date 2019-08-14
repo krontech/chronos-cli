@@ -308,6 +308,8 @@ playback_region_add(struct pipeline_state *state)
     if (!seg) {
         return -1;
     }
+    seg->metadata.interval = state->fpga->sensor->frame_period;
+    seg->metadata.exposure = state->fpga->sensor->int_time;
 
     return 1;
 }
