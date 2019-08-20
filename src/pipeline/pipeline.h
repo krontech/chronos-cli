@@ -218,9 +218,6 @@ void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
 void overlay_update(struct pipeline_state *state, const struct video_segment *seg);
 
-/* Free space checking. */
-gboolean has_enough_space(const char *pathname, double reqbytes);
-
 /* Live Recording mode functions. */
 static void * liverec_size_monitor(void *data);
 

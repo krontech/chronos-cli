@@ -497,6 +497,11 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
                 fprintf(stderr, "GST debug info: %s\n", debug);
                 g_free(debug);
             }
+            /* Gracefully handle errors with live recording mode */
+            if(!strcmp(GST_OBJECT_NAME(msg->src), "liverec-file-sink")){
+                state->args.liverecord = FALSE;
+                state->playstate = PLAYBACK_STATE_LIVE;
+            }
             strncpy(state->error, error->message, sizeof(state->error));
             state->error[sizeof(state->error)-1] = '\0';
             g_error_free(error);

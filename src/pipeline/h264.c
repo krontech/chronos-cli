@@ -26,8 +26,6 @@
 
 #include "pipeline.h"
 
-#define AUDIO
-
 enum
 {
 	OMX_H264ENC_PROFILE_BASE =		1,
@@ -228,7 +226,7 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     queue =   gst_element_factory_make("queue",       "liverec-queue");
     neon =    gst_element_factory_make("neon",        "liverec-neon");
     parser =  gst_element_factory_make("h264parse",   "liverec-parse");
-    mux =     gst_element_factory_make("mp4mux",       "liverec-mux");
+    mux =     gst_element_factory_make("mp4mux",      "liverec-mux");
     sink =    gst_element_factory_make("fdsink",      "liverec-file-sink");
 
     if (!encoder || !queue || !neon || !parser || !mux || !sink) {
@@ -289,7 +287,7 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Configure the file sink */
     g_object_set(G_OBJECT(sink), "fd", (gint)state->liverec_fd, NULL);
-    g_object_set (G_OBJECT (sink), "sync", FALSE, NULL);
+    g_object_set(G_OBJECT(sink), "sync", FALSE, NULL);
 
     /* Return the first element of our segment to link with */
     gst_bin_add_many(GST_BIN(state->pipeline), encoder, queue, neon, parser, mux, sink, soundsource, soundcapsfilt, soundprequeue, soundqueue, soundencoder, soundparser, NULL);
@@ -334,9 +332,10 @@ liverec_size_monitor(void *data){
             }
 
         }
-
-        sleep(1);  
-    }      
+        
+        sleep(1);
+    
+    }
     
     free(buf);
     pthread_exit(NULL);

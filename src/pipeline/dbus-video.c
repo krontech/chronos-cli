@@ -451,25 +451,28 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     state->args.liverecord = cam_dbus_dict_get_boolean(args, "liverecord", FALSE);
     const char *filename = cam_dbus_dict_get_string(args, "liverec_filename", NULL);
     state->args.multifile = cam_dbus_dict_get_boolean(args, "multifile", TRUE);
-    unsigned int framerate = cam_dbus_dict_get_uint(args, "framerate", 30);
+    unsigned int framerate = cam_dbus_dict_get_uint(args, "framerate", 60);
     unsigned long bitrate = cam_dbus_dict_get_uint(args, "bitrate", 6000000);
     unsigned int duration = cam_dbus_dict_get_uint(args, "duration", 0);
     double maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", LIVEREC_MAX_FILESIZE);
+    struct statvfs fsInfoBuf;
+    char folderPath[PATH_MAX] = {'\0'};
+    const char *lastDelim;
 
     if(state->args.liverecord){
         /* Filename is mandatory if liverecord is enabled. */
         if(!filename) {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing filename");
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing filename.");
             return 0;
         }
 
         /* Sanity check the file name. */
         if(filename[0] != '/') {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename");
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename or save path.");
             return 0;
         }
         if (strlen(filename) >= sizeof(state->args.filename)) {
-            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long");
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long.");
             return 0;
         }
         strcpy(state->args.live_filename, filename);
@@ -500,10 +503,30 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
         return 0;
     }
 
-    /* Check if root directory of filepath has enough space */
-    if (!has_enough_space(filename, maxFilesize)){
+    /* Get parent folder path from filepath */
+    lastDelim = strrchr(filename, '/');
+
+    if(lastDelim != NULL)
+        strncpy(folderPath, filename, lastDelim-filename+1);
+
+    /* Check if storage device exists */ 
+    if(statvfs(folderPath, &fsInfoBuf) == -1){
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "No storage device found.");
+        perror("statvfs() error");
+        return 0;
+    }
+
+    /* Check if save path is mounted as read only */
+    if(fsInfoBuf.f_flag & ST_RDONLY){
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Storage device is not writeable.");
+        perror("statvfs() error");
+        return 0;
+    }
+
+    /* Check if there's enough space to save the live recording on the storage device*/
+    if (maxFilesize > (double)fsInfoBuf.f_bavail * fsInfoBuf.f_frsize){
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Not enough free space on the storage device.");
-        return 0;        
+        return 0;     
     }
     state->args.maxFilesize = maxFilesize;
 
@@ -719,26 +742,4 @@ dbus_signal_update(struct pipeline_state *state, const char **names)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
     g_signal_emit(state->video, vclass->update_signalid, 0, cam_dbus_video_get(state, names));
-}
-
-gboolean
-has_enough_space(const char *pathname, double reqbytes)
-{   
-    struct statvfs fsInfoBuf;
-    char folderPath[PATH_MAX] = {'\0'};
-    const char *lastDelim;
-
-    lastDelim = strrchr(pathname, '/');
-
-    if(lastDelim != NULL)
-        strncpy(folderPath, pathname, lastDelim-pathname+1);
-
-    if(statvfs(folderPath, &fsInfoBuf) == -1)
-        perror("statvfs() error");
-    else {
-        if (reqbytes < (double)fsInfoBuf.f_bavail * fsInfoBuf.f_frsize)
-            return TRUE;
-    }
-
-    return FALSE;
 }
