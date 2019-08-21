@@ -408,6 +408,40 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
     /*=====================================================
+     * Setup the Pipeline for saving uncalibrated DNG
+     *=====================================================
+     */
+    else if (args->mode == PIPELINE_MODE_DNG_UNCAL) {
+        GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
+                    "bpp", G_TYPE_INT, 16,
+                    "width", G_TYPE_INT, state->source.hres,
+                    "height", G_TYPE_INT, state->source.vres,
+                    "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
+                    "buffer-count-requested", G_TYPE_INT, 4,
+                    NULL);
+        ret = gst_element_link_filtered(state->vidsrc, tee, caps);
+        if (!ret) {
+            gst_object_unref(GST_OBJECT(state->pipeline));
+            return NULL;
+        }
+        gst_caps_unref(caps);
+
+        /* Configure for Raw 16-bit padded video data. */
+        sinkpad = cam_dng_sink(state, args);
+        state->fpga->display->pipeline |= DISPLAY_PIPELINE_RAW_16PAD | DISPLAY_PIPELINE_RAW_16BPP;
+
+        /* Disable FPGA calibration routines */
+        state->fpga->display->pipeline |= DISPLAY_PIPELINE_BYPASS_FPN | DISPLAY_PIPELINE_BYPASS_GAIN | DISPLAY_PIPELINE_BYPASS_DEMOSAIC | DISPLAY_PIPELINE_BYPASS_COLOR_MATRIX | DISPLAY_PIPELINE_BYPASS_GAMMA_TABLE;
+
+        if (!sinkpad) {
+            gst_object_unref(GST_OBJECT(state->pipeline));
+            return NULL;
+        }
+        tpad = gst_element_get_request_pad(tee, "src%d");
+        gst_pad_link(tpad, sinkpad);
+        gst_object_unref(sinkpad);
+    }
+    /*=====================================================
      * Setup the Pipeline in 12/16-bit Raw Recording Mode
      *=====================================================
      */

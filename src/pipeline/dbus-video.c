@@ -385,7 +385,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     GHashTable *dict;
     const char *filename = cam_dbus_dict_get_string(args, "filename", NULL);
     const char *format = cam_dbus_dict_get_string(args, "format", NULL);
-
+    fprintf(stderr, "format: %s\n\n",format);
     /* Format and filename are mandatory */
     if (!filename || !format) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing arguments");
@@ -425,6 +425,9 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     }
     else if (strcasecmp(format, "dng") == 0) {
         state->args.mode = PIPELINE_MODE_DNG;
+    }
+    else if (strcasecmp(format, "dnguncal") == 0) {
+        state->args.mode = PIPELINE_MODE_DNG_UNCAL;
     }
     else if (strcasecmp(format, "tiff") == 0) {
         /* Processed RGB or monochrome TIFF files. */

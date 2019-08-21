@@ -72,6 +72,7 @@ typedef void (*rtsp_session_hook_t)(const struct rtsp_session *sess, void *closu
 #define PIPELINE_MODE_DNG       6
 #define PIPELINE_MODE_TIFF      7   /* Processed 8-bit TIFF format. */
 #define PIPELINE_MODE_TIFF_RAW  8   /* Linear RAW 16-bit TIFF format. */
+#define PIPELINE_MODE_DNG_UNCAL 9   /* Uncalibrated DNG with 16-bit padding. */
 
 #define PIPELINE_IS_SAVING(_mode_) ((_mode_) > PIPELINE_MODE_PLAY)
 
