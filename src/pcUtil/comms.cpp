@@ -14,6 +14,7 @@ extern "C" {
 
 #include <unistd.h>
 #include <stdio.h>
+#include <string.h>
 #include <pthread.h>
 
 volatile uint8 __attribute__((aligned(4))) rxBuffer[BUFFER_COUNT][BUFFER_SIZE];
@@ -22,18 +23,20 @@ volatile uint8 rxBufWriteIndex = 0;
 volatile uint8 rxBufReadIndex = 0;
 extern volatile uint8 terminateRxThread;
 
+pthread_mutex_t rxBufLock = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t rxBufCond = PTHREAD_COND_INITIALIZER;
+
 extern int sfd;
 
 // Causes the controller to jump to the user application reset address from the bootloader
 // returns true if successful, false otherwise
 BOOL jumpToProgram()
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 length;
 	txByteMessage(COM_CMD_JUMP_TO_PGM);
 
-	while (!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_JUMP_TO_PGM == response[0])
 		return TRUE;
 	else
@@ -46,12 +49,11 @@ BOOL jumpToProgram()
 // returns true if successful, false otherwise
 BOOL jumpToBootloader()
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 length;
 	txByteMessage(COM_CMD_JUMP_TO_BOOTLOADER);
 
-	while (!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_JUMP_TO_BOOTLOADER == response[0])
 		return TRUE;
 	else
@@ -60,12 +62,11 @@ BOOL jumpToBootloader()
 
 BOOL isInBootloader(BOOL * inBootloader)
 {
-	uint8 * response;
+	uint8 response[2];
 	uint16 length;
 	txByteMessage(COM_CMD_IS_IN_BOOTLOADER);
 
-	while (!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_IS_IN_BOOTLOADER == response[0])
 	{
 		*inBootloader = response[1];
@@ -77,14 +78,13 @@ BOOL isInBootloader(BOOL * inBootloader)
 
 BOOL setPowerupMode(uint8 mode)
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 length;
 	uint8 data = mode;
 
 	txDataMessage(COM_CMD_SET_POWERUP_MODE, &data, sizeof(data));
 
-	while (!rxDataAvailable());
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_SET_POWERUP_MODE == response[0])
 		return TRUE;
 	else
@@ -93,12 +93,11 @@ BOOL setPowerupMode(uint8 mode)
 
 BOOL getPowerupMode(uint8 * mode)
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 length;
 	txByteMessage(COM_CMD_GET_POWERUP_MODE);
 
-	while (!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_GET_POWERUP_MODE == response[0])
 	{
 		*mode = response[1];
@@ -108,28 +107,28 @@ BOOL getPowerupMode(uint8 * mode)
 		return FALSE;
 }
 
-BOOL setShippingMode(uint8 mode){
-	uint8 * response;
+BOOL setShippingMode(uint8 mode)
+{
+	uint8 response[1];
 	uint16 length;
 	uint8 data = mode;
 
 	txDataMessage(COM_CMD_SET_SHIPPING_MODE, &data, sizeof(data));
 
-	while (!rxDataAvailable());
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_SET_SHIPPING_MODE == response[0])
 		return TRUE;
 	else
 		return FALSE;
 }
 
-BOOL getShippingMode(uint8 * mode){
-	uint8 * response;
+BOOL getShippingMode(uint8 * mode)
+{
+	uint8 response[2];
 	uint16 length;
 	txByteMessage(COM_CMD_GET_SHIPPING_MODE);
 
-	while(!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_GET_SHIPPING_MODE == response[0])
 	{
 		*mode = response[1];
@@ -141,7 +140,7 @@ BOOL getShippingMode(uint8 * mode){
 
 BOOL setFanOverrideMode(BOOL enable, uint8 speed)
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 respLen;
 	uint8 dataPkt[2];
 
@@ -150,8 +149,7 @@ BOOL setFanOverrideMode(BOOL enable, uint8 speed)
 
 	txDataMessage(COM_CMD_SET_FAN_SPEED_OVERRIDE, dataPkt, sizeof(dataPkt));
 
-	while (!rxDataAvailable()) ;
-	response = (uint8 *)getRxBuffer(&respLen);
+	respLen = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_SET_FAN_SPEED_OVERRIDE == response[0])
 		return TRUE;
 	else
@@ -160,12 +158,11 @@ BOOL setFanOverrideMode(BOOL enable, uint8 speed)
 
 BOOL getFanOverrideMode(BOOL * enable, uint8 * speed)
 {
-	uint8 * response;
+	uint8 response[3];
 	uint16 length;
 	txByteMessage(COM_CMD_GET_FAN_SPEED_OVERRIDE);
 
-	while (!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_GET_FAN_SPEED_OVERRIDE == response[0])
 	{
 		*enable = response[1];
@@ -179,49 +176,47 @@ BOOL getFanOverrideMode(BOOL * enable, uint8 * speed)
 BOOL getBatteryData(BatteryData * bd)
 {
 	uint8 i;
-	uint8 * response;
+	uint8 response[BUFFER_SIZE];
 	uint16 length;
 	txByteMessage(COM_CMD_GET_DATA_2);
 
-	while (!rxDataAvailable()) ;
-		response = getRxBuffer(&length);
-		if (COM_CMD_GET_DATA_2 == response[0])
-		{
-            i = 1;
-            bd->battCapacityPercent = response[i++];
-            bd->battSOHPercent = response[i++];
-            bd->battVoltage = response[i++] << 8;
-            bd->battVoltage |= response[i++] & 0xFF;
-            bd->battCurrent = response[i++] << 8;
-            bd->battCurrent |= response[i++] & 0xFF;
-            bd->battHiResCap = response[i++] << 8;
-            bd->battHiResCap |= response[i++] & 0xFF;
-            bd->battHiResSOC = response[i++] << 8;
-            bd->battHiResSOC |= response[i++] & 0xFF;
-            bd->battVoltageCam= response[i++] << 8;
-            bd->battVoltageCam |= response[i++] & 0xFF;
-            bd->battCurrentCam= response[i++] << 8;
-            bd->battCurrentCam |= response[i++] & 0xFF;
-            bd->mbTemperature= response[i++] << 8;
-            bd->mbTemperature |= response[i++] & 0xFF;
-            bd->flags = response[i++];
-            bd->fanPWM = response[i++];
+	length = rxDataReceive(response, sizeof(response));
+	if (COM_CMD_GET_DATA_2 == response[0])
+	{
+		i = 1;
+		bd->battCapacityPercent = response[i++];
+		bd->battSOHPercent = response[i++];
+		bd->battVoltage = response[i++] << 8;
+		bd->battVoltage |= response[i++] & 0xFF;
+		bd->battCurrent = response[i++] << 8;
+		bd->battCurrent |= response[i++] & 0xFF;
+		bd->battHiResCap = response[i++] << 8;
+		bd->battHiResCap |= response[i++] & 0xFF;
+		bd->battHiResSOC = response[i++] << 8;
+		bd->battHiResSOC |= response[i++] & 0xFF;
+		bd->battVoltageCam= response[i++] << 8;
+		bd->battVoltageCam |= response[i++] & 0xFF;
+		bd->battCurrentCam= response[i++] << 8;
+		bd->battCurrentCam |= response[i++] & 0xFF;
+		bd->mbTemperature= response[i++] << 8;
+		bd->mbTemperature |= response[i++] & 0xFF;
+		bd->flags = response[i++];
+		bd->fanPWM = response[i++];
 
-			return TRUE;
-		}
-		else
-			return FALSE;
+		return TRUE;
+	}
+	else
+		return FALSE;
 
 }
 
 BOOL getPMICVersion(uint16 * version)
 {
-	uint8 * response;
+	uint8 response[3];
 	uint16 length;
 	txByteMessage(COM_CMD_GET_APP_VERSION);
 
-	while (!rxDataAvailable()) ;
-	response = getRxBuffer(&length);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_GET_APP_VERSION == response[0])
 	{
 		*version = response[1] >> 8;
@@ -242,7 +237,7 @@ void shutdown ()
 //
 //filename - Path to Intel Hex file with program data
 //Returns - true if successful, false otherwise
-BOOL updateFirmware(char * filename)
+BOOL updateFirmware(const char * filename)
 {
 	uint8 data[16];
 	uint32 length;
@@ -355,7 +350,7 @@ BOOL updateFirmware(char * filename)
 //Returns - true if successful, false otherwise
 BOOL programData(uint8 * data, uint32 length, uint32 address)
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 respLen;
 	uint8 dataPkt[1 + 1 + 4 + 2 + length];
 
@@ -369,8 +364,7 @@ BOOL programData(uint8 * data, uint32 length, uint32 address)
 
 	txData(dataPkt, 1 + 1 + 4 + 2 + length);
 
-	while (!rxDataAvailable()) ;
-	response = (uint8 *)getRxBuffer(&respLen);
+	length = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_WRITE_DATA == response[0])
 		return TRUE;
 	else
@@ -385,7 +379,7 @@ BOOL programData(uint8 * data, uint32 length, uint32 address)
 //returns - true if successful, false otherwise
 BOOL eraseFlash(uint32 address)
 {
-	uint8 * response;
+	uint8 response[1];
 	uint16 respLen;
 	uint8 data[1 + 4];
 
@@ -393,8 +387,7 @@ BOOL eraseFlash(uint32 address)
 	fillData(data, 1, address);	//address
 	txData(data, 1 + 4);
 
-	while (!rxDataAvailable()) ;
-	response = (uint8 *)getRxBuffer(&respLen);
+	respLen = rxDataReceive(response, sizeof(response));
 	if (COM_CMD_ERASE_PAGE == response[0])
 		return TRUE;
 	else
@@ -424,22 +417,28 @@ BOOL rxDataAvailable(void)
 		return FALSE;
 }
 
-uint8 * getRxBuffer(uint16 * length)
+uint16 rxDataReceive(uint8 *data, uint16 maxlen)
 {
-	uint8 * data;
-	if(rxBufWriteIndex != rxBufReadIndex)
-	{
-		*length = rxBufferLen[rxBufReadIndex];
-		data = (uint8 *)rxBuffer[rxBufReadIndex++];
-		if (rxBufReadIndex >= BUFFER_COUNT)
-			rxBufReadIndex = 0;
-		return data;
+	pthread_mutex_lock(&rxBufLock);
+	
+	/* Wait until data is available. */
+	while (rxBufWriteIndex == rxBufReadIndex) {
+		pthread_cond_wait(&rxBufCond, &rxBufLock);
 	}
-	else
-	{
-		*length = 0;
-		return 0;
+
+	/* Get the next message off the buffer ring */
+	uint16 msglen = rxBufferLen[rxBufReadIndex];
+	uint8 *msgdata = (uint8 *)rxBuffer[rxBufReadIndex++];
+	if (rxBufReadIndex >= BUFFER_COUNT) {
+		rxBufReadIndex = 0;
 	}
+	
+	/* Copy data out to the caller. */
+	if (msglen > maxlen) msglen = maxlen; /* Truncate or return error? */
+	memcpy(data, msgdata, msglen);
+
+	pthread_mutex_unlock(&rxBufLock);
+	return msglen;
 }
 
 //Transmit a data packet
@@ -524,6 +523,7 @@ void* rxThread(void *arg)
 
 		if(readLen > 0)
 		{
+			pthread_mutex_lock(&rxBufLock);
 			//printf("read %02x\r\n", data);
 			switch(commState)
 			{
@@ -576,6 +576,7 @@ void* rxThread(void *arg)
 				case COMM_STATE_CRC_L:
 					if(data == (crc & 0xFF))
 					{	//CRC check succeeded
+						pthread_cond_broadcast(&rxBufCond);
 						rxBufferLen[rxBufWriteIndex] = dataLength;
 						rxBufWriteIndex++;
 						if (rxBufWriteIndex >= BUFFER_COUNT)
@@ -584,6 +585,7 @@ void* rxThread(void *arg)
 					commState = COMM_STATE_WAIT_SOF;
 				break;
 			}//switch(commState)
+			pthread_mutex_unlock(&rxBufLock);
 		}
 	}
 

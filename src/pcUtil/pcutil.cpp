@@ -90,11 +90,11 @@ set_blocking (int fd, int should_block)
                 error_message ("error %d setting term attributes", errno);
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char * argv[])
 {
 	int retVal;
 	BOOL inBootloader;
-	char *portname = "/dev/ttyO0";
+	const char *portname = "/dev/ttyO0";
 	char pidStr[16];
 	int pidLen, res;
 
