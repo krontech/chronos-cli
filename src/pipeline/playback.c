@@ -339,26 +339,26 @@ playback_seek(struct pipeline_state *state, int delta)
     write(playback_pipe, &delta, sizeof(delta));
 }
 
+/* Pass a delay command to the playback thread which helps to synchronize the OMX camera. */
+void
+playback_delay(struct pipeline_state *state)
+{
+    playback_seek(state, PLAYBACK_PIPE_DELAY);
+}
+
 /* This would typically be called from outside the playback thread to change operation. */
 void
 playback_preroll(struct pipeline_state *state)
 {
-    int delay = PLAYBACK_PIPE_DELAY;
-    int command = PLAYBACK_PIPE_PREROLL;
-
     fprintf(stderr, "Prerolling playback\n");
-
-    /* Inject a 100ms delay before starting a filesave. */
-    write(playback_pipe, &delay, sizeof(delay));
-    write(playback_pipe, &command, sizeof(command));
+    playback_seek(state, PLAYBACK_PIPE_PREROLL);
 } /* playback_preroll */
 
 /* Switch to live display mode. */
 void
 playback_live(struct pipeline_state *state)
 {
-    int command = PLAYBACK_PIPE_LIVE;
-    write(playback_pipe, &command, sizeof(command));
+    playback_seek(state, PLAYBACK_PIPE_LIVE);
 }
 
 /* Switch to playback mode, with the desired position and playback rate. */
@@ -410,11 +410,11 @@ playback_play_once(struct pipeline_state *state, unsigned long start, int framer
     write(playback_pipe, &delta, sizeof(delta));
 }
 
+/* Pass a command to the playback thread to discard all recorded segments. */
 void
 playback_flush(struct pipeline_state *state)
 {
-    int command = PLAYBACK_PIPE_FLUSH;
-    write(playback_pipe, &command, sizeof(command));
+    playback_seek(state, PLAYBACK_PIPE_FLUSH);
 }
 
 /* Initialize the estimated frame rate. */

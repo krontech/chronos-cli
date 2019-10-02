@@ -486,13 +486,32 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
     switch (GST_MESSAGE_TYPE (msg)) {
         case GST_MESSAGE_STATE_CHANGED:
             gst_message_parse_state_changed(msg, NULL, &newstate, NULL);
-            if (msg->src != GST_OBJECT_CAST(state->pipeline)) {
-                break;
+
+            /* When the video source gets to PLAYING, unblock the playback engine. */
+            if ((msg->src == GST_OBJECT_CAST(state->vidsrc)) && (newstate == GST_STATE_PLAYING)) {
+                playback_delay(state);
+                if (state->runmode == PIPELINE_MODE_LIVE) {
+                    playback_live(state);
+                } else if (state->runmode == PIPELINE_MODE_PLAY) {
+                    playback_seek(state, 0);
+                } else if (PIPELINE_IS_SAVING(state->runmode)) {
+                    playback_preroll(state);
+                }
             }
-            if (newstate == GST_STATE_PLAYING) {
-                dbus_signal_sof(state->video);
+
+            /* Log pipeline transitions */
+            if (msg->src == GST_OBJECT_CAST(state->pipeline)) {
+                fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name(newstate));
+                if (newstate == GST_STATE_PLAYING) {
+                    dbus_signal_sof(state->video);
+                }
             }
-            fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name (newstate));
+#ifdef DEBUG
+            /* Log all transitions for debugging. */
+            else {
+                fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name(newstate));
+            }
+#endif
             break;
 
         case GST_MESSAGE_EOS:
@@ -825,11 +844,11 @@ main(int argc, char * argv[])
         /* Pause playback while we get setup. */
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
-        state->runmode = state->args.mode;
+        state->runmode = args.mode;
         playback_pause(state);
 
         /* File saving modes should fail gracefully back to playback. */
-        if (PIPELINE_IS_SAVING(args.mode)) {
+        if (PIPELINE_IS_SAVING(state->runmode)) {
             /* Return to playback mode after saving. */
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
@@ -839,7 +858,7 @@ main(int argc, char * argv[])
             }
         }
         /* Launch the video pipeline in live and playback modes. */
-        else if (args.mode != PIPELINE_MODE_PAUSE) {
+        else if (state->runmode != PIPELINE_MODE_PAUSE) {
             if (!cam_pipeline(state, &args)) {
                 /* Throw an EOF and revert to paused. */
                 state->args.mode = PIPELINE_MODE_PAUSE;
@@ -867,13 +886,6 @@ main(int argc, char * argv[])
         gst_object_unref(bus);
 
         /* Unpause the playback to begin rendering frames. */
-        if (args.mode == PIPELINE_MODE_LIVE) {
-            playback_live(state);
-        } else if (args.mode == PIPELINE_MODE_PLAY) {
-            playback_seek(state, 0);
-        } else if (PIPELINE_IS_SAVING(args.mode)) {
-            playback_preroll(state);
-        }
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         gst_element_get_state(state->pipeline, &current, &pending, 10ULL * 1000000000ULL);
         if (current == GST_STATE_PLAYING) {
@@ -888,8 +900,12 @@ main(int argc, char * argv[])
             }
         }
         else {
-            snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
-                gst_element_state_get_name(current), gst_element_state_get_name(pending));
+            GstState stuck;
+            gst_element_get_state(state->pipeline, &stuck, NULL, 0);
+            snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s, got %s",
+                gst_element_state_get_name(current),
+                gst_element_state_get_name(pending),
+                gst_element_state_get_name(stuck));
             fprintf(stderr, "%s\n", state->error);
         }
 

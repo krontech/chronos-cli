@@ -216,6 +216,7 @@ void hdmi_hotplug_launch(struct pipeline_state *state);
 void playback_init(struct pipeline_state *state);
 void playback_preroll(struct pipeline_state *state);
 void playback_pause(struct pipeline_state *state);
+void playback_delay(struct pipeline_state *state);
 void playback_seek(struct pipeline_state *state, int delta);
 void playback_live(struct pipeline_state *state);
 void playback_play(struct pipeline_state *state, unsigned long frame, int framerate);
