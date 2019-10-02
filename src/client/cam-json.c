@@ -82,8 +82,7 @@ handle_error(int code, const char *message, unsigned long flags)
 }
 
 /* Put some upper bounds on the amount of JSON we're willing to parse. */
-#define JSON_MAX_BUF    4096
-#define JSON_MAX_TOK    128
+#define JSON_MAX_BUF    32768
 
 static char js[JSON_MAX_BUF];
 
@@ -279,7 +278,8 @@ static void *
 json_parse(FILE *fp, GType *ptype, unsigned long flags)
 {
     jsmn_parser parser;
-    jsmntok_t tokens[JSON_MAX_TOK]; /* Should be enough for any crazy API thing. */
+    jsmntok_t *tokens = NULL;
+    void    *result;
     size_t  jslen;
     int     num;
 
@@ -298,8 +298,21 @@ json_parse(FILE *fp, GType *ptype, unsigned long flags)
         handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
     }
 
+    /* Allocate memory for the JSON tokens. */
     jsmn_init(&parser);
-    num = jsmn_parse(&parser, js, jslen, tokens, JSON_MAX_TOK);
+    num = jsmn_parse(&parser, js, jslen, NULL, 0);
+    if (num <= 0) {
+        /* We got an invalid blob of JSON that could not be parsed. */
+        handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
+    }
+    tokens = malloc(sizeof(jsmntok_t) * num);
+    if (!tokens) {
+        handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal error", flags);
+    }
+
+    /* Parse the JSON. */
+    jsmn_init(&parser);
+    num = jsmn_parse(&parser, js, jslen, tokens, num);
     if (num < 0) {
         /* We really want a 'request too large' error for CGI mode. */
         handle_error(JSONRPC_ERR_PARSE_ERROR, "Invalid JSON", flags);
@@ -308,14 +321,18 @@ json_parse(FILE *fp, GType *ptype, unsigned long flags)
     /* The only encoding we support for now is the JSON object */
     if (tokens[0].type == JSMN_OBJECT) {
         *ptype = CAM_DBUS_HASH_MAP;
-        return json_parse_object(tokens, flags);
+        result = json_parse_object(tokens, flags);
     }
-    if (tokens[0].type == JSMN_ARRAY) {
-        return json_parse_array(tokens, ptype, flags);
+    else if (tokens[0].type == JSMN_ARRAY) {
+        result = json_parse_array(tokens, ptype, flags);
+    }
+    /* Otherwise, it's not any kind of input we can make sense of. */
+    else {
+        result = NULL;
     }
 
-    /* Not any kind of input that we can make sense of. */
-    return NULL;
+    free(tokens);
+    return result;
 }
 
 static void
