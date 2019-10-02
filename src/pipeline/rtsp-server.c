@@ -77,6 +77,47 @@ rtsp_param_find(const char *start, const char *name, char *value, size_t len)
     return NULL;
 }
 
+struct rtsp_sess *
+rtsp_session_new(struct rtsp_ctx *ctx, struct sockaddr_storage *dest)
+{
+    /* FIXME: Only one session supported for now. */
+    struct rtsp_sess *sess = &ctx->session;
+
+    /* If an existing session is in progress, clear it. */
+    if (sess->state != RTSP_SESSION_TEARDOWN) {
+        sess->state = RTSP_SESSION_TEARDOWN;
+        rtsp_server_run_hook(ctx, sess);
+    }
+
+    memset(sess, 0, sizeof(struct rtsp_sess));
+    memcpy(&sess->dest, dest, sizeof(struct sockaddr_storage));
+    sess->sid = rand();
+    sess->state = RTSP_SESSION_SETUP;
+
+    clock_gettime(CLOCK_MONOTONIC, &sess->expire);
+    sess->expire.tv_sec += RTSP_SESSION_TIMEOUT;
+    return sess;
+}
+
+struct rtsp_sess *
+rtsp_session_match(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
+{
+    const char *hdr = rtsp_header_find(conn, "Session");
+    unsigned long sid;
+    char *e;
+    
+    /* Parse the session identifer from the request headers. */
+    hdr = rtsp_header_find(conn, "Session");
+    if (!hdr) return NULL;
+    sid = strtoul(hdr, &e, 10);
+    if (*e != '\0') return NULL;
+    
+    /* Search for a matching session. */
+    if (ctx->session.sid != sid) return NULL;
+    if (ctx->session.state == RTSP_SESSION_TEARDOWN) return NULL;
+    return &ctx->session;
+}
+
 static void
 rtsp_client_close(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
 {
@@ -252,6 +293,9 @@ rtsp_client_reply(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
     if (strcasecmp(conn->method, "OPTIONS") == 0) {
         rtsp_method_options(ctx, conn, payload, conn->contentlen);
     }
+    else if (strcasecmp(conn->method, "GET_PARAMETER") == 0) {
+        rtsp_method_getparam(ctx, conn, payload, conn->contentlen);
+    }
     else if (strcasecmp(conn->method, "DESCRIBE") == 0) {
         rtsp_method_describe(ctx, conn, payload, conn->contentlen);
     }
@@ -260,6 +304,9 @@ rtsp_client_reply(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
     }
     else if (strcasecmp(conn->method, "PLAY") == 0) {
         rtsp_method_play(ctx, conn, payload, conn->contentlen);
+    }
+    else if (strcasecmp(conn->method, "TEARDOWN") == 0) {
+        rtsp_method_teardown(ctx, conn, payload, conn->contentlen);
     }
     /* Otherwise this method is not supported. */
     else {
@@ -390,6 +437,36 @@ rtsp_client_recv(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
     }
 }
 
+/* Check for session timeouts, and return the time until the next expiration. */
+static void
+rtsp_session_timeout(struct rtsp_ctx *ctx, struct timeval *tv)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+
+    if (ctx->session.state != RTSP_SESSION_TEARDOWN) {
+        struct rtsp_sess *sess = &ctx->session;
+
+        if ( (sess->expire.tv_sec == now.tv_sec) ?
+             (sess->expire.tv_nsec <= now.tv_nsec) :
+             (sess->expire.tv_sec < now.tv_sec) ) {
+            /* Session has expired. */
+            sess->state = RTSP_SESSION_TEARDOWN;
+            rtsp_server_run_hook(ctx, sess);
+        }
+        else {
+            /* Compute the timeout. */
+            tv->tv_sec = (sess->expire.tv_sec - now.tv_sec);
+            if (sess->expire.tv_sec >= now.tv_nsec) {
+                tv->tv_usec = (sess->expire.tv_nsec - now.tv_nsec) / 1000;
+            } else {
+                tv->tv_sec--;
+                tv->tv_usec = ((sess->expire.tv_nsec - now.tv_nsec) / 1000) + 1000000;
+            }
+        }
+    }
+}
+
 /* Handle new connections. */
 static void
 rtsp_server_accept(struct rtsp_ctx *ctx)
@@ -445,12 +522,13 @@ rtsp_server_thread(void *arg)
     
     /* RTSP server loop. */
     for (;;) {
+        struct timeval tv = {.tv_sec = 1, .tv_usec = 0};
         fd_set rfd, wfd;
         int ret, maxfd;
         FD_ZERO(&rfd);
         FD_ZERO(&wfd);
 
-        /* Build the list sockets to wait on. */
+        /* Build the list of sockets to wait on. */
         maxfd = ctx->server_sock;
         FD_SET(ctx->server_sock, &rfd);
         for (conn = ctx->conn_head; conn; conn = conn->next) {
@@ -463,11 +541,15 @@ rtsp_server_thread(void *arg)
             }
         }
 
+        /* Check for session timeouts. */
+        rtsp_session_timeout(ctx, &tv);
+
         /* Wait for socket activity. */
-        ret = select(maxfd+1, &rfd, &wfd, NULL, NULL);
+        ret = select(maxfd+1, &rfd, &wfd, NULL, &tv);
         if (ret == 0) continue;
         if (ret < 0) {
             if (errno == EINTR) continue;
+            if (errno == EAGAIN) continue;
             fprintf(stderr, "Select failed: %s\n", strerror(errno));
             break;
         }
@@ -514,7 +596,7 @@ rtsp_server_launch(struct pipeline_state *state)
         fprintf(stderr, "Failed to allocate RTSP server context.\n");
         return NULL;
     }
-    ctx->session_state = RTSP_SESSION_TEARDOWN;
+    ctx->session.state = RTSP_SESSION_TEARDOWN;
     ctx->server_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (ctx->server_sock < 0) {
         fprintf(stderr, "Failed to create RTSP server socket.\n");
@@ -550,26 +632,26 @@ rtsp_server_cleanup(struct rtsp_ctx *ctx)
 void
 rtsp_session_foreach(struct rtsp_ctx *ctx, rtsp_session_hook_t hook, void *closure)
 {
-    struct rtsp_session sess;
-    if (ctx->session_state == RTSP_SESSION_TEARDOWN) return;
+    struct rtsp_session sdata;
+    if (ctx->session.state == RTSP_SESSION_TEARDOWN) return;
 
-    if (ctx->dest.ss_family == AF_INET) {
-        struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
+    if (ctx->session.dest.ss_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->session.dest;
 
-        inet_ntop(AF_INET, &sin->sin_addr, sess.host, sizeof(sess.host));
-        sess.port = htons(sin->sin_port);
-        sess.state = ctx->session_state;
+        inet_ntop(AF_INET, &sin->sin_addr, sdata.host, sizeof(sdata.host));
+        sdata.port = htons(sin->sin_port);
+        sdata.state = ctx->session.state;
 
-        hook(&sess, closure);
+        hook(&sdata, closure);
     }
-    else if (ctx->dest.ss_family == AF_INET6) {
-        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->dest;
+    else if (ctx->session.dest.ss_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->session.dest;
 
-        inet_ntop(AF_INET6, &sin6->sin6_addr, sess.host, sizeof(sess.host));
-        sess.port = htons(sin6->sin6_port);
-        sess.state = ctx->session_state;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, sdata.host, sizeof(sdata.host));
+        sdata.port = htons(sin6->sin6_port);
+        sdata.state = ctx->session.state;
 
-        hook(&sess, closure);
+        hook(&sdata, closure);
     }
 }
 
@@ -581,28 +663,28 @@ rtsp_server_set_hook(struct rtsp_ctx *ctx, rtsp_session_hook_t hook, void *closu
 }
 
 void
-rtsp_server_run_hook(struct rtsp_ctx *ctx)
+rtsp_server_run_hook(struct rtsp_ctx *ctx, struct rtsp_sess *sess)
 {
-    struct rtsp_session sess;
+    struct rtsp_session sdata;
     if (!ctx->hook) return;
 
-    if (ctx->dest.ss_family == AF_INET) {
-        struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
+    if (sess->dest.ss_family == AF_INET) {
+        struct sockaddr_in *sin = (struct sockaddr_in *)&sess->dest;
 
-        inet_ntop(AF_INET, &sin->sin_addr, sess.host, sizeof(sess.host));
-        sess.port = htons(sin->sin_port);
-        sess.state = ctx->session_state;
+        inet_ntop(AF_INET, &sin->sin_addr, sdata.host, sizeof(sdata.host));
+        sdata.port = htons(sin->sin_port);
+        sdata.state = sess->state;
 
-        ctx->hook(&sess, ctx->closure);
+        ctx->hook(&sdata, ctx->closure);
     }
-    else if (ctx->dest.ss_family == AF_INET6) {
-        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&ctx->dest;
+    else if (sess->dest.ss_family == AF_INET6) {
+        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&sess->dest;
 
-        inet_ntop(AF_INET6, &sin6->sin6_addr, sess.host, sizeof(sess.host));
-        sess.port = htons(sin6->sin6_port);
-        sess.state = ctx->session_state;
+        inet_ntop(AF_INET6, &sin6->sin6_addr, sdata.host, sizeof(sdata.host));
+        sdata.port = htons(sin6->sin6_port);
+        sdata.state = sess->state;
 
-        ctx->hook(&sess, ctx->closure);
+        ctx->hook(&sdata, ctx->closure);
     }
 }
 

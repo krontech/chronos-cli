@@ -23,8 +23,9 @@
 
 #include "pipeline.h"
 
-#define RTSP_SERVER_PORT    554
-#define RTSP_SOCKET_BACKLOG 4
+#define RTSP_SERVER_PORT        554
+#define RTSP_SOCKET_BACKLOG     4
+#define RTSP_SESSION_TIMEOUT    60
 
 /* Client states. */
 #define RTSP_CLIENT_START   0   /* Waiting for the RTSP request line. */
@@ -70,21 +71,28 @@ struct rtsp_conn {
     } tx;
 };
 
+struct rtsp_sess {
+    struct rtsp_sess *next;
+    struct rtsp_sess *prev;
+
+    struct sockaddr_storage dest;
+    struct timespec expire;
+    int sid;
+    int state;
+};
+
 struct rtsp_ctx {
     pthread_t thread;
     int server_sock;
-
-    /* Single session supported for now. */
-    struct sockaddr_storage dest;
-    int session_id;
-    int session_state;
     rtsp_session_hook_t hook;
     void *closure;
 
     struct rtsp_conn *conn_head;
     struct rtsp_conn *conn_tail;
-};
 
+    /* Single session supported for now. */
+    struct rtsp_sess session;
+};
 
 void rtsp_client_error(struct rtsp_conn *conn, int code, const char *message);
 void rtsp_start_response(struct rtsp_conn *conn, int code, const char *status);
@@ -97,15 +105,19 @@ void rtsp_finish_payload(struct rtsp_conn *conn);
 
 char *rtsp_parse_param(const char *start, const char **savep, char *out, size_t len);
 
+struct rtsp_sess *rtsp_session_new(struct rtsp_ctx *ctx, struct sockaddr_storage *dest);
+struct rtsp_sess *rtsp_session_match(struct rtsp_ctx *ctx, struct rtsp_conn *conn);
+
 /* RTSP method functions. */
 /* TODO: Maybe these should be dynamically registered in a list somewhere. */
 void rtsp_method_options(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
+void rtsp_method_getparam(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_describe(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_play(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_pause(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 void rtsp_method_teardown(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len);
 
-void rtsp_server_run_hook(struct rtsp_ctx *ctx);
+void rtsp_server_run_hook(struct rtsp_ctx *ctx, struct rtsp_sess *sess);
 
 #endif /* __RTSP_PRIVATE_H */

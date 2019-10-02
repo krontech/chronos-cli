@@ -39,7 +39,23 @@ void
 rtsp_method_options(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
     rtsp_start_response(conn, 200, "OK");
-    rtsp_write_header(conn, "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE");
+    rtsp_write_header(conn, "Public: GET_PARAMETER, DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE");
+    rtsp_write_header(conn, "");
+}
+
+void
+rtsp_method_getparam(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
+{
+    struct rtsp_sess *sess = rtsp_session_match(ctx, conn);
+
+    /* If the session exists, refresh its timeout. */
+    if (sess) {
+        clock_gettime(CLOCK_MONOTONIC, &sess->expire);
+        sess->expire.tv_sec += RTSP_SESSION_TIMEOUT;
+    }
+
+    /* We don't actually support any parameters. */
+    rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "");
 }
 
@@ -73,9 +89,11 @@ rtsp_method_describe(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *p
 void
 rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
+    struct rtsp_sess *sess;
     char host[INET6_ADDRSTRLEN];
     const char *transport = rtsp_header_find(conn, "Transport");
     unsigned int port = 5000;
+    struct sockaddr_storage dest;
     
     /* We don't support merging of streams. */
     if (rtsp_header_find(conn, "Session")) {
@@ -101,20 +119,12 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
         }
     }
 
-    /* If an existing session is in progress, clear it. */
-    if (ctx->session_state != RTSP_SESSION_TEARDOWN) {
-        ctx->session_state = RTSP_SESSION_TEARDOWN;
-        rtsp_server_run_hook(ctx);
-    }
-
-    /* Generate a new session ID. */
-    ctx->session_id = rand();
-    memset(&ctx->dest, 0, sizeof(ctx->dest));
+    /* Generate a new session. */
+    memcpy(&dest, &conn->addr, sizeof(struct sockaddr_storage));
     if (conn->addr.ss_family == AF_INET) {
-        struct sockaddr_in *sin = (struct sockaddr_in *)&ctx->dest;
+        struct sockaddr_in *sin = (struct sockaddr_in *)&dest;
         sin->sin_family = AF_INET;
         sin->sin_port = htons(port);
-        sin->sin_addr = ((struct sockaddr_in *)&conn->addr)->sin_addr;
         inet_ntop(AF_INET, &sin->sin_addr, host, sizeof(host));
     }
     else {
@@ -122,56 +132,80 @@ rtsp_method_setup(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payl
         return;
     }
 
+    /* Allocate a new session. */
+    sess = rtsp_session_new(ctx, &dest);
+    if (!sess) {
+        rtsp_client_error(conn, 500, "Internal Server Error");
+        return;
+    }
+    ctx->session.state = RTSP_SESSION_SETUP;
+
     rtsp_start_response(conn, 200, "OK");
-    rtsp_write_header(conn, "Session: %d", ctx->session_id);
+    rtsp_write_header(conn, "Session: %d;timeout=%d", ctx->session.sid, RTSP_SESSION_TIMEOUT);
     rtsp_write_header(conn, "Transport: RTP/AVP;unicast;client_port=%d;server_port=5000;host=%s", port, host);
     rtsp_write_header(conn, "");
 
     /* The session is now in the SETUP state. */
-    ctx->session_state = RTSP_SESSION_SETUP;
-    rtsp_server_run_hook(ctx);
+    rtsp_server_run_hook(ctx, &ctx->session);
 }
 
 void
 rtsp_method_play(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
+    struct rtsp_sess *sess = rtsp_session_match(ctx, conn);
+
     /* HACK: The worlds laziest implementation. */
+    if (sess) {
+        clock_gettime(CLOCK_MONOTONIC, &sess->expire);
+        sess->expire.tv_sec += RTSP_SESSION_TIMEOUT;
+        if (sess->state != RTSP_SESSION_PLAY) {
+            sess->state = RTSP_SESSION_PLAY;
+            rtsp_server_run_hook(ctx, sess);
+        }
+    }
+
     rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "");
-
-    /* The session is now in the PLAY state. */
-    if (ctx->session_state != RTSP_SESSION_PLAY) {
-        ctx->session_state = RTSP_SESSION_PLAY;
-        rtsp_server_run_hook(ctx);
-    }
 }
 
 void
 rtsp_method_pause(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
+    struct rtsp_sess *sess = rtsp_session_match(ctx, conn);
+
+    /* HACK: The worlds laziest implementation. */
+    if (sess) {
+        clock_gettime(CLOCK_MONOTONIC, &sess->expire);
+        sess->expire.tv_sec += RTSP_SESSION_TIMEOUT;
+        if (sess->state != RTSP_SESSION_PAUSE) {
+            sess->state = RTSP_SESSION_PAUSE;
+            rtsp_server_run_hook(ctx, sess);
+        }
+    }
+
     /* HACK: The worlds laziest implementation. */
     rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "");
-
-    /* The session is now in the PLAY state. */
-    if (ctx->session_state != RTSP_SESSION_PAUSE) {
-        ctx->session_state = RTSP_SESSION_PAUSE;
-        rtsp_server_run_hook(ctx);
-    }
 }
 
 void
 rtsp_method_teardown(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *payload, size_t len)
 {
+    struct rtsp_sess *sess = rtsp_session_match(ctx, conn);
+
+    /* HACK: The worlds laziest implementation. */
+    if (sess) {
+        clock_gettime(CLOCK_MONOTONIC, &sess->expire);
+        sess->expire.tv_sec += RTSP_SESSION_TIMEOUT;
+        if (sess->state != RTSP_SESSION_TEARDOWN) {
+            sess->state = RTSP_SESSION_TEARDOWN;
+            rtsp_server_run_hook(ctx, sess);
+        }
+    }
+
     /* HACK: The worlds laziest implementation. */
     rtsp_start_response(conn, 200, "OK");
     rtsp_write_header(conn, "");
-
-    /* The session is now in the PLAY state. */
-    if (ctx->session_state != RTSP_SESSION_TEARDOWN) {
-        ctx->session_state = RTSP_SESSION_TEARDOWN;
-        rtsp_server_run_hook(ctx);
-    }
 }
 
 #endif /* ENABLE_RTSP_SERVER */

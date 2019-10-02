@@ -46,10 +46,10 @@ struct rtsp_ctx;
 #define ENABLE_RTSP_SERVER  GST_CHECK_VERSION(0,10,36)
 
 /* RTSP Session Information */
-#define RTSP_SESSION_SETUP      0
-#define RTSP_SESSION_PLAY       1
-#define RTSP_SESSION_PAUSE      2
-#define RTSP_SESSION_TEARDOWN   3
+#define RTSP_SESSION_TEARDOWN   0
+#define RTSP_SESSION_SETUP      1
+#define RTSP_SESSION_PLAY       2
+#define RTSP_SESSION_PAUSE      3
 
 struct rtsp_session {
     char    host[64];
