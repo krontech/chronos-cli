@@ -717,6 +717,7 @@ main(int argc, char * argv[])
     memset(&state->config, 0, sizeof(state->config));
     state->config.hres = CAM_LCD_HRES;
     state->config.vres = CAM_LCD_VRES;
+    state->config.video_zoom = 1.0;
 
     optind = 0;
     opterr = 1;

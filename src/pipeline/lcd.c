@@ -23,17 +23,79 @@
 
 #include "pipeline.h"
 
+static void
+cam_lcd_scaler_setup(struct pipeline_state *state, const struct display_config *output,
+    GstElement *scaler, GstElement *filter, GstElement *sink)
+{
+    GstCaps *caps;
+
+    char crop[64];
+    unsigned int cropx = state->source.hres;
+    unsigned int cropy = state->source.vres;
+    unsigned int startx = 0;
+    unsigned int starty = 0;
+    unsigned int scale_mul, scale_div;
+    unsigned int houtput, voutput;
+    unsigned int hoffset, voffset;
+
+    /* Determine the nominal scale ratio. */
+    if ((output->hres * state->source.vres) > (output->vres * state->source.hres)) {
+        scale_mul = output->vres;
+        scale_div = state->source.vres;
+    }
+    else {
+        scale_mul = output->hres;
+        scale_div = state->source.hres;
+    }
+    /* Apply digital zoom */
+    if (state->config.video_zoom >= 1.0) {
+        scale_mul *= state->config.video_zoom;
+    } else {
+        scale_div /= state->config.video_zoom;
+    }
+
+    /* Compute the actual output video size. */
+    houtput = ((state->source.hres * scale_mul) / scale_div) & ~0xF;
+    voutput = ((state->source.vres * scale_mul) / scale_div) & ~0x1;
+    if (houtput > output->hres) {
+        /* It's unclear if the input cropper has quantization requirements. */
+        cropx = ((state->source.hres * output->hres) / houtput) & ~0x1;
+        startx = ((state->source.hres - cropx) / 2) & ~0x1;
+        houtput = output->hres & ~0xF;
+    }
+    if (voutput > output->vres) {
+        cropy = ((state->source.vres * output->vres) / voutput) & ~0x1;
+        starty = ((state->source.vres - cropy) / 2) & ~0x1;
+        voutput = output->vres & ~0x1;
+    }
+    sprintf(crop, "%u,%u@%ux%u", startx, starty, cropx, cropy);
+    g_object_set(G_OBJECT(scaler), "crop-area", crop, NULL);
+    hoffset = (output->xoff + (output->hres - houtput) / 2) & ~0x1;
+    voffset = (output->yoff + (output->vres - voutput) / 2) & ~0x1;
+
+#ifdef DEBUG
+    fprintf(stderr, "DEBUG: crop = %s\n", crop);
+    fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
+    fprintf(stderr, "DEBUG: input = [%u, %u]\n", state->source.hres, state->source.vres);
+    fprintf(stderr, "DEBUG: output = [%u, %u]\n", houtput, voutput);
+    fprintf(stderr, "DEBUG: offset = [%u, %u]\n", hoffset, voffset);
+#endif
+	g_object_set(G_OBJECT(sink), "top", (guint)voffset, NULL);
+	g_object_set(G_OBJECT(sink), "left", (guint)hoffset, NULL);
+
+    caps = gst_caps_new_simple ("video/x-raw-yuv",
+                "width", G_TYPE_INT, houtput,
+                "height", G_TYPE_INT, voutput,
+                NULL);
+    g_object_set(G_OBJECT(filter), "caps", caps, NULL);
+    gst_caps_unref(caps);
+}
+
 GstPad *
 cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
 {
     gboolean ret;
     GstElement *queue, *scaler, *ctrl, *filter, *sink;
-    GstCaps *caps;
-    unsigned int hinput = state->source.hres;
-    unsigned int vinput = state->source.vres;
-    unsigned int houtput, voutput;
-    unsigned int hoffset, voffset;
-    unsigned int scale_mul = 1, scale_div = 1;
 
     queue =     gst_element_factory_make("queue",           "lcdqueue");
     scaler =    gst_element_factory_make("omx_mdeiscaler",  "lcdscaler");
@@ -53,50 +115,8 @@ cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
 
 	gst_bin_add_many(GST_BIN(state->pipeline), queue, scaler, ctrl, filter, sink, NULL);
 
-    /* Sanity-check and apply the crop configuration. */
-#ifdef DEBUG
-    fprintf(stderr, "DEBUG: crop = %u,%u@%ux%u\n", state->source.startx, state->source.starty, state->source.cropx, state->source.cropy);
-#endif
-    while (state->source.cropx && state->source.cropy) {
-        char crop[64];
-        if ((state->source.startx + state->source.cropx) > state->source.hres) break;
-        if ((state->source.starty + state->source.cropy) > state->source.vres) break;
-        hinput = state->source.cropx;
-        vinput = state->source.cropy;
-        sprintf(crop, "%u,%u@%ux%u", state->source.startx, state->source.starty, hinput, vinput);
-        g_object_set(G_OBJECT(scaler), "crop-area", crop, NULL);
-        break;
-    }
-
-    /* Configure the output offset on the LCD. */
-    if ((output->hres * vinput) > (output->vres * hinput)) {
-        scale_mul = output->vres;
-        scale_div = vinput;
-    }
-    else {
-        scale_mul = output->hres;
-        scale_div = hinput;
-    }
-    houtput = ((hinput * scale_mul) / scale_div) & ~0xF;
-    voutput = ((vinput * scale_mul) / scale_div) & ~0x1;
-    hoffset = (output->xoff + (output->hres - houtput) / 2) & ~0x1;
-    voffset = (output->yoff + (output->vres - voutput) / 2) & ~0x1;
-
-#ifdef DEBUG
-    fprintf(stderr, "DEBUG: scale = %u/%u\n", scale_mul, scale_div);
-    fprintf(stderr, "DEBUG: input = [%u, %u]\n", hinput, vinput);
-    fprintf(stderr, "DEBUG: output = [%u, %u]\n", houtput, voutput);
-    fprintf(stderr, "DEBUG: offset = [%u, %u]\n", hoffset, voffset);
-#endif
-	g_object_set(G_OBJECT(sink), "top", (guint)voffset, NULL);
-	g_object_set(G_OBJECT(sink), "left", (guint)hoffset, NULL);
-
-    caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "width", G_TYPE_INT, houtput,
-                "height", G_TYPE_INT, voutput,
-                NULL);
-    g_object_set(G_OBJECT(filter), "caps", caps, NULL);
-    gst_caps_unref(caps);
+    /* Configure the LCD and scaler setup */
+    cam_lcd_scaler_setup(state, output, scaler, filter, sink);
 
     /* Link LCD Output capabilities. */
     ret = gst_element_link_pads(scaler, "src_00", ctrl, "sink");
@@ -114,41 +134,15 @@ cam_lcd_sink(struct pipeline_state *state, const struct display_config *output)
 void
 cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *output)
 {
+    GstElement *scaler = gst_bin_get_by_name(GST_BIN(state->pipeline), "lcdscaler");
     GstElement *filter = gst_bin_get_by_name(GST_BIN(state->pipeline), "lcdcaps");
     GstElement *sink = gst_bin_get_by_name(GST_BIN(state->pipeline), "lcdsink");
-    GstCaps *caps;
-    unsigned int hout, vout;
-    unsigned int hoff, voff;
-    unsigned int scale_mul = 1, scale_div = 1;
 
-    if (!filter || !sink) {
-        return;
+    if (scaler && filter && sink) {
+        /* Update the scaler configuration. */
+        cam_lcd_scaler_setup(state, output, scaler, filter, sink);
+
+        /* Pause and restart the pipeline - because caps renegotiation doesn't work. */
+        cam_pipeline_restart(state);
     }
-
-    /* Recompute the scaler parameters. */
-    if ((output->hres * state->source.vres) > (output->vres * state->source.hres)) {
-        scale_mul = output->vres;
-        scale_div = state->source.vres;
-    }
-    else {
-        scale_mul = output->hres;
-        scale_div = state->source.hres;
-    }
-    hout = ((state->source.hres * scale_mul) / scale_div) & ~0xF;
-    vout = ((state->source.vres * scale_mul) / scale_div) & ~0x1;
-    hoff = (output->xoff + (output->hres - hout) / 2) & ~0x1;
-    voff = (output->yoff + (output->vres - vout) / 2) & ~0x1;
-
-    /* Set the new configuration */
-    g_object_set(G_OBJECT(sink), "top", (guint)voff, NULL);
-    g_object_set(G_OBJECT(sink), "left", (guint)hoff, NULL);
-    caps = gst_caps_new_simple ("video/x-raw-yuv",
-                "width", G_TYPE_INT, hout,
-                "height", G_TYPE_INT, vout,
-                NULL);
-    g_object_set(G_OBJECT(filter), "caps", caps, NULL);
-    gst_caps_unref(caps);
-
-    /* Pause and restart the pipeline */
-    cam_pipeline_restart(state);
 }

@@ -169,11 +169,6 @@ cam_network_sink(struct pipeline_state *state)
     GstElement *encoder, *queue, *parser, *neon, *payload, *sink;
     struct in_addr addr;
 
-    /* Do nothing unless we were given an IP address. */
-    if (inet_aton(state->nethost, &addr) < 0) {
-        return NULL;
-    }
-
     /* Allocate our segment of the video pipeline. */
     queue =   gst_element_factory_make("queue",       "net-queue");
     encoder = gst_element_factory_make("omx_h264enc", "net-encoder");

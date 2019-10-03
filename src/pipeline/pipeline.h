@@ -101,9 +101,10 @@ struct display_config {
     unsigned long vres;
     unsigned long xoff;
     unsigned long yoff;
-    unsigned int  peak_color;  /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
-    double        peak_level;  /* In the range of 0.0 for minimum sensitivity to 1.0 for max. */
-    double        zebra_level; /* Exposure zebra sensitivity level. */
+    unsigned int  peak_color;   /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
+    double        peak_level;   /* In the range of 0.0 for minimum sensitivity to 1.0 for max. */
+    double        zebra_level;  /* Exposure zebra sensitivity level. */
+    double        video_zoom;   /* Digital zoom to apply in live/playback. */
     const char *gifsplash;
 };
 
@@ -145,9 +146,6 @@ struct pipeline_state {
 
     /* Display control config */
     uint32_t            control;
-
-    /* Destination address for UDP/network stream. */
-    char            nethost[128];
 
     /* Frame information */
     struct video_seglist seglist;   /* List of segments captured from the recording sequencer. */

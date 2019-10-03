@@ -109,6 +109,24 @@ cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_
 }
 
 static gboolean
+cam_video_zoom_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
+{
+    double zoom = g_value_get_double(val);
+    /* TODO: What limits should actually apply here? */
+    if (zoom < 0.25) zoom = 0.25;
+    if (zoom > 8.0) zoom = 8.0;
+    state->config.video_zoom = zoom;
+
+    /* Perform LCD reconfiguration. */
+    if ((state->playstate == PLAYBACK_STATE_LIVE) || (state->playstate == PLAYBACK_STATE_PLAY)) {
+        cam_lcd_reconfig(state, &state->config);
+    }
+    /* TODO: Changing zoom will require a pipeline reboot to take effect. */
+
+    return TRUE;
+}
+
+static gboolean
 cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->overlay.enable = g_value_get_boolean(val);
@@ -188,23 +206,6 @@ cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_pa
     return vboxed;
 }
 
-static gboolean
-cam_netstream_host_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
-{
-    strncpy(state->nethost, g_value_get_string(val), sizeof(state->nethost));
-    state->nethost[sizeof(state->nethost)-1] = '\0';
-    return TRUE;
-}
-
-static GValue *
-cam_netstream_sdp_getter(struct pipeline_state *state, const struct pipeline_param *p)
-{
-    GValue *gval = g_new0(GValue, 1);
-    g_value_init(gval, G_TYPE_STRING);
-    g_value_take_string(gval, g_strdup_printf("v=0\nm=video %d RTP/AVP 96\na=rtpmap:96 H264/9000\n", NETWORK_STREAM_PORT));
-    return gval;
-}
-
 /* This is really just here to keep the lines shorter. */
 #define param_offset(_member_) offsetof(struct pipeline_state, _member_)
 
@@ -217,6 +218,7 @@ static const struct pipeline_param cam_dbus_params[] = {
     { "focusPeakingColor",  G_TYPE_ENUM,    PARAM_F_NOTIFY, param_offset(config.peak_color),   focus_peak_colors,  cam_focus_peak_color_setter},
     { "focusPeakingLevel",  G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.peak_level),   NULL,               cam_focus_peak_level_setter},
     { "zebraLevel",         G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.zebra_level),  NULL,               NULL},
+    { "videoZoom",          G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.video_zoom),   NULL,               cam_video_zoom_setter },
     /* Playback position and rate. */
     { "playbackRate",       G_TYPE_LONG,    PARAM_F_NOTIFY, param_offset(playrate),            NULL,               cam_playback_rate_setter},
     { "playbackPosition",   G_TYPE_LONG,    0,              param_offset(position),            NULL,               cam_playback_position_setter},
@@ -226,9 +228,6 @@ static const struct pipeline_param cam_dbus_params[] = {
     { "totalFrames",        G_TYPE_LONG,    0,              param_offset(seglist.totalframes), NULL,               NULL},
     { "totalSegments",      G_TYPE_LONG,    0,              param_offset(seglist.totalsegs),   NULL,               NULL},
     { "videoSegments",      G_TYPE_BOXED,   0,              0,                                 cam_video_segments_getter, NULL},
-    /* Network stream parameters. */
-    { "netStreamDest",      G_TYPE_STRING,  PARAM_F_NOTIFY, param_offset(nethost),             NULL,               cam_netstream_host_setter},
-    { "netStreamSDP",       G_TYPE_BOXED,   PARAM_F_NOTIFY, param_offset(nethost),             cam_netstream_sdp_getter, NULL},
     { NULL, G_TYPE_INVALID, 0, 0, NULL, NULL}
 };
 

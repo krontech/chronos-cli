@@ -163,21 +163,12 @@ be disabled.
 
 livedisplay
 -----------
-Switches the pipeline to live display mode and optionally configured video cropping
-and setup aids.
+Switches the pipeline to live display mode and optionally configures setup aids.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
-| `"cropx"`         | `uint`    | The horizontal video crop size (default: 0).
-| `"cropy"`         | `uint`    | The vertical video crop size (defualt: 0).
-| `"startx"`        | `uint`    | The horizontal starting offset for cropped video (default: 0).
-| `"starty"`        | `uint`    | The vertical starting offset for cropped video (defualt: 0).
-
-If the `cropx` or `cropy` parameters are set to non-zero values, the live video stream
-will be cropped before entering the scaler elements, otherwise the full video size
-will be rescaled to fit the LCD output size set by the [`configure`](#configure) method.
 
 For a description of the acceptable values provided to the `peaking` field,
 refer to the [`configure`](#configure) method.
@@ -325,6 +316,7 @@ a methods are as follows:
 | `zebraLevel`        |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
 | `focusPeakingLevel` |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the range of 0 to 1.0). 0 means "off".
 | `focusPeakingColor` |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Black.
+| `videoZoom`         |`G`|`S`|`N`| float  | Digital zoom ratio for video output to the LCD display.
 | `videoState`        |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
 | `playbackRate`      |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
 | `playbackPosition`  |`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
