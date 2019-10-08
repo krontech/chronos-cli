@@ -7,9 +7,7 @@
 #include "pcutil.h"
 #include "types.h"
 #include "comms.h"
-extern "C" {
 #include "MBCRC16.h"
-}
 #include "IntelHex.h"
 
 #include <unistd.h>
@@ -228,7 +226,7 @@ BOOL getPMICVersion(uint16 * version)
 		return FALSE;
 }
 
-void shutdown ()
+void doShutdown(void)
 {
      txByteMessage(COM_CMD_SHUTDOWN);
 }
@@ -243,10 +241,10 @@ BOOL updateFirmware(const char * filename)
 	uint32 length;
 	uint32 address;
 	BOOL ret;
-	IntelHex hp;
+	struct IntelHex hp;
 
-	ret = hp.openFile(filename);
-	if (!ret) return false;
+	ret = IntelHexOpen(&hp, filename);
+	if (!ret) return FALSE;
 
 	//Check if in bootloader
 	BOOL inBootloader;
@@ -258,7 +256,7 @@ BOOL updateFirmware(const char * filename)
 	{
 		printf("In user application, jumping to bootloader...\r\n");
 		ret = jumpToBootloader();
-		if(!ret) return false;
+		if(!ret) return FALSE;
 
 		//Give the controller some time to reboot
 		//Thread.Sleep(100);
@@ -287,7 +285,7 @@ BOOL updateFirmware(const char * filename)
 	}
 	printf("\r\nDone erasing flash\r\n");
 	//Program all addresses specified by the program hex file that are within the user program space
-	while (hp.readLine(data, &length, &address) == true && length > 0)
+	while (IntelHexReadLine(&hp, data, &length, &address) && length > 0)
 	{
 	 //   if (((address < BOOTLOADER_START_BYTES || address > BOOTLOADER_END_BYTES) && address <= UPPER_ADDRESS)/* ||
 	 //       (address >= CONFIG_MEM_START_BYTES && address <= CONFIG_MEM_END_BYTES)*/ ) //If this address is not within the bootloader region
@@ -318,7 +316,7 @@ BOOL updateFirmware(const char * filename)
 				}
 				else
 				{
-					writeBlock2 = true;
+					writeBlock2 = TRUE;
 					block2[addressInBlock - FLASH_PAGE_SIZE_BYTES] = data[i];
 				}
 			}
@@ -338,8 +336,8 @@ BOOL updateFirmware(const char * filename)
 	printf("\r\nJumping to program\r\n");
 	//Jump to the user program reset address from the bootloader
 	jumpToProgram();
-	hp.close();
-	return true;
+	IntelHexClose(&hp);
+	return TRUE;
 }
 
 

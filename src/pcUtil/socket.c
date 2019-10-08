@@ -88,7 +88,7 @@ static void *socketConnectionHandler(void *socket_desc)
             /* Check for the shutdown flag - can also be done as a command and propagated up to a UI screen */
             if(bd.flags & 64) {
                 system("/sbin/shutdown -h now");
-                shutdown();
+                doShutdown();
             }
         }
         else if (!strncmp(str, "SET_SHIPPING_MODE_ENABLED", 25))
@@ -171,7 +171,7 @@ int initSocket(void)
     }
 
     /* Accept incomming connections */
-    while(true) {
+    while (TRUE) {
         fd_set readfds;
         FD_ZERO(&readfds);
         FD_SET(master_socket, &readfds);

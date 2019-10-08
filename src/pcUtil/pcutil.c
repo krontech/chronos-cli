@@ -28,7 +28,6 @@ int sfd;
 int fd;
 BatteryData bd;
 uint8 shutdownFlag = 0;
-IntelHex hp;
 
 
 int

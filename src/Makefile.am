@@ -122,17 +122,17 @@ fw_logger_SOURCES += fwlogger/LoggerSM.c
 
 ## Power control daemon
 cam_pcUtil_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
-cam_pcUtil_LDFLAGS = ${AM_LDFLAGS} -all-static
-cam_pcUtil_SOURCES = pcUtil/pcutil.cpp
+cam_pcUtil_LDFLAGS = ${AM_LDFLAGS} 
+cam_pcUtil_SOURCES = pcUtil/pcutil.c
 cam_pcUtil_SOURCES += pcUtil/pcutil.h
-cam_pcUtil_SOURCES += pcUtil/comms.cpp
+cam_pcUtil_SOURCES += pcUtil/comms.c
 cam_pcUtil_SOURCES += pcUtil/comms.h
-cam_pcUtil_SOURCES += pcUtil/intelHex.cpp
+cam_pcUtil_SOURCES += pcUtil/intelHex.c
 cam_pcUtil_SOURCES += pcUtil/IntelHex.h
 cam_pcUtil_SOURCES += pcUtil/MBCRC16.c
 cam_pcUtil_SOURCES += pcUtil/MBCRC16.h
 cam_pcUtil_SOURCES += pcUtil/types.h
-cam_pcUtil_SOURCES += pcUtil/socket.cpp
+cam_pcUtil_SOURCES += pcUtil/socket.c
 cam_pcUtil_SOURCES += pcUtil/socket.h
 
 ##

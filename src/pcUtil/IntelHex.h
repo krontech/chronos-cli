@@ -9,25 +9,16 @@
 #define INTELHEX_H_
 
 #include <stdio.h>
-#include <fstream>
 #include "types.h"
 
-class IntelHex
-{
-public:
-	IntelHex();
-	bool openFile(const char * filename);
-	void close();
-	bool seekToBeginning();
-	bool readLine(uint8 * data, uint32 * len, uint32 * address);
-
-private:
-	std::ifstream infile;
-	bool open;
-	uint16 addressHi;
-	uint16 addressLo;
-
+struct IntelHex {
+	FILE *infile;
+	unsigned int addressHi;
 };
 
+int IntelHexOpen(struct IntelHex *ih, const char * filename);
+void IntelHexClose(struct IntelHex *ih);
+int IntelHexSeekToBeginning(struct IntelHex *ih);
+int IntelHexReadLine(struct IntelHex *ih, uint8 * data, uint32 * len, uint32 * address);
 
 #endif /* INTELHEX_H_ */

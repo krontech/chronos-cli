@@ -21,7 +21,7 @@ BOOL setFanOverrideMode(BOOL enable, uint8 speed);
 BOOL getFanOverrideMode(BOOL * enable, uint8 * speed);
 BOOL getBatteryData(BatteryData * bd);
 BOOL getPMICVersion(uint16 * version);
-void shutdown();
+void doShutdown(void);
 BOOL updateFirmware(const char * filename);
 BOOL programData(uint8 * data, uint32 length, uint32 address);
 BOOL eraseFlash(uint32 address);
