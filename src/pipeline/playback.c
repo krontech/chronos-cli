@@ -459,10 +459,9 @@ playback_rate_update(struct pipeline_state *state)
  *===============================================
  */
 /* Wrapper to generate dbus signals from the main thread. */
-static gboolean
-playback_signal_segment(gpointer data)
+static void
+playback_signal_segment(struct pipeline_state *state)
 {
-    struct pipeline_state *state = data;
     dbus_signal_segment(state->video);
     if (FPGA_VERSION_REQUIRE(state->fpga->config, 3, 22)) {
         /* Generate parameter updates on FPGA version 3.22 and newer. */
@@ -474,29 +473,16 @@ playback_signal_segment(gpointer data)
         };
         dbus_signal_update(state->video, names);
     }
-    return FALSE;
 }
 
-static gboolean
-playback_signal_state(gpointer data)
+static void
+playback_signal_state(struct pipeline_state *state)
 {
-    struct pipeline_state *state = data;
     const char *names[] = {
         "videoState",
         NULL
     };
     dbus_signal_update(state->video, names);
-    return FALSE;
-}
-
-static void
-playback_run_hook(struct pipeline_state *state, GSourceFunc func)
-{
-    GSource *source = g_idle_source_new();
-    if (source) {
-        g_source_set_callback(source, func, state, NULL);
-        g_source_attach(source, state->mainctx);
-    }
 }
 
 /*
@@ -613,7 +599,7 @@ playback_thread(void *arg)
         pthread_mutex_unlock(&state->segmutex);
         /* Emit a signal from the main loop if there were new segments.  */
         if (newsegs) {
-            playback_run_hook(state, playback_signal_segment);
+            playback_signal_segment(state);
         }
 
         /*===============================================
@@ -657,7 +643,7 @@ playback_thread(void *arg)
                 state->fpga->display->control = control;
 
                 playback_setup_timing(state, SAVE_MAX_FRAMERATE);
-                playback_run_hook(state, playback_signal_state);
+                playback_signal_state(state);
                 overlay_setup(state);
 
                 /* Start playback by faking a fsync edge. */
@@ -687,7 +673,7 @@ playback_thread(void *arg)
                 state->fpga->display->control = control;
                 state->playstate = PLAYBACK_STATE_LIVE;
 
-                playback_run_hook(state, playback_signal_state);
+                playback_signal_state(state);
             }
             else {
                 /* Update the display timing if not already in playback. */
@@ -706,7 +692,7 @@ playback_thread(void *arg)
 
                     /* Signal a state change. */
                     state->playstate = PLAYBACK_STATE_PLAY;
-                    playback_run_hook(state, playback_signal_state);
+                    playback_signal_state(state);
                 }
 
                 /* Otherwise, seek through recorded video. */

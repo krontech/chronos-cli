@@ -131,12 +131,13 @@ struct pipeline_state {
     GMainLoop           *mainloop;
     GstElement          *pipeline;
     GstElement          *vidsrc;
-    GstEvent            *eos;
     struct CamVideo     *video;
     struct rtsp_ctx     *rtsp;
     struct fpga         *fpga;
     const struct ioport *iops;
     int                 runmode;
+    int                 pipe_rfd;
+    int                 pipe_wfd;
     int                 write_fd;
     void *              scratchpad;
     char                error[PIPELINE_ERROR_MAXLEN];

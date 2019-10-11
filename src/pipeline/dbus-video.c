@@ -127,9 +127,6 @@ cam_dbus_video_get(struct pipeline_state *state, const char **names)
  */
 typedef struct CamVideo {
     GObjectClass    parent;
-    pthread_t       thread;
-    GMainContext    *mainctx;
-    GMainLoop       *mainloop;
     struct pipeline_state *state;
 } CamVideo;
 
@@ -591,14 +588,6 @@ cam_video_class_init(CamVideoClass *vclass)
 
 G_DEFINE_TYPE(CamVideo, cam_video, G_TYPE_OBJECT)
 
-static void *
-dbus_thread(void *ctx)
-{
-    CamVideo *video = ctx;
-    g_main_loop_run(video->mainloop);
-    return NULL;
-}
-
 struct CamVideo *
 dbus_service_launch(struct pipeline_state *state)
 {
@@ -612,9 +601,6 @@ dbus_service_launch(struct pipeline_state *state)
     g_type_init();
     video = g_object_new(CAM_VIDEO_TYPE, NULL);
     video->state = state;
-    video->mainctx =  g_main_context_default(); /* Arago issue: D-Bus only runs properly in the default context. */
-    video->mainloop = g_main_loop_new(video->mainctx, FALSE);
-    pthread_create(&video->thread, NULL, dbus_thread, video);
 
     /* Bring up DBus and register with the system. */
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -622,7 +608,6 @@ dbus_service_launch(struct pipeline_state *state)
         g_printerr("Failed to get a bus D-Bus (%s)\n", error->message);
         exit(EXIT_FAILURE);
     }
-    dbus_connection_setup_with_g_main(dbus_g_connection_get_connection(bus), video->mainctx);
 
     proxy = dbus_g_proxy_new_for_name(bus, DBUS_SERVICE_DBUS, DBUS_PATH_DBUS, DBUS_INTERFACE_DBUS);
     if (proxy == NULL) {
@@ -653,15 +638,60 @@ dbus_service_launch(struct pipeline_state *state)
 void
 dbus_service_cleanup(struct CamVideo *video)
 {
-    g_main_loop_quit(video->mainloop);
-    pthread_join(video->thread, NULL);
+    /* Nothing to see here. */
+}
+
+struct dbus_signal_data {
+    CamVideo    *video;
+    guint       signal_id;
+    GQuark      detail;
+    GHashTable  *payload;
+};
+
+static gboolean
+dbus_defer_emit(gpointer *gdata)
+{
+    struct dbus_signal_data *data = gdata;
+    g_signal_emit(data->video, data->signal_id, data->detail, data->payload);
+    g_free(data);
+    return FALSE;
+}
+
+/*
+ * D-Bus signals are not multi-thread safe, so we must first take care to pass
+ * them to the GLib main context before emitting the signal. This helper function
+ * takes the signal parameters, bundles them together into a structure and
+ * schedules the signal to be generated from a GLib idle handler.
+ */
+static void
+dbus_defer_signal(CamVideo *video, guint signal_id, GQuark detail, GHashTable *payload)
+{
+    GSource *source;
+    struct dbus_signal_data *data;
+    
+    /* Bundle together the deferred signal data */
+    data = g_malloc(sizeof(struct dbus_signal_data));
+    if (!data) {
+        cam_dbus_dict_free(payload);
+        return;
+    }
+    data->video = video;
+    data->signal_id = signal_id;
+    data->detail = detail;
+    data->payload = payload;
+
+    /* Create an idle source to emit the signal data. */
+    if (g_idle_add(dbus_defer_emit, data) == 0) {
+        cam_dbus_dict_free(payload);
+        g_free(data);
+    }
 }
 
 void
 dbus_signal_sof(CamVideo *video)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
-    g_signal_emit(video, vclass->sof_signalid, 0, cam_dbus_video_status(video->state));
+    dbus_defer_signal(video, vclass->sof_signalid, 0, cam_dbus_video_status(video->state));
 }
 
 void
@@ -672,19 +702,19 @@ dbus_signal_eof(CamVideo *video, const char *err)
     if (err && strlen(err)) {
         cam_dbus_dict_add_string(status, "error", err);
     }
-    g_signal_emit(video, vclass->eof_signalid, 0, status);
+    dbus_defer_signal(video, vclass->eof_signalid, 0, status);
 }
 
 void
 dbus_signal_segment(CamVideo *video)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
-    g_signal_emit(video, vclass->seg_signalid, 0, cam_dbus_video_status(video->state));
+    dbus_defer_signal(video, vclass->seg_signalid, 0, cam_dbus_video_status(video->state));
 }
 
 void
 dbus_signal_update(CamVideo *video, const char **names)
 {
     CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
-    g_signal_emit(video, vclass->update_signalid, 0, cam_dbus_video_get(video->state, names));
+    dbus_defer_signal(video, vclass->update_signalid, 0, cam_dbus_video_get(video->state, names));
 }
