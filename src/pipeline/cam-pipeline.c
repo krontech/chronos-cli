@@ -897,7 +897,7 @@ main(int argc, char * argv[])
             playback_pause(state);
             gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
             for (i = 0; i < 1000; i++) {
-                if (!g_main_context_iteration (NULL, FALSE)) break;
+                if (!g_main_context_iteration(state->mainctx, FALSE)) break;
             }
         }
         else {
