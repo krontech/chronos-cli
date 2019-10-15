@@ -1,5 +1,34 @@
-chronos-cli (0.4.0~alpha22) unstable; urgency=medium
+chronos-cli (0.4.0~alpha51) unstable; urgency=medium
 
+  * Fix compiler errors in strict C mode.
+  * pipeline: Remove second Glib main loop for Gstreamer.
+  * pipeline: Fix possible leak in OMX teardown.
+  * pcUtil: Convert to a C application.
+  * pcUtil: Fix polling bugs leading to choppy performance.
+  * Replace LCD cropping with videoZoom parameter.
+  * OMX deadlock workaround due to VIP parser overflow.
+  * Add teardown and session timeouts to RTSP server.
+  * cam-json: dynamically allocate parser tokens
+  * Prevent glitched overlay when horizontal resolution is below 480 pixels or so.
+  * pcUtil: Use condition variables for data signaling.
+  * Revert TIFF/DNG orientation tag.
+  * Fix video segment metadata causing zero timestamps.
+  * Make RTSP server conditional on GStreamer version.
+  * Add RTSP session hook for dynamic client connection.
+  * Add RTSP client registration on SETUP.
+  * Add prototype RTSP server.
+  * Use Glib's default context for D-Bus.
+  * pcUtil: Poll battery data on boot to disable watchdog.
+  * Fix gst asserts in h264parse.
+  * Fix state transition bugs between LIVE and PLAY
+  * Replace MPEG-TS network stream with RTP/H264 transport.
+  * Generate EOF after syncing the filesave.
+  * Merge branch 'master' of github.com:krontech/chronos-cli
+  * Slight updates to README.md, reflecting new APIs.
+  * Move D-Bus API handling into a separate thread.
+  * Add videoSegments property to the video API.
+  * Fix g_value_init assertion in D-Bus type conversion.
+  * pipeline: Bugfix for delayed focus/zebra aids when live.
   * Convert chronos-pwrutil to start via systemd.
   * Fix issues in pcUtil debian package (now chronos-pwrutil).
   * Updated pcUtil sources with new socket code.
@@ -24,4 +53,4 @@ chronos-cli (0.4.0~alpha22) unstable; urgency=medium
   * Add DBus-to-JSON parsing for array types.
   * Upstream release v0.4.0-alpha
 
- -- Owen Kirby <oskirby@gmail.com>  Fri, 12 Jul 2019 15:54:10 -0700
+ -- Owen Kirby <oskirby@gmail.com>  Tue, 15 Oct 2019 12:36:17 -0700

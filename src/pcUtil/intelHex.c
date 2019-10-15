@@ -90,9 +90,9 @@ int IntelHexReadLine(struct IntelHex *ih, uint8 * data, uint32 * len,  uint32 * 
 
 		//string recordType = line.Substring(7, 2);
 		recordType = linebuf + 7;
-		if (memcmp(recordType, "00", 2) == 0)	//Data record
-		{
-			for (int i = 0; i < length; i++)
+		if (memcmp(recordType, "00", 2) == 0) {	//Data record
+			int i;
+			for (i = 0; i < length; i++)
 			{
 				//data[i] = Convert.ToByte(line.substr(9 + 2 * i, 2), 16);
 				data[i] = strtobyte(linebuf, 9 + 2 * i);

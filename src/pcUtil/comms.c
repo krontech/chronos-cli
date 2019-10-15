@@ -297,17 +297,18 @@ BOOL updateFirmware(const char * filename)
 			uint8 block1[FLASH_PAGE_SIZE_BYTES];
 			uint8 block2[FLASH_PAGE_SIZE_BYTES];
 			BOOL writeBlock2 = FALSE;
+			uint32 i;
 
 			//Fill the block buffer with 1s
-			for (int i = 0; i < FLASH_PAGE_SIZE_BYTES; i++)
+			for (i = 0; i < FLASH_PAGE_SIZE_BYTES; i++) {
 				block1[i] = block2[i] = 0xFF;
+			}
 
 			//Get the address to write within this block
 			uint32 blockAddress = address & (FLASH_PAGE_SIZE_BYTES-1);
 
 			//Put the data into this block
-			for(uint32 i = 0; i < length; i++)
-			{
+			for (i = 0; i < length; i++) {
 				uint32 addressInBlock = blockAddress + i;
 
 				if (addressInBlock < FLASH_PAGE_SIZE_BYTES)
@@ -351,14 +352,16 @@ BOOL programData(uint8 * data, uint32 length, uint32 address)
 	uint8 response[1];
 	uint16 respLen;
 	uint8 dataPkt[1 + 1 + 4 + 2 + length];
+	uint32 i;
 
 	dataPkt[0] = COM_CMD_WRITE_DATA;
 	dataPkt[1] = length / 4;
 	fillData(dataPkt, 2, address);	//address
 	dataPkt[6] = 0; //Padding
 	dataPkt[7] = 0;
-	for (uint32 i = 0; i < length; i++)
+	for (i = 0; i < length; i++) {
 		dataPkt[8 + i] = data[i];
+	}
 
 	txData(dataPkt, 1 + 1 + 4 + 2 + length);
 

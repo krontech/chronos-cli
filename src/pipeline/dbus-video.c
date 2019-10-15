@@ -649,7 +649,7 @@ struct dbus_signal_data {
 };
 
 static gboolean
-dbus_defer_emit(gpointer *gdata)
+dbus_defer_emit(gpointer gdata)
 {
     struct dbus_signal_data *data = gdata;
     g_signal_emit(data->video, data->signal_id, data->detail, data->payload);
