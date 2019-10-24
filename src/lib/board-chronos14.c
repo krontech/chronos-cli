@@ -22,7 +22,7 @@ const struct ioport board_chronos14_ioports[] = {
     { .name = "eeprom-i2c",     .value = "/dev/i2c-1" },
     { .name = "lux1310-spidev", .value = "/dev/spidev3.0" },
     { .name = "lux1310-dac-cs", .value = "/sys/class/gpio/gpio33/value" },
-    { .name = "lux1310-color",  .value = "/sys/class/gpio/gpio66/value" },
+    { .name = "lux1310-color",  .value = "/sys/class/gpio/gpio34/value" },
     { .name = "encoder-a",      .value = "/sys/class/gpio/gpio20/value" },
     { .name = "encoder-b",      .value = "/sys/class/gpio/gpio26/value" },
     { .name = "encoder-sw",     .value = "/sys/class/gpio/gpio27/value" },
