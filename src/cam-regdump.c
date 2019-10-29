@@ -310,6 +310,25 @@ static const struct regtab overlay_registers[] = {
     {NULL, 0, 0, 0}
 };
 
+/*-------------------------------------
+ * Zebra Control Registers
+ *-------------------------------------
+ */
+
+static const struct regtab zebra_registers[] = {
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, identifier),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, version),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, subver),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, status),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, control),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, __reserved0[0]),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, __reserved0[1]),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, __reserved0[2]),
+    REG_STRUCT(struct fpga_zebra, FPGA_ZEBRA_BASE, threshold),
+    {NULL, 0, 0, 0}
+};
+
+
 
 /*-------------------------------------
  * Generic Luxima Chip ID registers.
@@ -559,6 +578,7 @@ main(int argc, char *const argv[])
     print_reg_group(stdout, seqpgm_registers, fpga, "Sequencer Program");
     print_reg_group(stdout, overlay_registers, fpga, "Overlay");
     print_reg_group(stdout, imager_registers, fpga, "Imager");
+    print_reg_group(stdout, zebra_registers, fpga, "Zebra");
 
     /* Read the Luxima chip ID. */
     chipid = sci_read_chipid(fpga);
