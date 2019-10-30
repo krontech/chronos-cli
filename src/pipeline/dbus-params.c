@@ -105,6 +105,32 @@ cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_
 }
 
 static gboolean
+cam_zebra_level_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
+{
+    /* Parse and set the zebra level. */
+    double zlevel = g_value_get_double(val);
+    if (zlevel < 0.0) zlevel = 0.0;
+    if (zlevel > 1.0) zlevel = 1.0;
+    state->config.zebra_level = zlevel;
+    if (state->config.zebra_level > 0.0) {
+        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+    } else {
+        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
+    }
+
+    /* Update the FPGA directly if already in live mode. */
+    if (state->playstate == PLAYBACK_STATE_LIVE) {
+        if (state->config.zebra_level > 0.0) {
+            state->fpga->display->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+            state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
+        } else {
+            state->fpga->display->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
+        }
+    }
+    return TRUE;    
+}
+
+static gboolean
 cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
 {
     state->overlay.enable = g_value_get_boolean(val);
@@ -158,7 +184,7 @@ static const struct pipeline_param cam_dbus_params[] = {
     { "overlayFormat",      G_TYPE_STRING,  PARAM_FLAG_NOTIFY, param_offset(overlay.format),    NULL,               cam_overlay_format_setter},
     { "focusPeakingColor",  G_TYPE_ENUM,    PARAM_FLAG_NOTIFY, param_offset(config.peak_color), focus_peak_colors,  cam_focus_peak_color_setter},
     { "focusPeakingLevel",  G_TYPE_DOUBLE,  PARAM_FLAG_NOTIFY, param_offset(config.peak_level), NULL,               cam_focus_peak_level_setter},
-    { "zebraLevel",         G_TYPE_DOUBLE,  PARAM_FLAG_NOTIFY, param_offset(config.zebra_level),NULL,               NULL},
+    { "zebraLevel",         G_TYPE_DOUBLE,  PARAM_FLAG_NOTIFY, param_offset(config.zebra_level),NULL,               cam_zebra_level_setter},
     /* Playback position and rate. */
     { "playbackRate",       G_TYPE_LONG,    PARAM_FLAG_NOTIFY, param_offset(playrate),          NULL,               cam_playback_rate_setter},
     { "playbackPosition",   G_TYPE_LONG,    0,                 param_offset(position),          NULL,               cam_playback_position_setter},

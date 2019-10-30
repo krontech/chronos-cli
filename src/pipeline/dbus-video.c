@@ -254,7 +254,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
 
     /* Update the live display flags. */
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
-    state->config.zebra_level = zebra_en ? 0.05 : 0.0;
+    //state->config.zebra_level = zebra_en ? 0.05 : 0.0;
     state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
     if (state->config.zebra_level > 0.0) {
         state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
@@ -289,6 +289,7 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     return (data != NULL);
 }
 
+
 static gboolean
 cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
@@ -300,11 +301,11 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     unsigned long startx = cam_dbus_dict_get_uint(args, "startx", 0);
     unsigned long starty = cam_dbus_dict_get_uint(args, "starty", 0);
     gboolean zebra_en = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra_level > 0.0);
-
+    
     /* Update the live display flags. */
     state->args.mode = PIPELINE_MODE_PLAY;
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
-    state->config.zebra_level = zebra_en ? 0.05 : 0.0;
+    //state->config.zebra_level = zebra_en ? 0.05 : 0.0;
     state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
     if (state->config.zebra_level > 0.0) {
         state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
@@ -312,7 +313,7 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     } else {
         state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
     }
-    if (state->config.peak_color) {
+    if (state->config.peak_color && (state->config.zebra_level > 0.0)) {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
         state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
     } else {
