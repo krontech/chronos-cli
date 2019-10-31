@@ -28,7 +28,7 @@
 extern const char *json_newline;
 
 void json_printf_utf8(FILE *fp, const gchar *p);
-void json_printf_array(FILE *fp, GArray *array, GType subtype, unsigned int depth);
+void json_printf_array(FILE *fp, const GValue *gval, unsigned int depth);
 void json_printf_dict(FILE *fp, GHashTable *h, unsigned int depth);
 
 #endif /* __DBUS_JSON_H */

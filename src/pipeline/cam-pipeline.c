@@ -43,11 +43,18 @@
 #include "gst/gstneon.h"
 #include "gst/gstgifsrc.h"
 
-#define FRAME_GRAB_PATH "/tmp/cam-frame-grab.jpg"
-
 /* Signal handlering */
 static struct pipeline_state cam_global_state = {0};
 static sig_atomic_t catch_sigint = 0;
+
+static void
+cam_pipeline_signal(struct pipeline_state *state, int signo)
+{
+    if (signo <= 255) {
+        char c = signo;
+        write(state->pipe_wfd, &c, sizeof(c));
+    }
+}
 
 struct pipeline_state *
 cam_pipeline_state(void)
@@ -58,8 +65,7 @@ cam_pipeline_state(void)
 void
 cam_pipeline_restart(struct pipeline_state *state)
 {
-    gst_event_ref(state->eos);
-    gst_element_send_event(state->pipeline, state->eos);
+    cam_pipeline_signal(state, SIGHUP);
 }
 
 /* Launch a Gstreamer pipeline to run the camera live video stream */
@@ -470,24 +476,50 @@ static gboolean
 cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 {
     struct pipeline_state *state = (struct pipeline_state *)data;
+    char signo = 0;
+    GstState oldstate;
     GstState newstate;
     GError *error;
     gchar *debug;
 
     switch (GST_MESSAGE_TYPE (msg)) {
         case GST_MESSAGE_STATE_CHANGED:
-            gst_message_parse_state_changed(msg, NULL, &newstate, NULL);
-            if (msg->src != GST_OBJECT_CAST(state->pipeline)) {
-                break;
+            gst_message_parse_state_changed(msg, &oldstate, &newstate, NULL);
+
+            /* When the video source gets to PLAYING, unblock the playback engine. */
+            if ((msg->src == GST_OBJECT_CAST(state->vidsrc)) && (newstate == GST_STATE_PLAYING)) {
+                playback_delay(state);
+                if (state->runmode == PIPELINE_MODE_LIVE) {
+                    playback_live(state);
+                } else if (state->runmode == PIPELINE_MODE_PLAY) {
+                    playback_seek(state, 0);
+                } else if (PIPELINE_IS_SAVING(state->runmode)) {
+                    playback_preroll(state);
+                }
             }
-            if (newstate == GST_STATE_PLAYING) {
-                dbus_signal_sof(state);
+
+            /* Log pipeline transitions */
+            if (msg->src == GST_OBJECT_CAST(state->pipeline)) {
+                fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name(newstate));
+                if (newstate == GST_STATE_PLAYING) {
+                    dbus_signal_sof(state->video);
+                }
+                else if (oldstate == GST_STATE_PLAYING) {
+                    cam_pipeline_signal(state, 0);
+                }
             }
-            fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name (newstate));
+#ifdef DEBUG
+            /* Log all transitions for debugging. */
+            else {
+                fprintf(stderr, "Setting %s to %s...\n", GST_OBJECT_NAME(msg->src), gst_element_state_get_name(newstate));
+            }
+#endif
             break;
 
         case GST_MESSAGE_EOS:
-            g_main_loop_quit(state->mainloop);
+            fprintf(stderr, "Got EOS from %s...\n", GST_OBJECT_NAME(msg->src));
+            playback_pause(state);
+            gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
             break;
 
         case GST_MESSAGE_ERROR:
@@ -500,7 +532,7 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
             strncpy(state->error, error->message, sizeof(state->error));
             state->error[sizeof(state->error)-1] = '\0';
             g_error_free(error);
-            g_main_loop_quit(state->mainloop);
+            cam_pipeline_signal(state, 0);
             break;
         
         case GST_MESSAGE_TAG:
@@ -516,140 +548,49 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 } /* cam_bus_watch */
 
 /*===============================================
- * GLib glue to receive SIGHUP safely.
+ * Signal Handlers
  *===============================================
  */
-static gboolean
-handle_sigint(gpointer data)
-{
-    struct pipeline_state *state = data;
-    catch_sigint = 1;
-    cam_pipeline_restart(state);
-}
-
-static gboolean
-handle_sighup(gpointer data)
-{
-    struct pipeline_state *state = data;
-    if (state->playstate != PLAYBACK_STATE_FILESAVE) {
-        cam_pipeline_restart(state);
-    }
-}
-
-/* In modern Glib, this is a one-line call... */
-//#if GLIB_CHECK_VERSION(2, 30, 0)
-#if 0
-
-#include <glib-unix.h>
-
-static int
-signals_init(struct pipeline_state *state)
-{
-    /* Shutdown and cleanup on SIGINT and SIGTERM  */    
-    g_unix_signal_add(SIGTERM, handle_sigint, state);
-    g_unix_signal_add(SIGINT, handle_sigint, state);
-    /* Reconfigure the pipeline on SIGHUP */
-    g_unix_signal_add(SIGHUP, handle_sighup, state);
-    return 0;
-}
-
-#else
-/*
- * The old Arago-based systems don't have signal handling helpers
- * in Glib so we need to roll our own using the self-pipe trick.
- */
-static int signal_fds[2] = { -1, -1 };
-static GPollFD signal_pfd;
-
-/* The actual signal handler - just writes to the self pipe */
 static void
-g_unix_signal_handler(int signo)
+handle_sigint(int signo)
 {
-    if (signo <= 255) {
-        int c = signo;
-        write(signal_fds[1], &c, 1);
+    catch_sigint = 1;
+    cam_pipeline_signal(cam_pipeline_state(), signo);
+}
+
+static void
+handle_sighup(int signo)
+{
+    struct pipeline_state *state = cam_pipeline_state();
+    if (!PIPELINE_IS_SAVING(state->runmode)) {
+        cam_pipeline_signal(state, signo);
     }
 }
-
-/* Wrappers to wake up the GMainContext on signal reception. */
-static gboolean
-g_unix_signal_prepare(GSource *source, gint *timeout)
-{
-    signal_pfd.revents = 0;
-    *timeout = -1;
-    return FALSE;
-}
-
-static gboolean
-g_unix_signal_check(GSource *source)
-{
-    return (signal_pfd.revents & G_IO_IN) != 0;
-}
-
-static gboolean
-g_unix_signal_dispatch(GSource *source, GSourceFunc callback, gpointer user_data)
-{
-    char signo;
-    if (read(signal_fds[0], &signo, 1) != 1) {
-        fprintf(stderr, "Failed to read signal from pipe: %s\n", strerror(errno));
-        return TRUE;
-    }
-    switch (signo) {
-        case SIGTERM:
-        case SIGINT:
-            handle_sigint(cam_pipeline_state());
-            break;
-        case SIGHUP:
-            handle_sighup(cam_pipeline_state());
-            break;
-        default:
-            /* Do Nothing */
-            break;
-    }
-    return TRUE;
-}
-
-static GSourceFuncs g_unix_signal_source = {
-    .prepare = g_unix_signal_prepare,
-    .check = g_unix_signal_check,
-    .dispatch = g_unix_signal_dispatch,
-    .finalize = NULL,
-};
 
 static int
 signals_init(struct pipeline_state *state)
 {
-    GSource *source = g_source_new(&g_unix_signal_source, sizeof(GSource));
+    int signal_fds[2] = { -1, -1 };
     int flags;
-
-    if (!source) {
-        fprintf(stderr, "Failed to create Glib wakeup source\n");
-        return -1;
-    }
 
     /* Create a UNIX pipe to pass the signal safely into Glib */
     if (pipe(signal_fds) != 0) {
         fprintf(stderr, "Failed to create wakeup pipe: %s\n", strerror(errno));
-        g_source_unref(source);
         return -1;
     }
-    flags = fcntl(signal_fds[1], F_GETFL);
-    fcntl(signal_fds[1], F_SETFL, flags | O_NONBLOCK);
-    
-    /* Setup to poll the read side of the pipe. */
-    signal_pfd.fd = signal_fds[0];
-    signal_pfd.events = G_IO_IN;
-    signal_pfd.revents = 0;
-    g_source_add_poll(source, &signal_pfd);
-    g_source_attach(source, g_main_loop_get_context(state->mainloop));
+    state->pipe_rfd = signal_fds[0];
+    state->pipe_wfd = signal_fds[1];
+
+    /* Make the write-end non-blocking. */
+    flags = fcntl(state->pipe_wfd, F_GETFL);
+    fcntl(state->pipe_wfd, F_SETFL, flags | O_NONBLOCK);
 
     /* Install the POSIX signal handlers. */
-    signal(SIGTERM, g_unix_signal_handler);
-    signal(SIGINT,  g_unix_signal_handler);
-    signal(SIGHUP,  g_unix_signal_handler);
+    signal(SIGTERM, handle_sigint);
+    signal(SIGINT,  handle_sigint);
+    signal(SIGHUP,  handle_sighup);
     return 0;
 }
-#endif
 
 /*===============================================
  * Pipeline Main Entry Point
@@ -686,23 +627,11 @@ parse_resolution(const char *str, const char *name, unsigned long *x, unsigned l
     exit(EXIT_FAILURE);
 } /* parse_resolution */
 
-/* Perform disk synchronization in a separate thread. */
 static void *
-fsync_worker(void *arg)
+mainloop_thread(void *ctx)
 {
-    struct pipeline_state *state = arg;
-    struct stat st;
-    while (!g_main_loop_is_running(state->mainloop)) {
-        usleep(100); /* Ensure the main thread gets to g_main_loop_run. */
-    }
-    memset(&st, 0, sizeof(st));
-    if ((fstat(state->write_fd, &st) != 0) || S_ISDIR(st.st_mode)) {
-        /* TODO: Test for availability of syncfs(). */
-        sync();
-    } else {
-        fsync(state->write_fd);
-    }
-    g_main_loop_quit(state->mainloop);
+    struct pipeline_state *state = ctx;
+    g_main_loop_run(state->mainloop);
     return NULL;
 }
 
@@ -728,6 +657,7 @@ main(int argc, char * argv[])
     memset(&state->config, 0, sizeof(state->config));
     state->config.hres = CAM_LCD_HRES;
     state->config.vres = CAM_LCD_VRES;
+    state->config.video_zoom = 1.0;
 
     optind = 0;
     opterr = 1;
@@ -766,17 +696,20 @@ main(int argc, char * argv[])
     if (!gst_element_register(NULL, "gifsrc", GST_RANK_NONE, GST_TYPE_GIF_SRC)) {
         fprintf(stderr, "Failed to register Gstreamer GIF source element.\n");
     }
-    state->mainthread = pthread_self();
-    state->mainloop = g_main_loop_new(NULL, FALSE);
-    state->eos = gst_event_new_eos();
+    state->mainctx = g_main_context_default();
+    state->mainloop = g_main_loop_new(state->mainctx, FALSE);
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
+    state->runmode = PIPELINE_MODE_PAUSE;
     state->write_fd = -1;
     state->control = 0;
     if (!state->fpga) {
         fprintf(stderr, "Failed to open FPGA: %s\n", strerror(errno));
         return -1;
     }
+
+    /* Launch a separate thread to run the GLib mainloop */
+    pthread_create(&state->mainthread, NULL, mainloop_thread, state);
 
     /* Allocate a scratchpad for frame operations. */
     state->scratchpad = mmap(NULL, PIPELINE_SCRATCHPAD_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -836,8 +769,9 @@ main(int argc, char * argv[])
     signal(SIGPIPE, SIG_IGN);
 
     /* Launch the HDMI, DBus and Playback threads. */
+    state->video = dbus_service_launch(state);
+    state->rtsp = rtsp_server_launch(state);
     hdmi_hotplug_launch(state);
-    dbus_service_launch(state);
     playback_init(state);
 
     do {
@@ -852,24 +786,25 @@ main(int argc, char * argv[])
         /* Pause playback while we get setup. */
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
+        state->runmode = args.mode;
         playback_pause(state);
 
         /* File saving modes should fail gracefully back to playback. */
-        if (PIPELINE_IS_SAVING(args.mode)) {
+        if (PIPELINE_IS_SAVING(state->runmode)) {
             /* Return to playback mode after saving. */
             state->args.mode = PIPELINE_MODE_PLAY;
             if (!cam_filesave(state, &args)) {
                 /* Throw an EOF and revert to playback. */
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 continue;
             }
         }
         /* Launch the video pipeline in live and playback modes. */
-        else if (args.mode != PIPELINE_MODE_PAUSE) {
+        else if (state->runmode != PIPELINE_MODE_PAUSE) {
             if (!cam_pipeline(state, &args)) {
                 /* Throw an EOF and revert to paused. */
                 state->args.mode = PIPELINE_MODE_PAUSE;
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to start pipeline.\n");
                 continue;
             }
@@ -877,7 +812,7 @@ main(int argc, char * argv[])
         /* Otherwise, there is nothing to play, generate a test pattern. */
         else {
             if (!cam_videotest(state)) {
-                dbus_signal_eof(state, state->error);
+                dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
                 break;
             }
@@ -893,36 +828,38 @@ main(int argc, char * argv[])
         gst_object_unref(bus);
 
         /* Unpause the playback to begin rendering frames. */
-        if (args.mode == PIPELINE_MODE_LIVE) {
-            playback_live(state);
-        } else if (args.mode == PIPELINE_MODE_PLAY) {
-            playback_seek(state, 0);
-        } else if (PIPELINE_IS_SAVING(args.mode)) {
-            playback_preroll(state);
-        }
         gst_element_set_state(state->pipeline, GST_STATE_PLAYING);
         gst_element_get_state(state->pipeline, &current, &pending, 10ULL * 1000000000ULL);
         if (current == GST_STATE_PLAYING) {
-            /* Run the pipeline. */
-            g_main_loop_run(state->mainloop);
-
-            /* Stop the pipeline gracefully. */
-            dbus_signal_eof(state, state->error);
-            playback_pause(state);
-            gst_element_set_state(state->pipeline, GST_STATE_PAUSED);
-            for (i = 0; i < 1000; i++) {
-                if (!g_main_context_iteration (NULL, FALSE)) break;
-            }
+            /* Process events/signals. */
+            char signo;
+            do {
+                if (read(state->pipe_rfd, &signo, 1) != 1) {
+                    fprintf(stderr, "Failed to read signal from pipe: %s\n", strerror(errno));
+                    break;
+                }
+                /* Stop the pipeline when instructed. */
+                if ((signo == SIGHUP) || (signo == SIGINT) || (signo == SIGTERM)) {
+                    event = gst_event_new_eos();
+                    gst_element_send_event(state->vidsrc, event);
+                }
+                /* Signal 0 is used to indicate the end of this loop */
+            } while (signo != 0);
         }
         else {
-            snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s",
-                gst_element_state_get_name(current), gst_element_state_get_name(pending));
+            /* We failed to start the pipeline. */
+            GstState stuck;
+            gst_element_get_state(state->pipeline, &stuck, NULL, 0);
+            snprintf(state->error, sizeof(state->error), "GST state change failure: %s -> %s, got %s",
+                gst_element_state_get_name(current),
+                gst_element_state_get_name(pending),
+                gst_element_state_get_name(stuck));
             fprintf(stderr, "%s\n", state->error);
-            dbus_signal_eof(state, state->error);
         }
 
         /* Garbage collect the pipeline. */
         state->vidsrc = NULL;
+        rtsp_server_clear_hook(state->rtsp);
         gst_element_set_state(state->pipeline, GST_STATE_READY);
         gst_element_set_state(state->pipeline, GST_STATE_NULL);
         gst_object_unref(GST_OBJECT(state->pipeline));
@@ -930,14 +867,21 @@ main(int argc, char * argv[])
 
         /* Close output files that might be in progress. */
         if (state->write_fd >= 0) {
-            pthread_t tid;
-            if (pthread_create(&tid, NULL, fsync_worker, state)  == 0) {
-                g_main_loop_run(state->mainloop);
-                pthread_join(tid, NULL);
+            struct stat st;
+            memset(&st, 0, sizeof(st));
+            if ((fstat(state->write_fd, &st) != 0) || S_ISDIR(st.st_mode)) {
+                /* TODO: Test for availability of syncfs(). */
+                sync();
+            } else {
+                fsync(state->write_fd);
             }
+
             close(state->write_fd);
             state->write_fd = -1;
         }
+
+        /* Signal end of video after teardown and syncing output files. */
+        dbus_signal_eof(state->video, state->error);
 
         /* Add an extra newline thanks to OMX debug crap... */
         g_print("\n");
@@ -945,10 +889,14 @@ main(int argc, char * argv[])
     
     fprintf(stderr, "Exiting the pipeline...\n");
     playback_cleanup(state);
+    rtsp_server_cleanup(state->rtsp);
+    dbus_service_cleanup(state->video);
     unlink(SCREENCAP_PATH);
     munmap(state->scratchpad, PIPELINE_SCRATCHPAD_SIZE);
+
+    g_main_loop_quit(state->mainloop);
+    pthread_join(state->mainthread, NULL);
     g_main_loop_unref(state->mainloop);
-    gst_event_unref(state->eos);
     fpga_close(state->fpga);
     return 0;
 } /* main */

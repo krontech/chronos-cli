@@ -3,6 +3,7 @@ AM_INIT_AUTOMAKE([subdir-objects -Wall -Werror foreign])
 AM_SILENT_RULES([yes])
 AM_PROG_AR
 AC_PROG_CC
+AC_PROG_CXX
 AC_PROG_RANLIB
 LT_INIT
 

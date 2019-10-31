@@ -24,9 +24,11 @@ Description: Video daemon for the Chronos Camera
  playback, encoders and file saving operations for the Chronos
  high speed camera.
 
-Package: chronos-upower
+Package: chronos-pwrutil
 Architecture: armel
 Depends: ${shlib:Depends}, ${misc:Depends}
+Conflicts: chronos-upower
+Replaces: chronos-upower
 Description: Power control daemon for the Chronos Camera
  Daemon to connect to and manage the power controller on the
  Chronos high speed camera.

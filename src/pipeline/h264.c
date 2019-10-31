@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <setjmp.h>
 #include <gst/gst.h>
+#include <arpa/inet.h>
 
 #include "pipeline.h"
 
@@ -120,10 +121,12 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(encoder), "encodingPreset", (guint)OMX_H264ENC_ENC_PRE_HSMQ, NULL);
     g_object_set(G_OBJECT(encoder), "framerate", (guint)args->framerate, NULL);
 
-    /* Configure the H.264 Parser. */
+    /* Configure the H.264 Parser */
+#if !GST_CHECK_VERSION(0,10,36)
     g_object_set(G_OBJECT(parser), "split-packetized", (gboolean)FALSE, NULL);
     g_object_set(G_OBJECT(parser), "access-unit", (gboolean)TRUE, NULL);
     g_object_set(G_OBJECT(parser), "output-format", (guint)0, NULL);
+#endif
 
     /* Configure the MPEG-4 Multiplexer */
     g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
@@ -137,37 +140,68 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     return gst_element_get_static_pad(encoder, "sink");
 }
 
+#if ENABLE_RTSP_SERVER
+
+static void
+cam_network_sink_add_host(const struct rtsp_session *sess, void *closure)
+{
+    GstElement *sink = closure;
+    if (sess->state == RTSP_SESSION_PLAY) {
+        g_signal_emit_by_name(G_OBJECT(sink), "add", sess->host, sess->port, NULL);
+    }
+}
+
+static void
+cam_network_sink_update(const struct rtsp_session *sess, void *closure)
+{
+    GstElement *sink = closure;
+    if (sess->state == RTSP_SESSION_PLAY) {
+        g_signal_emit_by_name(G_OBJECT(sink), "add", sess->host, sess->port, NULL);
+    }
+    else {
+        g_signal_emit_by_name(G_OBJECT(sink), "remove", sess->host, sess->port, NULL);
+    }
+}
+
 GstPad *
 cam_network_sink(struct pipeline_state *state)
 {
-    GstElement *encoder, *queue, *parser, *neon, *mux, *sink;
+    GstElement *encoder, *queue, *parser, *neon, *payload, *sink;
+    struct in_addr addr;
 
     /* Allocate our segment of the video pipeline. */
     queue =   gst_element_factory_make("queue",       "net-queue");
     encoder = gst_element_factory_make("omx_h264enc", "net-encoder");
     neon =    gst_element_factory_make("neon",        "net-neon");
     parser =  gst_element_factory_make("h264parse",   "net-parse");
-    mux =     gst_element_factory_make("mpegtsmux",   "net-mux");
-    sink =    gst_element_factory_make("tcpserversink", "net-sink");
-    if (!queue || !encoder || !neon || !parser || !mux || !sink) {
+    payload = gst_element_factory_make("rtph264pay",  "net-payload");
+    sink =    gst_element_factory_make("multiudpsink", "net-sink");
+    if (!queue || !encoder || !neon || !parser || !payload || !sink) {
         return NULL;
     }
 
     /* Configure the H264 encoder for low-latency low-birate operation. */
     g_object_set(G_OBJECT(encoder), "force-idr-period", (guint)90, NULL);
     g_object_set(G_OBJECT(encoder), "i-period", (guint)90, NULL);
-    g_object_set(G_OBJECT(encoder), "bitrate", (guint)500000, NULL);
+    g_object_set(G_OBJECT(encoder), "bitrate", (guint)5000000, NULL);
     g_object_set(G_OBJECT(encoder), "profile", (guint)OMX_H264ENC_PROFILE_HIGH, NULL);
     g_object_set(G_OBJECT(encoder), "level", (guint)OMX_H264ENC_LVL_51, NULL);
     g_object_set(G_OBJECT(encoder), "encodingPreset", (guint)OMX_H264ENC_ENC_PRE_HSMQ, NULL);
     g_object_set(G_OBJECT(encoder), "rateControlPreset", (guint)OMX_H264ENC_RATE_LOW_DELAY, NULL);
-    g_object_set(G_OBJECT(encoder), "framerate", (guint)LIVE_MAX_FRAMERATE/2, NULL);
-    
-    g_object_set(G_OBJECT(sink), "recover-policy", (guint)3, NULL); /* Recover by syncing to last keyframe. */
-    g_object_set(G_OBJECT(sink), "sync-method", (guint)2, NULL);    /* Sync clients from the last keyframe. */
-    g_object_set(G_OBJECT(sink), "port", (guint)NETWORK_STREAM_PORT, NULL);
+    g_object_set(G_OBJECT(encoder), "framerate", (guint)LIVE_MAX_FRAMERATE, NULL);
 
-    gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, mux, sink, NULL);
-    gst_element_link_many(queue, encoder, neon, parser, mux, sink, NULL);
+    /* Register RTSP clients. */
+    rtsp_session_foreach(state->rtsp, cam_network_sink_add_host, sink);
+    rtsp_server_set_hook(state->rtsp, cam_network_sink_update, sink);
+
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, payload, sink, NULL);
+    gst_element_link_many(queue, encoder, neon, parser, payload, sink, NULL);
     return gst_element_get_static_pad(queue, "sink");
 }
+#else /* ENABLE_RTSP_SERVER */
+GstPad *
+cam_network_sink(struct pipeline_state *state)
+{
+    return NULL;
+}
+#endif

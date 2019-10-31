@@ -22,7 +22,9 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <pthread.h>
 #include <dbus/dbus-glib.h>
+#include <dbus/dbus-glib-lowlevel.h>
 
 #include "pipeline.h"
 #include "api/cam-rpc.h"
@@ -45,13 +47,13 @@ cam_dbus_video_status(struct pipeline_state *state)
     if (!dict) return NULL;
 
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
-    cam_dbus_dict_add_boolean(dict, "playback", (state->playstate == PLAYBACK_STATE_PLAY));
-    cam_dbus_dict_add_boolean(dict, "filesave", (state->playstate == PLAYBACK_STATE_FILESAVE));
+    cam_dbus_dict_add_boolean(dict, "playback", (state->runmode == PIPELINE_MODE_PLAY));
+    cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(state->runmode));
     cam_dbus_dict_add_uint(dict, "totalFrames", state->seglist.totalframes);
     cam_dbus_dict_add_uint(dict, "totalSegments", state->seglist.totalsegs);
     cam_dbus_dict_add_int(dict, "position", state->position);
     cam_dbus_dict_add_uint(dict, "segment", 0);
-    if (state->playstate == PLAYBACK_STATE_FILESAVE) {
+    if (PIPELINE_IS_SAVING(state->runmode)) {
         double estrate = (FRAMERATE_IVAL_BUCKETS * 1000000) / (double)state->frameisum;
         cam_dbus_dict_add_float(dict, "framerate", estrate);
         cam_dbus_dict_add_string(dict, "filename", state->args.filename);
@@ -124,7 +126,7 @@ cam_dbus_video_get(struct pipeline_state *state, const char **names)
  *-------------------------------------
  */
 typedef struct CamVideo {
-    GObjectClass parent;
+    GObjectClass    parent;
     struct pipeline_state *state;
 } CamVideo;
 
@@ -187,7 +189,7 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
     
     /* Generate an update signal for any parameters that were set. */
     if (names) {
-        if (i) dbus_signal_update(state, names);
+        if (i) dbus_signal_update(vobj, names);
         g_free(names);
     }
     return (data != NULL);
@@ -217,12 +219,26 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
     unsigned long loopcount = cam_dbus_dict_get_uint(args, "loopcount", 0);
     int framerate = cam_dbus_dict_get_int(args, "framerate", state->playrate);
 
-    if (loopcount) {
-        playback_loop(state, position, framerate, loopcount);
-    } else {
-        playback_play(state, position, framerate);
-    }
     state->args.mode = PIPELINE_MODE_PLAY;
+
+    /* If we're in playback or live, send a seek command. */
+    if ((state->playstate == PLAYBACK_STATE_LIVE) || (state->playstate == PLAYBACK_STATE_PLAY)) {
+        if (loopcount) {
+            playback_loop(state, position, framerate, loopcount);
+        } else {
+            playback_play(state, position, framerate);
+        }
+    }
+    /* Otherwise, unless we're saving, give the video system a reboot. */
+    else if (!PIPELINE_IS_SAVING(state->runmode)) {
+        /* Setup the playback parameters. */
+        state->playrate = framerate;
+        state->playstart = position;
+        state->playloop = (loopcount != 0);
+        state->playlength = (loopcount == 0) ? state->seglist.totalframes : loopcount;
+        cam_pipeline_restart(state);
+    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -274,8 +290,8 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
     }
 
-    /* Apply Changes. */
-    if (state->playstate == PLAYBACK_STATE_PLAY) {
+    /* Apply all changes immediately when live. */
+    if (state->playstate == PLAYBACK_STATE_LIVE) {
         uint32_t dcontrol;
         if (diff) cam_lcd_reconfig(state, &state->config);
 
@@ -283,6 +299,10 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         dcontrol &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_COLOR_MODE);
         dcontrol &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
         state->fpga->display->control = dcontrol | state->control;
+    }
+    /* Apply geometry changes immediately when in playback. */
+    else if ((state->playstate == PLAYBACK_STATE_PLAY) && (diff)) {
+        cam_lcd_reconfig(state, &state->config);
     }
 
     *data = cam_dbus_video_status(state);
@@ -303,7 +323,6 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     gboolean zebra_en = cam_dbus_dict_get_boolean(args, "zebra", state->config.zebra_level > 0.0);
     
     /* Update the live display flags. */
-    state->args.mode = PIPELINE_MODE_PLAY;
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
     //state->config.zebra_level = zebra_en ? 0.05 : 0.0;
     state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
@@ -337,19 +356,22 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     state->source.startx = startx;
     state->source.starty = starty;
 
-    /* If not in playback mode, a restart is required. */
-    state->args.mode = PIPELINE_MODE_LIVE;
-    if ((state->playstate != PLAYBACK_STATE_PLAY) && (state->playstate != PLAYBACK_STATE_LIVE)) {
+    /* If we're in playback or live, send a seek command. */
+    state->args.mode = PLAYBACK_STATE_LIVE;
+    if ((state->playstate == PLAYBACK_STATE_LIVE) || (state->playstate == PLAYBACK_STATE_PLAY)) {
+        if (diff) {
+            /* A change of video geometry will require a restart. */
+            cam_pipeline_restart(state);
+        } else {
+            /* Otherwise, seek directly to live. */
+            playback_live(state);
+        }
+    }
+    /* Otherwise, unless we're saving, give the video system a reboot. */
+    else if (!PIPELINE_IS_SAVING(state->runmode)) {
         cam_pipeline_restart(state);
     }
-    /* If cropping geometry has changed, a restart is required. */
-    else if (diff) {
-        cam_pipeline_restart(state);
-    }
-    /* Otherwise, go directly to live. */
-    else {
-        playback_live(state);
-    }
+
     *data = cam_dbus_video_status(state);
     return (data != NULL);
 }
@@ -380,7 +402,7 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     strcpy(state->args.filename, filename);
 
     /* Make sure that an encoding operation is not already in progress. */
-    if (state->playstate == PLAYBACK_STATE_FILESAVE) {
+    if (PIPELINE_IS_SAVING(state->runmode)) {
         *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Encoding in progress");
         return 0;
     }
@@ -567,18 +589,19 @@ cam_video_class_init(CamVideoClass *vclass)
 
 G_DEFINE_TYPE(CamVideo, cam_video, G_TYPE_OBJECT)
 
-void
+struct CamVideo *
 dbus_service_launch(struct pipeline_state *state)
 {
+    struct CamVideo *video;
     DBusGConnection *bus = NULL;
     DBusGProxy *proxy = NULL;
     GError* error = NULL;
     guint result;
 
-    /* Init glib */
+    /* Init glib and start the D-Bus worker thread. */
     g_type_init();
-    state->video = g_object_new(CAM_VIDEO_TYPE, NULL);
-    state->video->state = state;
+    video = g_object_new(CAM_VIDEO_TYPE, NULL);
+    video->state = state;
 
     /* Bring up DBus and register with the system. */
     bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
@@ -607,38 +630,92 @@ dbus_service_launch(struct pipeline_state *state)
         g_printerr("D-Bus.RequstName call failed for %s\n", CAM_DBUS_VIDEO_SERVICE);
         exit(EXIT_FAILURE);
     }
-    dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(state->video));
+    dbus_g_connection_register_g_object(bus, CAM_DBUS_VIDEO_PATH, G_OBJECT(video));
     printf("Registered video control device at %s\n", CAM_DBUS_VIDEO_PATH);
+
+    return video;
 }
 
 void
-dbus_signal_sof(struct pipeline_state *state)
+dbus_service_cleanup(struct CamVideo *video)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->sof_signalid, 0, cam_dbus_video_status(state));
+    /* Nothing to see here. */
+}
+
+struct dbus_signal_data {
+    CamVideo    *video;
+    guint       signal_id;
+    GQuark      detail;
+    GHashTable  *payload;
+};
+
+static gboolean
+dbus_defer_emit(gpointer gdata)
+{
+    struct dbus_signal_data *data = gdata;
+    g_signal_emit(data->video, data->signal_id, data->detail, data->payload);
+    g_free(data);
+    return FALSE;
+}
+
+/*
+ * D-Bus signals are not multi-thread safe, so we must first take care to pass
+ * them to the GLib main context before emitting the signal. This helper function
+ * takes the signal parameters, bundles them together into a structure and
+ * schedules the signal to be generated from a GLib idle handler.
+ */
+static void
+dbus_defer_signal(CamVideo *video, guint signal_id, GQuark detail, GHashTable *payload)
+{
+    GSource *source;
+    struct dbus_signal_data *data;
+    
+    /* Bundle together the deferred signal data */
+    data = g_malloc(sizeof(struct dbus_signal_data));
+    if (!data) {
+        cam_dbus_dict_free(payload);
+        return;
+    }
+    data->video = video;
+    data->signal_id = signal_id;
+    data->detail = detail;
+    data->payload = payload;
+
+    /* Create an idle source to emit the signal data. */
+    if (g_idle_add(dbus_defer_emit, data) == 0) {
+        cam_dbus_dict_free(payload);
+        g_free(data);
+    }
 }
 
 void
-dbus_signal_eof(struct pipeline_state *state, const char *err)
+dbus_signal_sof(CamVideo *video)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    GHashTable *status = cam_dbus_video_status(state);
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    dbus_defer_signal(video, vclass->sof_signalid, 0, cam_dbus_video_status(video->state));
+}
+
+void
+dbus_signal_eof(CamVideo *video, const char *err)
+{
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    GHashTable *status = cam_dbus_video_status(video->state);
     if (err && strlen(err)) {
         cam_dbus_dict_add_string(status, "error", err);
     }
-    g_signal_emit(state->video, vclass->eof_signalid, 0, status);
+    dbus_defer_signal(video, vclass->eof_signalid, 0, status);
 }
 
 void
-dbus_signal_segment(struct pipeline_state *state)
+dbus_signal_segment(CamVideo *video)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->seg_signalid, 0, cam_dbus_video_status(state));
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    dbus_defer_signal(video, vclass->seg_signalid, 0, cam_dbus_video_status(video->state));
 }
 
 void
-dbus_signal_update(struct pipeline_state *state, const char **names)
+dbus_signal_update(CamVideo *video, const char **names)
 {
-    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(state->video);
-    g_signal_emit(state->video, vclass->update_signalid, 0, cam_dbus_video_get(state, names));
+    CamVideoClass *vclass = CAM_VIDEO_GET_CLASS(video);
+    dbus_defer_signal(video, vclass->update_signalid, 0, cam_dbus_video_get(video->state, names));
 }

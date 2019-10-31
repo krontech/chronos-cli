@@ -120,7 +120,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
         TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
-        TIFF_TAG_SHORT(274, state->source.flip ? 3 : 1),/* Orientation */
+        TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
         TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
@@ -209,7 +209,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
         TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
-        TIFF_TAG_SHORT(274, state->source.flip ? 3 : 1),/* Orientation */
+        TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
         TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
@@ -336,7 +336,7 @@ tiff_probe_grayscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
         TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
-        TIFF_TAG_SHORT(274, state->source.flip ? 3 : 1),/* Orientation */
+        TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
         TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, xres * yres),    /* StripByteCounts */
@@ -405,7 +405,7 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
         TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
-        TIFF_TAG_SHORT(274, state->source.flip ? 3 : 1),/* Orientation */
+        TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 3),             /* SamplesPerPixel */
         TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */
@@ -471,7 +471,7 @@ tiff_probe_raw(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
         TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
-        TIFF_TAG_SHORT(274, state->source.flip ? 3 : 1),/* Orientation */
+        TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
         TIFF_TAG_LONG(278, yres),           /* RowsPerStrip */
         TIFF_TAG_LONG(279, GST_BUFFER_SIZE(buf)),   /* StripByteCounts */

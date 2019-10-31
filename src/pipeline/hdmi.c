@@ -79,7 +79,6 @@ hdmi_hotplug_thread(void *arg)
 void
 hdmi_hotplug_launch(struct pipeline_state *state)
 {
-    pthread_t main_thread = pthread_self();
     pthread_t hdmi_thread;
     pthread_create(&hdmi_thread, NULL, hdmi_hotplug_thread, state);
 }

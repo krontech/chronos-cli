@@ -308,6 +308,8 @@ playback_region_add(struct pipeline_state *state)
     if (!seg) {
         return -1;
     }
+    seg->metadata.interval = state->fpga->sensor->frame_period;
+    seg->metadata.exposure = state->fpga->sensor->int_time;
 
     return 1;
 }
@@ -337,26 +339,26 @@ playback_seek(struct pipeline_state *state, int delta)
     write(playback_pipe, &delta, sizeof(delta));
 }
 
+/* Pass a delay command to the playback thread which helps to synchronize the OMX camera. */
+void
+playback_delay(struct pipeline_state *state)
+{
+    playback_seek(state, PLAYBACK_PIPE_DELAY);
+}
+
 /* This would typically be called from outside the playback thread to change operation. */
 void
 playback_preroll(struct pipeline_state *state)
 {
-    int delay = PLAYBACK_PIPE_DELAY;
-    int command = PLAYBACK_PIPE_PREROLL;
-
     fprintf(stderr, "Prerolling playback\n");
-
-    /* Inject a 100ms delay before starting a filesave. */
-    write(playback_pipe, &delay, sizeof(delay));
-    write(playback_pipe, &command, sizeof(command));
+    playback_seek(state, PLAYBACK_PIPE_PREROLL);
 } /* playback_preroll */
 
 /* Switch to live display mode. */
 void
 playback_live(struct pipeline_state *state)
 {
-    int command = PLAYBACK_PIPE_LIVE;
-    write(playback_pipe, &command, sizeof(command));
+    playback_seek(state, PLAYBACK_PIPE_LIVE);
 }
 
 /* Switch to playback mode, with the desired position and playback rate. */
@@ -408,11 +410,11 @@ playback_play_once(struct pipeline_state *state, unsigned long start, int framer
     write(playback_pipe, &delta, sizeof(delta));
 }
 
+/* Pass a command to the playback thread to discard all recorded segments. */
 void
 playback_flush(struct pipeline_state *state)
 {
-    int command = PLAYBACK_PIPE_FLUSH;
-    write(playback_pipe, &command, sizeof(command));
+    playback_seek(state, PLAYBACK_PIPE_FLUSH);
 }
 
 /* Initialize the estimated frame rate. */
@@ -457,34 +459,30 @@ playback_rate_update(struct pipeline_state *state)
  *===============================================
  */
 /* Wrapper to generate dbus signals from the main thread. */
-static gboolean
-playback_signal_segment(gpointer data)
+static void
+playback_signal_segment(struct pipeline_state *state)
 {
-    struct pipeline_state *state = data;
-    dbus_signal_segment(state);
-    return FALSE;
+    dbus_signal_segment(state->video);
+    if (FPGA_VERSION_REQUIRE(state->fpga->config, 3, 22)) {
+        /* Generate parameter updates on FPGA version 3.22 and newer. */
+        const char *names[] = {
+            "totalFrames",
+            "totalSegments",
+            "videoSegments",
+            NULL
+        };
+        dbus_signal_update(state->video, names);
+    }
 }
 
-static gboolean
-playback_signal_state(gpointer data)
+static void
+playback_signal_state(struct pipeline_state *state)
 {
-    struct pipeline_state *state = data;
     const char *names[] = {
         "videoState",
         NULL
     };
-    dbus_signal_update(state, names);
-    return FALSE;
-}
-
-static void
-playback_run_hook(struct pipeline_state *state, GSourceFunc func)
-{
-    GSource *source = g_idle_source_new();
-    if (source) {
-        g_source_set_callback(source, func, state, NULL);
-        g_source_attach(source, g_main_loop_get_context(state->mainloop));
-    }
+    dbus_signal_update(state->video, names);
 }
 
 /*
@@ -594,12 +592,14 @@ playback_thread(void *arg)
          *===============================================
          */
         newsegs = 0;
+        pthread_mutex_lock(&state->segmutex);
         while (!(state->fpga->seq->status & SEQ_STATUS_FIFO_EMPTY)) {
             if (playback_region_add(state) > 0) newsegs++;
         }
+        pthread_mutex_unlock(&state->segmutex);
         /* Emit a signal from the main loop if there were new segments.  */
         if (newsegs) {
-            playback_run_hook(state, playback_signal_segment);
+            playback_signal_segment(state);
         }
 
         /*===============================================
@@ -643,7 +643,7 @@ playback_thread(void *arg)
                 state->fpga->display->control = control;
 
                 playback_setup_timing(state, SAVE_MAX_FRAMERATE);
-                playback_run_hook(state, playback_signal_state);
+                playback_signal_state(state);
                 overlay_setup(state);
 
                 /* Start playback by faking a fsync edge. */
@@ -673,7 +673,7 @@ playback_thread(void *arg)
                 state->fpga->display->control = control;
                 state->playstate = PLAYBACK_STATE_LIVE;
 
-                playback_run_hook(state, playback_signal_state);
+                playback_signal_state(state);
             }
             else {
                 /* Update the display timing if not already in playback. */
@@ -692,7 +692,7 @@ playback_thread(void *arg)
 
                     /* Signal a state change. */
                     state->playstate = PLAYBACK_STATE_PLAY;
-                    playback_run_hook(state, playback_signal_state);
+                    playback_signal_state(state);
                 }
 
                 /* Otherwise, seek through recorded video. */
@@ -752,6 +752,7 @@ playback_init(struct pipeline_state *state)
      * the playback regions.
      */
     video_segments_init(&state->seglist, 0, 0, state->fpga->seq->frame_size);
+    pthread_mutex_init(&state->segmutex, NULL);
 
     /* Install the desired signal handlers. */
     sigemptyset(&sigact.sa_mask);
@@ -766,13 +767,13 @@ playback_init(struct pipeline_state *state)
     sigaddset(&sigact.sa_mask, SIGUSR2);
     sigprocmask(SIG_BLOCK, &sigact.sa_mask, NULL);
 
-    /* Start the playback thread. */
-    pthread_create(&state->playthread, NULL, playback_thread, state);
-
     /* Start off paused. */
     state->playstate = PLAYBACK_STATE_PAUSE;
     state->control = (state->source.color) ? DISPLAY_CTL_COLOR_MODE : 0;
     state->fpga->display->control = (state->control | DISPLAY_CTL_ADDRESS_SELECT | DISPLAY_CTL_SYNC_INHIBIT);
+
+    /* Start the playback thread. */
+    pthread_create(&state->playthread, NULL, playback_thread, state);
 }
 
 void
@@ -782,4 +783,5 @@ playback_cleanup(struct pipeline_state *state)
     struct timespec ts = {1, 0};
     write(playback_pipe, &command, sizeof(command));
     pthread_timedjoin_np(state->playthread, NULL, &ts);
+    pthread_mutex_destroy(&state->segmutex);
 }

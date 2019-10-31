@@ -3,7 +3,7 @@ Video Pipeline Daemon
 
 The `cam-pipeline` program is responsible for managing the multimedia pipeline
 of the camera. This program connects the video stream from the FPGA to the
-output output devices on the camera. This pipeline can operate in one of three
+output devices on the camera. This pipeline can operate in one of three
 modes at any given time: live display, video playback, and video file saving.
 
 In live display mode, the FPGA is capturing data off the image sensor, and will
@@ -14,7 +14,7 @@ device (LCD, HDMI and RTSP streams).
 In playback mode, the FPGA is replaying video from its internal memory buffer
 and the pipeline daemon is given control of the playback position and framerate
 of the video stream. Upon entering playback mode, the video will be paused on
-the first frame in memory, but the playback rate and position can be cahnged
+the first frame in memory, but the playback rate and position can be changed
 using the `playback` function.
 
 In filesave mode, the FPGA replays video in the same manner as playback mode,
@@ -84,7 +84,7 @@ arguments, and the returned hash map will contain the following members.
 | `"apiVersion"`    | `string`  | `"1.0"` for all cameras implemeting this specification.
 | `"playback"`      | `boolean` | `true` if the video pipeline is in playback mode.
 | `"filesave"`      | `boolean` | `true` if the video pipeline is in file saving mode.
-| `"position"`      | `uint`    | The current frame number being display while in playback or record mode.
+| `"position"`      | `uint`    | The current frame number being displayed while in playback or record mode.
 | `"totalFrames"`   | `uint`    | The total number of frames across all recorded segments.
 | `"segment"`       | `uint`    | The segment to which the current frame belongs.
 | `"totalSegments"` | `uint`    | The total number of segments recorded in memory.
@@ -163,21 +163,12 @@ be disabled.
 
 livedisplay
 -----------
-Switches the pipeline to live display mode and optionally configured video cropping
-and setup aids.
+Switches the pipeline to live display mode and optionally configures setup aids.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
 | `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
-| `"cropx"`         | `uint`    | The horizontal video crop size (default: 0).
-| `"cropy"`         | `uint`    | The vertical video crop size (defualt: 0).
-| `"startx"`        | `uint`    | The horizontal starting offset for cropped video (default: 0).
-| `"starty"`        | `uint`    | The vertical starting offset for cropped video (defualt: 0).
-
-If the `cropx` or `cropy` parameters are set to non-zero values, the live video stream
-will be cropped before entering the scaler elements, otherwise the full video size
-will be rescaled to fit the LCD output size set by the [`configure`](#configure) method.
 
 For a description of the acceptable values provided to the `peaking` field,
 refer to the [`configure`](#configure) method.
@@ -318,17 +309,18 @@ Each parameter also defines a type as follows:
 The available parameters which can be accessed by the [`get`](#get) and [`set`](#set)
 a methods are as follows:
 
-| Parameter         | G | S | U | Type   | Description
-|:----------------- |:--|:--|:--|:-------|:-----------
-| `overlayEnable`   |`G`|`S`|`x`| bool   |
-| `overlayFormat`   |`G`|`S`|`x`| string | A `printf`-style format string to set the overlay text.
-| `zebraLevel`      |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
-| `focusPeakLevel`  |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the rante of 0 to 1.0).
-| `focusPeakColor`  |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Disabled.
-| `videoState`      |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
-| `playbackRate`    |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
-| `playbackPosition`|`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
-| `playbackStart`   |`G`|`S`|`x`| int    | Starting frame number to display when entering `playback`.
-| `playbackLength`  |`G`|`S`|`x`| int    | Number of frames to play when in `playback` before loooping back to `playbackStart`.
-| `totalFrames`     |`G`|   |`x`| int    | Total number of frame captured in the camera's memory.
-| `totalSegments`   |`G`|   |`x`| int    | Total number of recording segments captured in the camera's memory.
+| Parameter           | G | S | U | Type   | Description
+|:-----------------   |:--|:--|:--|:-------|:-----------
+| `overlayEnable`     |`G`|`S`|`x`| bool   | Hide or show the stamp data layer.
+| `overlayFormat`     |`G`|`S`|`x`| string | A `printf`-style format string to set the overlay text.
+| `zebraLevel`        |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
+| `focusPeakingLevel` |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the range of 0 to 1.0). 0 means "off".
+| `focusPeakingColor` |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Black.
+| `videoZoom`         |`G`|`S`|`N`| float  | Digital zoom ratio for video output to the LCD display.
+| `videoState`        |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
+| `playbackRate`      |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
+| `playbackPosition`  |`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
+| `playbackStart`     |`G`|`S`|`x`| int    | Starting frame number to display when entering `playback`.
+| `playbackLength`    |`G`|`S`|`x`| int    | Number of frames to play when in `playback` before looping back to `playbackStart`.
+| `totalFrames`       |`G`|   |`x`| int    | Total number of frame captured in the camera's memory.
+| `totalSegments`     |`G`|   |`x`| int    | Total number of recording segments captured in the camera's memory.

@@ -114,7 +114,7 @@ overlay_update(struct pipeline_state *state, const struct video_segment *seg)
     char textbox[OVERLAY_TEXT_LENGTH];
     char tempfmt[OVERLAY_TEXT_LENGTH];
     const char *format = state->overlay.format;
-    unsigned int len;
+    unsigned int len, maxLength;
 
     if (*format == '\0') {
         return;
@@ -223,5 +223,12 @@ overlay_update(struct pipeline_state *state, const struct video_segment *seg)
 
     /* Write the text and enable. */
     if (len > sizeof(textbox)) len = sizeof(textbox);
+
+    /* Ensure the text isn't too long for the width of the image. */
+    maxLength = state->source.hres / 16;
+    if(len > maxLength){
+        textbox[maxLength] = '\0';
+    }
+
     strncpy((char *)state->fpga->overlay->text0_buffer, textbox, len);
 }
