@@ -139,7 +139,6 @@ adjust video settings.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
-| `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
 | `"hres"`          | `uint`    | Horizontal resolution of the video display area.
 | `"vres"`          | `uint`    | Vertical resolution of the video display area.
@@ -167,7 +166,6 @@ Switches the pipeline to live display mode and optionally configures setup aids.
 
 | Input             | Type      | Description
 |:----------------- |:--------- |:--------------
-| `"zebra"`         | `boolean` | Enable zebra strips for exposure aid.
 | `"peaking"`       | variable  | Enable peaking for focus aid.
 
 For a description of the acceptable values provided to the `peaking` field,

@@ -131,7 +131,8 @@ cam_zebra_level_setter(struct pipeline_state *state, const struct pipeline_param
             state->fpga->display->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
         }
     }
-    return TRUE;    
+    return TRUE;
+}
 
 static gboolean
 cam_video_zoom_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
