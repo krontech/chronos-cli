@@ -2,6 +2,10 @@
 # Do all of these things from the git checkout.
 cd $(dirname ${BASH_SOURCE[0]})
 
+# Get the source name from the git remote.
+GITREMOTE=$(git remote get-url $(git remote show))
+DEBSOURCE=$(basename ${GITREMOTE} | cut -d. -f1)
+
 # Get the user name and e-mail from the last commit.
 DEBFULLNAME=$(git log -1 --format='%cn')
 DEBEMAIL=$(git log -1 --format='%ce')
@@ -16,7 +20,7 @@ fi
 
 # Output the Debian changelog 
 cat << EOF
-chronos-cli (${VERSION}) unstable; urgency=medium
+${DEBSOURCE} (${VERSION}) unstable; urgency=medium
 
 $(git log --oneline ${TAGGED}..HEAD | sed -e 's/^[0-9a-f]*/  \*/g')
   * Upstream release ${TAGGED}
