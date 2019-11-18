@@ -30,6 +30,8 @@
 #include "api/cam-rpc.h"
 
 #define PARAM_F_NOTIFY   0x0001
+#define PARAM_F_SAVE     0x0002
+
 
 struct pipeline_param {
     const char      *name;
@@ -41,9 +43,76 @@ struct pipeline_param {
     /* Complex parameters - callbacks to do translation and stateful stuff. */
     gboolean        (*setter)(struct pipeline_state *state, const struct pipeline_param *param, GValue *val, char *err);
 };
+static const struct pipeline_param *cam_dbus_params[];
 
 /* Getter method for complex/boxed types. */
 typedef GValue *(*param_boxed_getter_t)(struct pipeline_state *, const struct pipeline_param *);
+
+/* Retrieive the parameter value and add it to the hash table */
+static gboolean
+dbus_get_value(struct pipeline_state *state, const struct pipeline_param *p, GHashTable *data)
+{
+    void *pvalue = ((unsigned char *)state) + p->offset;
+    switch (p->type) {
+        case G_TYPE_BOOLEAN:
+            cam_dbus_dict_add_boolean(data, p->name, *(gboolean *)pvalue);
+            return TRUE;
+        case G_TYPE_LONG:
+            cam_dbus_dict_add_int(data, p->name, *(long *)pvalue);
+            return TRUE;
+        case G_TYPE_ULONG:
+            cam_dbus_dict_add_uint(data, p->name, *(unsigned long *)pvalue);
+            return TRUE;
+        case G_TYPE_DOUBLE:
+            cam_dbus_dict_add_float(data, p->name, *(double *)pvalue);
+            return TRUE;
+        case G_TYPE_STRING:
+            cam_dbus_dict_add_string(data, p->name, pvalue);
+            return TRUE;
+        case G_TYPE_ENUM:
+            cam_dbus_dict_add_string(data, p->name, enumval_name(p->extra, *(int *)pvalue, "undefined"));
+            return TRUE;
+        case G_TYPE_BOXED:{
+            param_boxed_getter_t getter = p->extra;
+            GValue *gval = getter(state, p);
+            if (gval) cam_dbus_dict_add(data, p->name, gval);
+            return (gval != NULL);
+        }
+        default:
+            /* Unsupported type */
+            return FALSE;
+    }
+}
+
+/*
+ * Minimal setter implementation - converts the GValue into its underlying
+ * type and copy it into the state structure with no value checking.
+ */
+static gboolean
+cam_generic_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
+{
+    void *pvalue = ((unsigned char *)state) + p->offset;
+    switch (p->type) {
+        case G_TYPE_BOOLEAN:
+            *(gboolean *)pvalue = g_value_get_boolean(val);
+            return TRUE;
+        case G_TYPE_LONG:
+            *(long *)pvalue = g_value_get_long(val);
+            return TRUE;
+        case G_TYPE_ULONG:
+            *(unsigned long *)pvalue = g_value_get_ulong(val);
+            return TRUE;
+        case G_TYPE_DOUBLE:
+            *(double *)pvalue = g_value_get_double(val);
+            return TRUE;
+        case G_TYPE_STRING:
+        case G_TYPE_ENUM:
+        case G_TYPE_BOXED:
+        default:
+            /* Unsupported types */
+            return FALSE;
+    }
+}
 
 struct enumval playback_states[] = {
     {PLAYBACK_STATE_PAUSE,      "paused"},
@@ -81,6 +150,14 @@ cam_focus_peak_color_setter(struct pipeline_state *state, const struct pipeline_
     }
     return TRUE;
 }
+static const struct pipeline_param cam_focus_peak_color_param = {
+    .name = "focusPeakingColor",
+    .type = G_TYPE_ENUM,
+    .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .offset = offsetof(struct pipeline_state, config.peak_color),
+    .extra = focus_peak_colors,
+    .setter = cam_focus_peak_color_setter,
+};
 
 static gboolean
 cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
@@ -107,6 +184,13 @@ cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_
     }
     return TRUE;
 }
+static const struct pipeline_param cam_focus_peak_level_param = {
+    .name = "focusPeakingLevel",
+    .type = G_TYPE_DOUBLE,
+    .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .offset = offsetof(struct pipeline_state, config.peak_level),
+    .setter = cam_focus_peak_level_setter,
+};
 
 static gboolean
 cam_zebra_level_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
@@ -133,6 +217,13 @@ cam_zebra_level_setter(struct pipeline_state *state, const struct pipeline_param
     }
     return TRUE;
 }
+static const struct pipeline_param cam_focus_zebra_level_param = {
+    .name = "zebraLevel",
+    .type = G_TYPE_DOUBLE,
+    .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .offset = offsetof(struct pipeline_state, config.zebra_level),
+    .setter = cam_zebra_level_setter,
+};
 
 static gboolean
 cam_video_zoom_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
@@ -151,6 +242,13 @@ cam_video_zoom_setter(struct pipeline_state *state, const struct pipeline_param 
 
     return TRUE;
 }
+static const struct pipeline_param cam_video_zoom_param = {
+    .name = "videoZoom",
+    .type = G_TYPE_DOUBLE,
+    .flags = PARAM_F_NOTIFY,
+    .offset = offsetof(struct pipeline_state, config.video_zoom),
+    .setter = cam_video_zoom_setter,
+};
 
 static gboolean
 cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
@@ -159,6 +257,13 @@ cam_overlay_enable_setter(struct pipeline_state *state, const struct pipeline_pa
     if (state->playstate == PLAYBACK_STATE_PLAY) overlay_setup(state);
     return TRUE;
 }
+static const struct pipeline_param cam_overlay_enable_param = {
+    .name = "overlayEnable",
+    .type = G_TYPE_BOOLEAN,
+    .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .offset = offsetof(struct pipeline_state, overlay.enable),
+    .setter = cam_overlay_enable_setter,
+};
 
 static gboolean
 cam_overlay_format_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
@@ -167,34 +272,42 @@ cam_overlay_format_setter(struct pipeline_state *state, const struct pipeline_pa
     state->overlay.format[sizeof(state->overlay.format)-1] = '\0';
     return TRUE;
 }
+static const struct pipeline_param cam_overlay_format_param = {
+    .name = "overlayFormat",
+    .type = G_TYPE_STRING,
+    .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .offset = offsetof(struct pipeline_state, overlay.format),
+    .setter = cam_overlay_format_setter,
+};
 
-static gboolean
-cam_playback_position_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
-{
-    state->position = g_value_get_long(val);
-    return TRUE;
-}
-
-static gboolean
-cam_playback_rate_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
-{
-    state->playrate = g_value_get_long(val);
-    return TRUE;
-}
-
-static gboolean
-cam_playback_start_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
-{
-    state->playstart = g_value_get_ulong(val);
-    return TRUE;
-}
-
-static gboolean
-cam_playback_length_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
-{
-    state->playlength = g_value_get_ulong(val);
-    return TRUE;
-}
+static const struct pipeline_param cam_playback_position_param = {
+    .name = "playbackPosition",
+    .type = G_TYPE_LONG,
+    .flags = 0,
+    .offset = offsetof(struct pipeline_state, position),
+    .setter = cam_generic_setter,
+};
+static const struct pipeline_param cam_playback_rate_param = {
+    .name = "playbackRate",
+    .type = G_TYPE_LONG,
+    .flags = PARAM_F_NOTIFY,
+    .offset = offsetof(struct pipeline_state, playrate),
+    .setter = cam_generic_setter,
+};
+static const struct pipeline_param cam_playback_start_param = {
+    .name = "playbackStart",
+    .type = G_TYPE_ULONG,
+    .flags = PARAM_F_NOTIFY,
+    .offset = offsetof(struct pipeline_state, playstart),
+    .setter = cam_generic_setter,
+};
+static const struct pipeline_param cam_playback_length_param = {
+    .name = "playbackLength",
+    .type = G_TYPE_ULONG,
+    .flags = PARAM_F_NOTIFY,
+    .offset = offsetof(struct pipeline_state, playlength),
+    .setter = cam_generic_setter,
+};
 
 static GValue *
 cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_param *p)
@@ -231,78 +344,104 @@ cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_pa
     g_value_take_boxed(vboxed, array);
     return vboxed;
 }
+static const struct pipeline_param cam_video_segments_param = {
+    .name = "videoSegments",
+    .type = G_TYPE_BOXED,
+    .flags = 0,
+    .extra = cam_video_segments_getter,
+};
 
-/* This is really just here to keep the lines shorter. */
-#define param_offset(_member_) offsetof(struct pipeline_state, _member_)
+static GValue *
+cam_video_config_getter(struct pipeline_state *state, const struct pipeline_param *p)
+{
+    int i;
+    GValue *vboxed;
+    GHashTable *hash = cam_dbus_dict_new();
 
-/* Table of parameters. */
-static const struct pipeline_param cam_dbus_params[] = {
-    { "videoState",         G_TYPE_ENUM,    PARAM_F_NOTIFY, param_offset(playstate),           playback_states,    NULL},
+    for (i = 0; cam_dbus_params[i] != NULL; i++) {
+        const struct pipeline_param *p = cam_dbus_params[i];
+        void *pvalue;
+        if (p->flags & PARAM_F_SAVE) {
+            dbus_get_value(state, p, hash);
+        }
+    }
+    
+    vboxed = g_new0(GValue, 1);
+    if (!vboxed) {
+        cam_dbus_dict_free(hash);
+        return NULL;
+    }
+    g_value_init(vboxed, CAM_DBUS_HASH_MAP);
+    g_value_take_boxed(vboxed, hash);
+    return vboxed;
+}
+static const struct pipeline_param cam_video_config_param = {
+    .name = "videoConfig",
+    .type = G_TYPE_BOXED,
+    .flags = 0,
+    .extra = cam_video_config_getter,
+};
+
+static const struct pipeline_param cam_video_state_param = {
+    .name = "videoState",
+    .type = G_TYPE_ENUM,
+    .flags = PARAM_F_NOTIFY,
+    .offset = offsetof(struct pipeline_state, playstate),
+    .extra = playback_states,
+};
+static const struct pipeline_param cam_video_total_frames_param = {
+    .name = "totalFrames",
+    .type = G_TYPE_LONG,
+    .flags = 0,
+    .offset = offsetof(struct pipeline_state, seglist.totalframes),
+};
+static const struct pipeline_param cam_video_total_segments_param = {
+    .name = "totalSegments",
+    .type = G_TYPE_LONG,
+    .flags = 0,
+    .offset = offsetof(struct pipeline_state, seglist.totalsegs),
+};
+
+static const struct pipeline_param *cam_dbus_params[] = {
+    &cam_video_state_param,
+    &cam_video_config_param,
     /* Exposure and focus aids. */
-    { "overlayEnable",      G_TYPE_BOOLEAN, PARAM_F_NOTIFY, param_offset(overlay.enable),      NULL,               cam_overlay_enable_setter},
-    { "overlayFormat",      G_TYPE_STRING,  PARAM_F_NOTIFY, param_offset(overlay.format),      NULL,               cam_overlay_format_setter},
-    { "focusPeakingColor",  G_TYPE_ENUM,    PARAM_F_NOTIFY, param_offset(config.peak_color),   focus_peak_colors,  cam_focus_peak_color_setter},
-    { "focusPeakingLevel",  G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.peak_level),   NULL,               cam_focus_peak_level_setter},
-    { "zebraLevel",         G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.zebra_level),  NULL,               NULL},
-    { "videoZoom",          G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.video_zoom),   NULL,               cam_video_zoom_setter },
+    &cam_focus_peak_color_param,
+    &cam_focus_peak_level_param,
+    &cam_overlay_enable_param,
+    &cam_overlay_format_param,
+    &cam_focus_zebra_level_param,
+    &cam_video_zoom_param,
     /* Playback position and rate. */
-    { "playbackRate",       G_TYPE_LONG,    PARAM_F_NOTIFY, param_offset(playrate),            NULL,               cam_playback_rate_setter},
-    { "playbackPosition",   G_TYPE_LONG,    0,              param_offset(position),            NULL,               cam_playback_position_setter},
-    { "playbackStart",      G_TYPE_ULONG,   PARAM_F_NOTIFY, param_offset(playstart),           NULL,               cam_playback_start_setter},
-    { "playbackLength",     G_TYPE_ULONG,   PARAM_F_NOTIFY, param_offset(playlength),          NULL,               cam_playback_length_setter},
-    /* Quantity of recorded video. */
-    { "totalFrames",        G_TYPE_LONG,    0,              param_offset(seglist.totalframes), NULL,               NULL},
-    { "totalSegments",      G_TYPE_LONG,    0,              param_offset(seglist.totalsegs),   NULL,               NULL},
-    { "videoSegments",      G_TYPE_BOXED,   0,              0,                                 cam_video_segments_getter, NULL},
-    { NULL, G_TYPE_INVALID, 0, 0, NULL, NULL}
+    &cam_playback_position_param,
+    &cam_playback_rate_param,
+    &cam_playback_start_param,
+    &cam_playback_length_param,
+    /* Description of recorded video. */
+    &cam_video_total_frames_param,
+    &cam_video_total_segments_param,
+    &cam_video_segments_param,
+    /* List termination. */
+    NULL
 };
 
 gboolean
 dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data)
 {
-    const struct pipeline_param *p;
-    void *pvalue;
+    int i;
 
-    for (p = cam_dbus_params; p->name; p++) {
+    for (i = 0; cam_dbus_params[i] != NULL; i++) {
+        const struct pipeline_param *p = cam_dbus_params[i];
+
         /* Look for a matching parameter by name. */
-        if (strcasecmp(p->name, name) != 0) continue;
-
-        /* Otherwise, parse the parameter out of the state structure. */
-        pvalue = ((unsigned char *)state) + p->offset;
-        switch (p->type) {
-            case G_TYPE_BOOLEAN:
-                cam_dbus_dict_add_boolean(data, p->name, *(gboolean *)pvalue);
-                return TRUE;
-            case G_TYPE_LONG:
-                cam_dbus_dict_add_int(data, p->name, *(long *)pvalue);
-                return TRUE;
-            case G_TYPE_ULONG:
-                cam_dbus_dict_add_uint(data, p->name, *(unsigned long *)pvalue);
-                return TRUE;
-            case G_TYPE_DOUBLE:
-                cam_dbus_dict_add_float(data, p->name, *(double *)pvalue);
-                return TRUE;
-            case G_TYPE_STRING:
-                cam_dbus_dict_add_string(data, p->name, pvalue);
-                return TRUE;
-            case G_TYPE_ENUM:
-                cam_dbus_dict_add_string(data, p->name, enumval_name(p->extra, *(int *)pvalue, "undefined"));
-                return TRUE;
-            case G_TYPE_BOXED:{
-                param_boxed_getter_t getter = p->extra;
-                GValue *gval = getter(state, p);
-                if (gval) cam_dbus_dict_add(data, p->name, gval);
-                return (gval != NULL);
-            }
-            default:
-                /* Unsupported type */
-                return FALSE;
+        if (strcasecmp(p->name, name) == 0) {
+            return dbus_get_value(state, p, data);
         }
     }
+
     /* Otherwise, no such parameter exists with that name. */
     return FALSE;
 }
-
 
 static gboolean
 dbus_set_enum(struct pipeline_state *state, const struct pipeline_param *p, GValue *gval, char *err)
@@ -357,11 +496,13 @@ dbus_set_enum(struct pipeline_state *state, const struct pipeline_param *p, GVal
 gboolean
 dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err)
 {
-    const struct pipeline_param *p;
-    GValue xform;
-    void *pvalue;
+    int i;
 
-    for (p = cam_dbus_params; p->name; p++) {
+    for (i = 0; cam_dbus_params[i] != NULL; i++) {
+        const struct pipeline_param *p = cam_dbus_params[i];
+        void *pvalue;
+        GValue xform;
+
         /* Look for a matching parameter by name. */
         if (strcasecmp(p->name, name) != 0) continue;
         if (!p->setter) {
@@ -397,10 +538,11 @@ dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, cha
 GHashTable *
 dbus_describe_params(struct pipeline_state *state)
 {
-    const struct pipeline_param *p;
+    int i;
     GHashTable *h = cam_dbus_dict_new();
 
-    for (p = cam_dbus_params; p->name; p++) {
+    for (i = 0; cam_dbus_params[i] != NULL; i++) {
+        const struct pipeline_param *p = cam_dbus_params[i];
         GHashTable *desc = cam_dbus_dict_new();
         if (!desc) continue;
         cam_dbus_dict_add_boolean(desc, "get", TRUE);
