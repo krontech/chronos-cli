@@ -88,7 +88,6 @@ static void *socketConnectionHandler(void *socket_desc)
             /* Check for the shutdown flag - can also be done as a command and propagated up to a UI screen */
             if(bd.flags & 64) {
                 system("/sbin/shutdown -h now");
-                doShutdown();
             }
         }
         else if (!strncmp(str, "SET_SHIPPING_MODE_ENABLED", 25))
