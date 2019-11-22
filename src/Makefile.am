@@ -56,7 +56,12 @@ endif
 cam_regdump_LDADD = libcamera.a
 cam_regdump_CFLAGS = ${AM_CFLAGS}
 cam_regdump_LDFLAGS = ${AM_LDFLAGS}
-cam_regdump_SOURCES = cam-regdump.c
+cam_regdump_SOURCES = regdump/cam-regdump.c
+cam_regdump_SOURCES += regdump/regs.h
+cam_regdump_SOURCES += regdump/regs-fpga.c
+cam_regdump_SOURCES += regdump/regs-luxima.c
+cam_regdump_SOURCES += regdump/regs-lux1310.c
+cam_regdump_SOURCES += regdump/regs-lux2100.c
 
 ## FPGA Video memory recovery.
 cam_recover_LDADD = libcamera.a

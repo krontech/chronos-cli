@@ -20,8 +20,6 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#define LUX1310_CHIP_ID 0xDA
-
 /* Pack an address and mask together into one word. */
 #define LUX1310_SCI_REG_MASK            0xffff
 #define LUX1310_SCI_REG_ADDR            16

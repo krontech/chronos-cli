@@ -17,13 +17,12 @@
 #ifndef _LUX2100_H
 #define _LUX2100_H
 
-#define LUX2100_CHIP_ID 0x28
-
 /* Pack an address and mask together into one word. */
 #define LUX2100_SCI_REG_MASK            0xffff
 #define LUX2100_SCI_REG_ADDR            16
 #define LUX2100_SCI_REG(_addr_, _mask_)  (((_addr_) << LUX2100_SCI_REG_ADDR) | ((_mask_) & LUX2100_SCI_REG_MASK))
 
+/* Sensor Registers */
 #define LUX2100_SCI_REV_CHIP            LUX2100_SCI_REG(0x00, 0x00ff)
 #define LUX2100_SCI_CHIP_ID             LUX2100_SCI_REG(0x00, 0xff00)
 #define LUX2100_SCI_TIMING_EN           LUX2100_SCI_REG(0x01, 0x0001)
@@ -100,5 +99,30 @@
 #define LUX2100_SCI_ICOL_CAP_EN         LUX2100_SCI_REG(0x76, 0x00f0)
 #define LUX2100_SCI_SRESET_B            LUX2100_SCI_REG(0x7e, 0x0001)
 #define LUX2100_SCI_SER_SYNC            LUX2100_SCI_REG(0x7e, 0x0010)
+
+/* Datapath Registers */
+#define LUX2100_SCI_DP_ID               LUX2100_SCI_REG(0x00, 0x0001)
+#define LUX2100_SCI_BLOCK_ID            LUX2100_SCI_REG(0x00, 0xfffe)
+#define LUX2100_SCI_CRC_EN              LUX2100_SCI_REG(0x01, 0x0001)
+#define LUX2100_SCI_GAIN_ENABLE         LUX2100_SCI_REG(0x01, 0x0010)
+#define LUX2100_SCI_ODD_EVEN_SEL        LUX2100_SCI_REG(0x01, 0x0100)
+#define LUX2100_SCI_ODD_EVEN_OS_EN      LUX2100_SCI_REG(0x01, 0x1000)
+#define LUX2100_SCI_NB_BIT_SEL          LUX2100_SCI_REG(0x02, 0x0003)
+#define LUX2100_SCI_MSB_FIRST_DATA      LUX2100_SCI_REG(0x02, 0x0010)
+#define LUX2100_SCI_CUST_DIG_PAT        LUX2100_SCI_REG(0x03, 0x0fff)
+#define LUX2100_SCI_DIG_PAT_SEL         LUX2100_SCI_REG(0x03, 0x3000)
+#define LUX2100_SCI_SEL_RDOUT_DLY       LUX2100_SCI_REG(0x05, 0x007f)
+#define LUX2100_SCI_LATCH_DLY           LUX2100_SCI_REG(0x06, 0x0001)
+#define LUX2100_SCI_CAL_START           LUX2100_SCI_REG(0x0A, 0x0001)
+#define LUX2100_SCI_RECAL_START         LUX2100_SCI_REG(0x0A, 0x0010)
+#define LUX2100_SCI_NB_BITS_SAMPLES_AVG LUX2100_SCI_REG(0x0B, 0x000f)
+#define LUX2100_SCI_NB_BITS_OS_CAL_ITER LUX2100_SCI_REG(0x0B, 0x00f0)
+#define LUX2100_SCI_ADC_OS_SEQ_WIDTH    LUX2100_SCI_REG(0x0C, 0x003f)
+#define LUX2100_SCI_OS_TARGET           LUX2100_SCI_REG(0x0D, 0x0fff)
+#define LUX2100_SCI_ADC_OS_EN           LUX2100_SCI_REG(0x0E, 0x0001)
+#define LUX2100_SCI_ADC_OS_SIGN         LUX2100_SCI_REG(0x0F, 0xffff)
+#define LUX2100_SCI_ADC_OS(_n_)         LUX2100_SCI_REG(((_n_) < 16 ? 0x10 : 0x40) + (_n_), 0x03ff)
+#define LUX2100_SCI_GAIN_SETVAL(_n_)    LUX2100_SCI_REG(((_n_) < 16 ? 0x20 : 0x50) + (_n_), 0xffff)
+#define LUX2100_SCI_ODDEVEN_ROW_OS(_n_) LUX2100_SCI_REG(((_n_) < 16 ? 0x30 : 0x60) + (_n_), 0x03ff)
 
 #endif /* _LUX2100_H */
