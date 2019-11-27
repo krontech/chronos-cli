@@ -31,4 +31,15 @@ void json_printf_utf8(FILE *fp, const gchar *p);
 void json_printf_array(FILE *fp, const GValue *gval, unsigned int depth);
 void json_printf_dict(FILE *fp, GHashTable *h, unsigned int depth);
 
+/* Standard JSON-RPC Error Codes. */
+#define JSONRPC_ERR_PARSE_ERROR         (-32700)
+#define JSONRPC_ERR_INVALID_REQUEST     (-32600)
+#define JSONRPC_ERR_METHOD_NOT_FOUND    (-32601)
+#define JSONRPC_ERR_INVALID_PARAMETERS  (-32602)
+#define JSONRPC_ERR_INTERNAL_ERROR      (-32603)
+#define JSONRPC_ERR_SERVER_ERROR        (-32604)
+
+GValue *json_parse(const char *js, size_t jslen, int *errcode);
+GValue *json_parse_file(FILE *fp, int *errcode);
+
 #endif /* __DBUS_JSON_H */

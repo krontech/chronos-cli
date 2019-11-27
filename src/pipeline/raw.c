@@ -21,7 +21,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <setjmp.h>
 #include <gst/gst.h>
 #include <sys/mman.h>
 

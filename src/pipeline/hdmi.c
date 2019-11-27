@@ -22,7 +22,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
-#include <setjmp.h>
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <gst/gst.h>

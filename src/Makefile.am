@@ -22,7 +22,9 @@ AM_LDFLAGS += --sysroot=${SYSROOT}
 endif
 
 ## Bundle the common FPGA and image sensor tools into a library.
+libcamera_a_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 libcamera_a_SOURCES = lib/board-chronos14.c
+libcamera_a_SOURCES += lib/dbus-json.c
 libcamera_a_SOURCES += lib/fpga-loader.c
 libcamera_a_SOURCES += lib/fpga-mmap.c
 libcamera_a_SOURCES += lib/edid.c
@@ -37,6 +39,7 @@ libcamera_a_SOURCES += lib/tiff.c
 libcamera_a_SOURCES += lib/segment.c
 libcamera_a_SOURCES += lib/sensor.c
 ## Header files too.
+libcamera_a_SOURCES += lib/dbus-json.h
 libcamera_a_SOURCES += lib/fpga.h
 libcamera_a_SOURCES += lib/fpga-gpmc.h
 libcamera_a_SOURCES += lib/sensor-lux1310.h
@@ -46,7 +49,6 @@ libcamera_a_SOURCES += lib/i2c-spd.h
 libcamera_a_SOURCES += lib/ioport.h
 libcamera_a_SOURCES += lib/jsmn.h
 libcamera_a_SOURCES += lib/segment.h
-libcamera_a_CFLAGS = ${AM_CFLAGS}
 ## ARM-Only sources
 if SYSROOT
 libcamera_a_SOURCES += lib/glibc-hacks.c
@@ -74,14 +76,10 @@ cam_json_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
 cam_json_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_json_LDFLAGS = ${AM_LDFLAGS}
 cam_json_SOURCES = client/cam-json.c
-cam_json_SOURCES += client/dbus-json.c
-cam_json_SOURCES += client/dbus-json.h
 cam_listener_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
 cam_listener_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_listener_LDFLAGS = ${AM_LDFLAGS}
 cam_listener_SOURCES = client/cam-listener.c
-cam_listener_SOURCES += client/dbus-json.c
-cam_listener_SOURCES += client/dbus-json.h
 
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.
