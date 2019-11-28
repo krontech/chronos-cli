@@ -97,15 +97,18 @@ struct source_config {
 };
 
 struct display_config {
-    unsigned long hres;
-    unsigned long vres;
-    unsigned long xoff;
-    unsigned long yoff;
-    unsigned int  peak_color;   /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
-    double        peak_level;   /* In the range of 0.0 for minimum sensitivity to 1.0 for max. */
-    double        zebra_level;  /* Exposure zebra sensitivity level. */
-    double        video_zoom;   /* Digital zoom to apply in live/playback. */
-    const char *gifsplash;
+    unsigned long   hres;
+    unsigned long   vres;
+    unsigned long   xoff;
+    unsigned long   yoff;
+    unsigned int    peak_color;   /* One of DISPLAY_CTL_FOCUS_PEAK_xxx or zero to disable. */
+    double          peak_level;   /* In the range of 0.0 for minimum sensitivity to 1.0 for max. */
+    double          zebra_level;  /* Exposure zebra sensitivity level. */
+    double          video_zoom;   /* Digital zoom to apply in live/playback. */
+    const char      *gifsplash;
+    /* Config file, not really a display thing, but oh well */
+    const char      *filename;
+    unsigned char   dirty;
 };
 
 struct overlay_config {
@@ -207,6 +210,8 @@ void dbus_signal_update(struct CamVideo *video, const char **names);
 gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
 gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err);
 GHashTable *dbus_describe_params(struct pipeline_state *state);
+int dbus_save_params(struct pipeline_state *state, FILE *fp);
+int dbus_load_params(struct pipeline_state *state, FILE *fp);
 
 /* HDMI Hotplug watcher needs to be in its own thread. */
 void hdmi_hotplug_launch(struct pipeline_state *state);

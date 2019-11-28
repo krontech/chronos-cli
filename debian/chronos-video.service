@@ -5,7 +5,7 @@ Requires=chronos-fpga.service
 
 [Service]
 Type=dbus
-ExecStart=/usr/bin/cam-pipeline -s /var/camera/splash.gif
+ExecStart=/usr/bin/cam-pipeline -c /var/camera/videoConfig.json -s /var/camera/splash.gif
 BusName=ca.krontech.chronos.video
 StandardOutput=journal+console
 StandardError=inherit

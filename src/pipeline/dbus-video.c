@@ -127,6 +127,7 @@ cam_dbus_video_get(struct pipeline_state *state, const char **names)
  */
 typedef struct CamVideo {
     GObjectClass    parent;
+    guint           timeout_id;
     struct pipeline_state *state;
 } CamVideo;
 
@@ -154,6 +155,28 @@ cam_video_get(CamVideo *vobj, const char **names, GHashTable **data, GError **er
     return (*data != NULL);
 }
 
+/* Callback helper to flush parameter changes. */
+static gboolean
+dbus_flush_params(gpointer data)
+{
+    CamVideo *vobj = data;
+    struct pipeline_state *state = vobj->state;
+
+    /* Write the configuration file if its dirty */
+    if (state->config.filename && state->config.dirty) {
+        FILE *fp = fopen(state->config.filename, "w");
+        if (fp) {
+            dbus_save_params(state, fp);
+            fclose(fp);
+        }
+        state->config.dirty = FALSE;
+    }
+
+    /* The timeout source should get removed after this */
+    vobj->timeout_id = 0;
+    return FALSE;
+}
+
 static gboolean
 cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error)
 {
@@ -177,6 +200,12 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
             cam_dbus_dict_add_string(errdict, key, err);
             errcount++;
         }
+    }
+
+    /* If the configuration is now dirty, start a timer to flush it to disk. */
+    if (state->config.dirty) {
+        if (vobj->timeout_id) g_source_remove(vobj->timeout_id);
+        vobj->timeout_id = g_timeout_add(1000, dbus_flush_params, vobj);
     }
 
     /* Return the dict of set values. */
@@ -539,6 +568,7 @@ static void
 cam_video_init(CamVideo *vobj)
 {
     g_assert(vobj != NULL);
+    vobj->timeout_id = 0;
     vobj->state = NULL;
 }
 
@@ -633,9 +663,10 @@ dbus_service_launch(struct pipeline_state *state)
 }
 
 void
-dbus_service_cleanup(struct CamVideo *video)
+dbus_service_cleanup(struct CamVideo *vobj)
 {
-    /* Nothing to see here. */
+    if (vobj->timeout_id) g_source_remove(vobj->timeout_id);
+    dbus_flush_params(vobj);
 }
 
 struct dbus_signal_data {

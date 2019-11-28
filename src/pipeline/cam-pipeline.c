@@ -608,6 +608,7 @@ usage(FILE *fp, int argc, char *argv[])
 
     fprintf(fp, "options:\n");
     fprintf(fp, "\t-o, --offset OFFS  offset the output by OFFS pixels\n");
+    fprintf(fp, "\t-c, --config FILE  save and load configuration from FILE\n");
     fprintf(fp, "\t-g, --splash FILE  animated GIF splash screen to play when idle\n");
     fprintf(fp, "\t-h, --help         display this help and exit\n");
 } /* usage */
@@ -642,9 +643,10 @@ main(int argc, char * argv[])
     struct ti81xxfb_region_params regp;
     struct pipeline_state *state = cam_pipeline_state();
     /* Option Parsing */
-    const char *short_options = "o:s:h";
+    const char *short_options = "o:c:s:h";
     const struct option long_options[] = {
         {"offset",  required_argument,  0, 'o'},
+        {"config",  required_argument,  0, 'c'},
         {"splash",  required_argument,  0, 's'},
         {"help",    no_argument,        0, 'h'},
         {0, 0, 0, 0}
@@ -665,6 +667,10 @@ main(int argc, char * argv[])
         switch (c) {
             case 'o':
                 parse_resolution(optarg, "OFFS", &state->config.xoff, &state->config.yoff);
+                break;
+            
+            case 'c':
+                state->config.filename = optarg;
                 break;
 
             case 's':
@@ -773,6 +779,17 @@ main(int argc, char * argv[])
     state->rtsp = rtsp_server_launch(state);
     hdmi_hotplug_launch(state);
     playback_init(state);
+
+    /* Load JSON configuration, if present. */
+    if (state->config.filename) {
+        FILE *fp = fopen(state->config.filename, "r");
+        if (!fp) {
+            fprintf(stderr, "Failed to load configuration from \'%s\': %s\n", state->config.filename, strerror(errno));
+        } else {
+            dbus_load_params(state, fp);
+            fclose(fp);
+        }
+    }
 
     do {
         /* Launch the pipeline. */

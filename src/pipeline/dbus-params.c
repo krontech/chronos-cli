@@ -27,6 +27,7 @@
 
 #include "pipeline.h"
 #include "utils.h"
+#include "dbus-json.h"
 #include "api/cam-rpc.h"
 
 #define PARAM_F_NOTIFY   0x0001
@@ -496,12 +497,12 @@ dbus_set_enum(struct pipeline_state *state, const struct pipeline_param *p, GVal
 gboolean
 dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err)
 {
+    gboolean ret;
     int i;
 
     for (i = 0; cam_dbus_params[i] != NULL; i++) {
         const struct pipeline_param *p = cam_dbus_params[i];
         void *pvalue;
-        GValue xform;
 
         /* Look for a matching parameter by name. */
         if (strcasecmp(p->name, name) != 0) continue;
@@ -512,22 +513,30 @@ dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, cha
 
         /* Type transformation if necessary. */
         if (p->type == G_TYPE_ENUM) {
-            return dbus_set_enum(state, p, gval, err);
+            ret = dbus_set_enum(state, p, gval, err);
         }
         /* If the value holds the expected type - then set it. */
         else if (G_VALUE_HOLDS(gval, p->type)) {
-            return p->setter(state, p, gval, err);
+            ret = p->setter(state, p, gval, err);
+        }
+        /* Otherwise, try our best to transform the type and set it. */
+        else {
+            GValue xform;
+            memset(&xform, 0, sizeof(xform));
+            g_value_init(&xform, p->type);
+            if (!g_value_transform(gval, &xform)) {
+                /* The user gave us a type we couldn't make sense of. */
+                snprintf(err, PIPELINE_ERROR_MAXLEN, "unable to parse parameter \'%s\'", name);
+                return FALSE;
+            }
+            ret = p->setter(state, p, &xform, err);
         }
 
-        /* Otherwise, try our best to transform the type and set it. */
-        memset(&xform, 0, sizeof(xform));
-        g_value_init(&xform, p->type);
-        if (g_value_transform(gval, &xform)) {
-            return p->setter(state, p, &xform, err);
+        /* If the parameter is saved, we may need to update the config file. */
+        if ((p->flags & PARAM_F_SAVE) && ret) {
+            state->config.dirty = TRUE;
         }
-        /* The user gave us a type we couldn't make sense of. */
-        snprintf(err, PIPELINE_ERROR_MAXLEN, "unable to parse parameter \'%s\'", name);
-        return FALSE;
+        return ret;
     }
 
     /* Otherwise, no such parameter exists with that name. */
@@ -551,4 +560,70 @@ dbus_describe_params(struct pipeline_state *state)
         cam_dbus_dict_take_boxed(h, p->name, CAM_DBUS_HASH_MAP, desc);
     }
     return h;
+}
+
+/* Write all saveable parameters to a file. */
+int
+dbus_save_params(struct pipeline_state *state, FILE *fp)
+{
+    int i;
+    GValue *vboxed;
+    GHashTable *hash = cam_dbus_dict_new();
+
+    /* Build up the configuration dict of all saveable parameters. */
+    for (i = 0; cam_dbus_params[i] != NULL; i++) {
+        const struct pipeline_param *p = cam_dbus_params[i];
+        if (p->flags & PARAM_F_SAVE) {
+            dbus_get_value(state, p, hash);
+        }
+    }
+    /* Config is clean after saving */
+    state->config.dirty = FALSE;
+
+    /* Encode and write the file as JSON. */
+    json_printf_dict(fp, hash, 0);
+    cam_dbus_dict_free(hash);
+    return 0;
+}
+
+/* Load all saveable parameters from a file. */
+int
+dbus_load_params(struct pipeline_state *state, FILE *fp)
+{
+    int err;
+    char errmsg[PIPELINE_ERROR_MAXLEN];
+    GValue *gval;
+    GHashTable *hash;
+    GHashTableIter iter;
+    gpointer name;
+    gpointer value;
+
+    /* Parse the JSON file contents. */
+    gval = json_parse_file(fp, &err);
+    if (!gval) {
+        return -1;
+    }
+
+    /* We are expecting a dictionary */
+    if (!G_VALUE_HOLDS(gval, CAM_DBUS_HASH_MAP)) {
+        g_value_unset(gval);
+        g_free(gval);
+        return -1;
+    }
+    hash = g_value_peek_pointer(gval);
+
+    /* Call the setter for each contained value */
+    g_hash_table_iter_init(&iter, hash);
+    while (g_hash_table_iter_next(&iter, &name, &value)) {
+        if (!dbus_set_param(state, name, value, errmsg)) {
+            errmsg[sizeof(errmsg)-1] = '\0';
+            fprintf(stderr, "Failed to set parameter \'%s\' from config: %s.\n", (const char *)name, errmsg);
+        }
+    }
+    /* Config is clean after loading */
+    state->config.dirty = FALSE;
+
+    g_value_unset(gval);
+    g_free(gval);
+    return 0;
 }
