@@ -55,9 +55,14 @@ static void *socketConnectionHandler(void *socket_desc)
             /* Treat a timeout as though we got a request for battery data. */
             strcpy(str, "GET_BATTERY_DATA");
         }
+        /* Otherwise, ensure null-termination before checking commands. */
+        else {
+            if (numBytesRead >= sizeof(str)) numBytesRead = sizeof(str)-1;
+            str[numBytesRead] = '\0';
+        }
 
         /* parse and process received commands here, put requested data into str buffer */
-        if(0 == strncmp("GET_BATTERY_DATA", str, 16))
+        if(0 == strcmp("GET_BATTERY_DATA", str))
         {
             retVal = getBatteryData(&bd);
             if(!retVal) {
@@ -90,35 +95,54 @@ static void *socketConnectionHandler(void *socket_desc)
                 system("/sbin/shutdown -h now");
             }
         }
-        else if (!strncmp(str, "SET_SHIPPING_MODE_ENABLED", 25))
+        else if (!strcmp(str, "SET_SHIPPING_MODE_ENABLED"))
         {
             setShippingMode(TRUE) ? sprintf(str,"shipping mode enabled") : sprintf(str,"setShippingMode() failed");
         }
-        else if (!strncmp(str, "SET_SHIPPING_MODE_DISABLED", 26))
+        else if (!strcmp(str, "SET_SHIPPING_MODE_DISABLED"))
         {
             setShippingMode(FALSE) ? sprintf(str,"shipping mode disabled") : sprintf(str,"setShippingMode() failed");
         }
-        else if (!strncmp(str, "SET_POWERUP_MODE_0", 18)) //powerup on ac restore disabled, powerdown on ac remove disabled
+        else if (!strcmp(str, "SET_POWERUP_MODE_0")) //powerup on ac restore disabled, powerdown on ac remove disabled
         {
             setPowerupMode(0) ? sprintf(str,"pwrmode0") : sprintf(str,"setPowerupMode() failed");
         }
-        else if (!strncmp(str, "SET_POWERUP_MODE_1", 18)) //powerup on ac restore enabled, powerdown on ac remove disabled
+        else if (!strcmp(str, "SET_POWERUP_MODE_1")) //powerup on ac restore enabled, powerdown on ac remove disabled
         {
             setPowerupMode(1) ? sprintf(str,"pwrmode1") : sprintf(str,"setPowerupMode() failed");
         }
-        else if (!strncmp(str, "SET_POWERUP_MODE_2", 18)) //powerup on ac restore disabled, powerdown on ac remove enabled
+        else if (!strcmp(str, "SET_POWERUP_MODE_2")) //powerup on ac restore disabled, powerdown on ac remove enabled
         {
             setPowerupMode(2) ? sprintf(str,"pwrmode2") : sprintf(str,"setPowerupMode() failed");
         }
-        else if (!strncmp(str, "SET_POWERUP_MODE_3", 18)) //powerup on ac restore enabled, powerdown on ac remove enabled
+        else if (!strcmp(str, "SET_POWERUP_MODE_3")) //powerup on ac restore enabled, powerdown on ac remove enabled
         {
             setPowerupMode(3) ? sprintf(str,"pwrmode3") : sprintf(str,"setPowerupMode() failed");
         }
-        else if (!strncmp(str, "SET_FAN_AUTO", 12))
+        else if (!strcmp(str, "GET_POWERUP_MODE"))
+        {
+            uint8 mode;
+            getPowerupMode(&mode) ? sprintf(str, "powerMode %d\n", mode) : sprintf(str, "powerMode failed\n");
+        }
+        else if (!strcmp(str, "GET_FAN_MODE"))
+        {
+            BOOL enable;
+            uint8 speed;
+            if (!getFanOverrideMode(&enable, &speed)) {
+                sprintf(str, "fanOverride failed\n");
+            }
+            else if (!enable) {
+                sprintf(str, "fanOverride auto\n");
+            }
+            else {
+                sprintf(str, "fanOverride %d\n", speed);
+            }
+        }
+        else if (!strcmp(str, "SET_FAN_AUTO"))
         {
             setFanOverrideMode(FALSE, 128) ? sprintf(str,"disabled fan override") : sprintf(str,"setFanOverrideMode() failed");
         }
-        else if (!strncmp(str, "SET_FAN_OFF", 11))
+        else if (!strcmp(str, "SET_FAN_OFF"))
         {
             setFanOverrideMode(TRUE, 0) ? sprintf(str,"enabled fan override") : sprintf(str,"setFanOverrideMode() failed");
         }
