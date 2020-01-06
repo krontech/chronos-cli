@@ -63,38 +63,6 @@ cam_dbus_video_status(struct pipeline_state *state)
     return dict;
 }
 
-static uint16_t
-cam_dbus_parse_focus_peak(GHashTable *dict, const char *name, uint16_t defval)
-{
-    gpointer x = g_hash_table_lookup(dict, name);
-
-    /* If we got a boolean, then select Cyan as the default color. */
-    if (x && G_VALUE_HOLDS_BOOLEAN(x)) {
-        return g_value_get_boolean(x) ? DISPLAY_CTL_FOCUS_PEAK_CYAN : 0;
-    }
-    /* Check for a string naming the color of choice. */
-    if (x && G_VALUE_HOLDS_STRING(x)) {
-        const char *color = g_value_get_string(x);
-        switch (tolower(color[0])) {
-            case 'r': return DISPLAY_CTL_FOCUS_PEAK_RED;
-            case 'g': return DISPLAY_CTL_FOCUS_PEAK_GREEN;
-            case 'b': return DISPLAY_CTL_FOCUS_PEAK_BLUE;
-            case 'c': return DISPLAY_CTL_FOCUS_PEAK_CYAN;
-            case 'm': return DISPLAY_CTL_FOCUS_PEAK_MAGENTA;
-            case 'y': return DISPLAY_CTL_FOCUS_PEAK_YELLOW;
-            case 'w': return DISPLAY_CTL_FOCUS_PEAK_WHITE;
-            default:  return 0;
-        }
-    }
-    /* Although not recommended, also accept an integer. */
-    if (x && G_VALUE_HOLDS_UINT(x)) return (g_value_get_uint(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
-    if (x && G_VALUE_HOLDS_ULONG(x)) return (g_value_get_ulong(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
-    if (x && G_VALUE_HOLDS_INT(x)) return (g_value_get_int(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
-    if (x && G_VALUE_HOLDS_LONG(x)) return (g_value_get_long(x) << 6) & DISPLAY_CTL_FOCUS_PEAK_COLOR;
-    /* Otherwise, return the default value. */
-    return defval;
-}
-
 static GHashTable *
 cam_dbus_video_get(struct pipeline_state *state, const char **names)
 {
@@ -298,19 +266,6 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
 
     /* Update the live display flags. */
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
-    state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
-    if (state->config.zebra_level > 0.0) {
-        state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
-        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
-    } else {
-        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
-    }
-    if (state->config.peak_color) {
-        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
-        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
-    } else {
-        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
-    }
     if (state->source.color) {
         state->control |= DISPLAY_CTL_COLOR_MODE;
     } else {
@@ -322,10 +277,11 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         uint32_t dcontrol;
         if (diff) cam_lcd_reconfig(state, &state->config);
 
+        /* Possibly update the color/mono control bit. */
         dcontrol = state->fpga->display->control;
-        dcontrol &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_COLOR_MODE);
-        dcontrol &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
-        state->fpga->display->control = dcontrol | state->control;
+        dcontrol &= ~DISPLAY_CTL_COLOR_MODE;
+        dcontrol |= (state->control & DISPLAY_CTL_COLOR_MODE);
+        state->fpga->display->control = dcontrol;
     }
     /* Apply geometry changes immediately when in playback. */
     else if ((state->playstate == PLAYBACK_STATE_PLAY) && (diff)) {
@@ -350,19 +306,6 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     
     /* Update the live display flags. */
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
-    state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
-    if (state->config.zebra_level > 0.0) {
-        state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
-        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
-    } else {
-        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
-    }
-    if (state->config.peak_color && (state->config.zebra_level > 0.0)) {
-        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
-        state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
-    } else {
-        state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
-    }
     if (state->source.color) {
         state->control |= DISPLAY_CTL_COLOR_MODE;
     } else {

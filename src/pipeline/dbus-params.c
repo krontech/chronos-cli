@@ -124,14 +124,14 @@ struct enumval playback_states[] = {
 };
 
 struct enumval focus_peak_colors[] = {
-    { 0,                            "black"},
-    {DISPLAY_CTL_FOCUS_PEAK_RED,    "red"},
-    {DISPLAY_CTL_FOCUS_PEAK_GREEN,  "green"},
-    {DISPLAY_CTL_FOCUS_PEAK_BLUE,   "blue"},
-    {DISPLAY_CTL_FOCUS_PEAK_CYAN,   "cyan"},
-    {DISPLAY_CTL_FOCUS_PEAK_MAGENTA, "magenta"},
-    {DISPLAY_CTL_FOCUS_PEAK_YELLOW, "yellow"},
-    {DISPLAY_CTL_FOCUS_PEAK_WHITE,  "white"},
+    { 0,                                                            "black"},
+    {DISPLAY_CTL_FOCUS_PEAK_RED >> DISPLAY_CTL_FOCUS_PEAK_SHIFT,    "red"},
+    {DISPLAY_CTL_FOCUS_PEAK_GREEN >> DISPLAY_CTL_FOCUS_PEAK_SHIFT,  "green"},
+    {DISPLAY_CTL_FOCUS_PEAK_BLUE >> DISPLAY_CTL_FOCUS_PEAK_SHIFT,   "blue"},
+    {DISPLAY_CTL_FOCUS_PEAK_CYAN >> DISPLAY_CTL_FOCUS_PEAK_SHIFT,   "cyan"},
+    {DISPLAY_CTL_FOCUS_PEAK_MAGENTA >> DISPLAY_CTL_FOCUS_PEAK_SHIFT, "magenta"},
+    {DISPLAY_CTL_FOCUS_PEAK_YELLOW >> DISPLAY_CTL_FOCUS_PEAK_SHIFT, "yellow"},
+    {DISPLAY_CTL_FOCUS_PEAK_WHITE >> DISPLAY_CTL_FOCUS_PEAK_SHIFT,  "white"},
     { 0, NULL }
 };
 
@@ -140,13 +140,13 @@ cam_focus_peak_color_setter(struct pipeline_state *state, const struct pipeline_
 {
     state->config.peak_color = g_value_get_int(val);
     state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
-    state->control |= (state->config.peak_color);
+    state->control |= (state->config.peak_color << DISPLAY_CTL_FOCUS_PEAK_SHIFT);
 
     /* Update the FPGA if we're in live mode. */
     if (state->playstate == PLAYBACK_STATE_LIVE) {
         uint32_t dcontrol = state->fpga->display->control;
-        dcontrol &= ~(DISPLAY_CTL_ZEBRA_ENABLE | DISPLAY_CTL_COLOR_MODE);
-        dcontrol &= ~(DISPLAY_CTL_FOCUS_PEAK_ENABLE | DISPLAY_CTL_FOCUS_PEAK_COLOR);
+        dcontrol &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
+        dcontrol |= (state->config.peak_color << DISPLAY_CTL_FOCUS_PEAK_SHIFT);
         state->fpga->display->control = dcontrol | state->control;
     }
     return TRUE;
@@ -168,15 +168,16 @@ cam_focus_peak_level_setter(struct pipeline_state *state, const struct pipeline_
     if (fplevel < 0.0) fplevel = 0.0;
     if (fplevel > 1.0) fplevel = 1.0;
     state->config.peak_level = fplevel;
+
     if (state->config.peak_level > 0.0) {
         state->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
+        state->fpga->display->peaking_thresh = 35 - (20 * fplevel);
     } else {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_ENABLE;
     }
 
     /* Update the FPGA directly if already in live mode. */
     if (state->playstate == PLAYBACK_STATE_LIVE) {
-        state->fpga->display->peaking_thresh = 35 - (20 * fplevel);
         if (state->config.peak_level > 0.0) {
             state->fpga->display->control |= DISPLAY_CTL_FOCUS_PEAK_ENABLE;
         } else {
