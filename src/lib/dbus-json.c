@@ -427,7 +427,7 @@ json_parse_token(jsmntok_t *tok, const char *js, int *errcode)
         g_value_set_boolean(gval, FALSE);
     }
     /* Below here, we have some kind of numeric type. */
-    else if (strcspn(value, ".eE") != (tok->end - tok->start)) {
+    else if (memchr(value, '.', length) || memchr(value, 'e', length) || memchr(value, 'E', length)) {
         char *end;
         double x = strtod(value, &end);
         g_value_init(gval, G_TYPE_DOUBLE);
