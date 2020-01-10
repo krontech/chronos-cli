@@ -113,10 +113,10 @@ struct display_config {
 
 struct overlay_config {
     unsigned char enable;
-    unsigned int xoff;
-    unsigned int yoff;
-    unsigned int width;
-    unsigned int height;
+    unsigned long xoff;
+    unsigned long yoff;
+    unsigned long width;
+    unsigned long height;
     char format[512];
 };
 
@@ -184,6 +184,8 @@ struct pipeline_state {
     struct display_config config;
     struct overlay_config overlay;
 };
+
+gboolean parse_resolution(const char *resxy, unsigned long *x, unsigned long *y);
 
 struct pipeline_state *cam_pipeline_state(void);
 void cam_pipeline_restart(struct pipeline_state *state);

@@ -29,17 +29,6 @@
 #include "pipeline.h"
 #include "api/cam-rpc.h"
 
-static gboolean
-parse_resolution(const char *resxy, unsigned int *x, unsigned int *y)
-{
-    char *e;
-    *x = strtoul(resxy, &e, 10);
-    if (*e != 'x') return FALSE;
-    *y = strtoul(e+1, &e, 10);
-    if (*e != '\0') return FALSE;
-    return TRUE;
-}
-
 static GHashTable *
 cam_dbus_video_status(struct pipeline_state *state)
 {

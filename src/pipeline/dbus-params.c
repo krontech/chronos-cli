@@ -43,6 +43,7 @@ struct pipeline_param {
     const void      *extra;
     /* Complex parameters - callbacks to do translation and stateful stuff. */
     gboolean        (*setter)(struct pipeline_state *state, const struct pipeline_param *param, GValue *val, char *err);
+    GValue *        (*getter)(struct pipeline_state *, const struct pipeline_param *);
 };
 static const struct pipeline_param *cam_dbus_params[];
 
@@ -54,6 +55,13 @@ static gboolean
 dbus_get_value(struct pipeline_state *state, const struct pipeline_param *p, GHashTable *data)
 {
     void *pvalue = ((unsigned char *)state) + p->offset;
+
+    if (p->getter) {
+        GValue *gval = p->getter(state, p);
+        if (gval) cam_dbus_dict_add(data, p->name, gval);
+        return (gval != NULL);
+    }
+
     switch (p->type) {
         case G_TYPE_BOOLEAN:
             cam_dbus_dict_add_boolean(data, p->name, *(gboolean *)pvalue);
@@ -73,12 +81,8 @@ dbus_get_value(struct pipeline_state *state, const struct pipeline_param *p, GHa
         case G_TYPE_ENUM:
             cam_dbus_dict_add_string(data, p->name, enumval_name(p->extra, *(int *)pvalue, "undefined"));
             return TRUE;
-        case G_TYPE_BOXED:{
-            param_boxed_getter_t getter = p->extra;
-            GValue *gval = getter(state, p);
-            if (gval) cam_dbus_dict_add(data, p->name, gval);
-            return (gval != NULL);
-        }
+        case G_TYPE_BOXED:
+            /* Boxed types should have provided a getter...  fall through */
         default:
             /* Unsupported type */
             return FALSE;
@@ -282,6 +286,60 @@ static const struct pipeline_param cam_overlay_format_param = {
     .setter = cam_overlay_format_setter,
 };
 
+static gboolean
+cam_overlay_position_setter(struct pipeline_state *state, const struct pipeline_param *p, GValue *val, char *err)
+{
+    const char *position = g_value_get_string(val);
+
+    if (strcasecmp(position, "top") == 0) {
+        state->overlay.xoff = 0;
+        state->overlay.yoff = 0;
+    }
+    else if (strcasecmp(position, "bottom") == 0) {
+        state->overlay.xoff = 0;
+        state->overlay.yoff = UINT_MAX;
+    }
+    else if (!parse_resolution(position, &state->overlay.xoff, &state->overlay.yoff)) {
+        snprintf(err, PIPELINE_ERROR_MAXLEN, "\'%s\' is not valid for parameter \'%s\'", position, p->name);
+        return FALSE;
+    }
+    if (state->playstate == PLAYBACK_STATE_PLAY) overlay_setup(state);
+    return TRUE;
+}
+static GValue *
+cam_overlay_position_getter(struct pipeline_state *state, const struct pipeline_param *p)
+{
+    GValue *gval;
+    gchar *position;
+
+    if ((state->overlay.xoff == 0) && (state->overlay.yoff == 0)) {
+        position = g_strdup("top");
+    }
+    else if ((state->overlay.xoff == 0) && (state->overlay.yoff == UINT_MAX)) {
+        position = g_strdup("bottom");
+    }
+    else {
+        position = g_strdup_printf("%lux%lu", state->overlay.xoff, state->overlay.yoff);
+    }
+
+    gval = g_new0(GValue, 1);
+    if (!gval) {
+        g_free(position);
+        return NULL;
+    }
+
+    g_value_init(gval, G_TYPE_STRING);
+    g_value_take_string(gval, position);
+    return gval;
+}
+static const struct pipeline_param cam_overlay_position_param = {
+    .name = "overlayPosition",
+    .type = G_TYPE_STRING,
+    .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .setter = cam_overlay_position_setter,
+    .getter = cam_overlay_position_getter,
+};
+
 static const struct pipeline_param cam_playback_position_param = {
     .name = "playbackPosition",
     .type = G_TYPE_LONG,
@@ -350,7 +408,7 @@ static const struct pipeline_param cam_video_segments_param = {
     .name = "videoSegments",
     .type = G_TYPE_BOXED,
     .flags = 0,
-    .extra = cam_video_segments_getter,
+    .getter = cam_video_segments_getter,
 };
 
 static GValue *
@@ -381,7 +439,7 @@ static const struct pipeline_param cam_video_config_param = {
     .name = "videoConfig",
     .type = G_TYPE_BOXED,
     .flags = 0,
-    .extra = cam_video_config_getter,
+    .getter = cam_video_config_getter,
 };
 
 static const struct pipeline_param cam_video_state_param = {
@@ -412,6 +470,7 @@ static const struct pipeline_param *cam_dbus_params[] = {
     &cam_focus_peak_level_param,
     &cam_overlay_enable_param,
     &cam_overlay_format_param,
+    &cam_overlay_position_param,
     &cam_focus_zebra_level_param,
     &cam_video_zoom_param,
     /* Playback position and rate. */

@@ -309,13 +309,14 @@ a methods are as follows:
 
 | Parameter           | G | S | U | Type   | Description
 |:-----------------   |:--|:--|:--|:-------|:-----------
-| `overlayEnable`     |`G`|`S`|`x`| bool   | Hide or show the stamp data layer.
-| `overlayFormat`     |`G`|`S`|`x`| string | A `printf`-style format string to set the overlay text.
-| `zebraLevel`        |`G`|`S`|`x`| float  | Zebra stripe sensitivity.
-| `focusPeakingLevel` |`G`|`S`|`x`| float  | Focus peaking edge detection sensitivity (in the range of 0 to 1.0). 0 means "off".
-| `focusPeakingColor` |`G`|`S`|`x`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Black.
+| `overlayEnable`     |`G`|`S`|`N`| bool   | Show or hide the overlay textbox when in playback mode.
+| `overlayFormat`     |`G`|`S`|`N`| string | A `printf`-style format string to set the contents of the overlay textbox.
+| `overlayPosition`   |`G`|`S`|`N`| string | One of `top`, `bottom` or a string of the form `HPOSxVPOS` to set the location of the overlay textbox.
+| `zebraLevel`        |`G`|`S`|`N`| float  | Zebra stripe sensitivity.
+| `focusPeakingLevel` |`G`|`S`|`N`| float  | Focus peaking edge detection sensitivity (in the range of 0 to 1.0). 0 means "off".
+| `focusPeakingColor` |`G`|`S`|`N`| enum   | One of Red, Green, Blue, Cyan, Magenta, Yellow, White or Black.
 | `videoZoom`         |`G`|`S`|`N`| float  | Digital zoom ratio for video output to the LCD display.
-| `videoState`        |`G`|   |`x`| enum   | One of `paused`, `live`, `playback` or `filesave`
+| `videoState`        |`G`|   |`N`| enum   | One of `paused`, `live`, `playback` or `filesave`
 | `playbackRate`      |`G`|`S`|`x`| int    | Framerate that live video will be played back when in `playback`.
 | `playbackPosition`  |`G`|`S`|   | int    | Current frame number being displayed when in `playback`.
 | `playbackStart`     |`G`|`S`|`x`| int    | Starting frame number to display when entering `playback`.

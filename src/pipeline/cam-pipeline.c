@@ -613,20 +613,16 @@ usage(FILE *fp, int argc, char *argv[])
     fprintf(fp, "\t-h, --help         display this help and exit\n");
 } /* usage */
 
-static void
-parse_resolution(const char *str, const char *name, unsigned long *x, unsigned long *y)
+gboolean
+parse_resolution(const char *resxy, unsigned long *x, unsigned long *y)
 {
-    while (1) {
-        char *end;
-        *x = strtoul(str, &end, 10);
-        if (*end != 'x') break;
-        *y = strtoul(end+1, &end, 10);
-        if (*end != '\0') break;
-        return;
-    }
-    fprintf(stderr, "Failed to parse %s from \'%s\'\n", name, str);
-    exit(EXIT_FAILURE);
-} /* parse_resolution */
+    char *e;
+    *x = strtoul(resxy, &e, 10);
+    if (*e != 'x') return FALSE;
+    *y = strtoul(e+1, &e, 10);
+    if (*e != '\0') return FALSE;
+    return TRUE;
+}
 
 static void *
 mainloop_thread(void *ctx)
@@ -666,7 +662,10 @@ main(int argc, char * argv[])
     while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {
         switch (c) {
             case 'o':
-                parse_resolution(optarg, "OFFS", &state->config.xoff, &state->config.yoff);
+                if (!parse_resolution(optarg, &state->config.xoff, &state->config.yoff)) {
+                    fprintf(stderr, "Failed to parse OFFS from \'%s\'\n", optarg);
+                    exit(EXIT_FAILURE);
+                }
                 break;
             
             case 'c':
@@ -687,7 +686,10 @@ main(int argc, char * argv[])
     }
     /* If there is another argument, parse it as the display resolution. */
     if (optind < argc) {
-        parse_resolution(argv[optind], "RES", &state->config.hres, &state->config.vres);
+        if (!parse_resolution(argv[optind], &state->config.hres, &state->config.vres)) {
+            fprintf(stderr, "Failed to parse RES from \'%s\'\n", argv[optind]);
+            exit(EXIT_FAILURE);
+        }
     }
 
     /* Initialisation */
