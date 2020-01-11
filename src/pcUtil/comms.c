@@ -91,7 +91,7 @@ BOOL setPowerupMode(uint8 mode)
 
 BOOL getPowerupMode(uint8 * mode)
 {
-	uint8 response[1];
+	uint8 response[2];
 	uint16 length;
 	txByteMessage(COM_CMD_GET_POWERUP_MODE);
 
