@@ -90,6 +90,7 @@ fpga_open(void)
 	fpga->overlay = (struct fpga_overlay *)((uint8_t *)fpga->reg + FPGA_OVERLAY_BASE);
 	fpga->zebra = (struct fpga_zebra *)((uint8_t *)fpga->reg + FPGA_ZEBRA_BASE);
 	fpga->imager = (struct fpga_imager *)((uint8_t *)fpga->reg + FPGA_IMAGER_BASE);
+	fpga->timing = (struct fpga_timing *)((uint8_t *)fpga->reg + FPGA_TIMING_BASE);
 	return fpga;
 } /* fpga_open */
 

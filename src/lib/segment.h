@@ -37,6 +37,7 @@ struct video_segment {
     struct {
         unsigned long exposure;
         unsigned long interval;
+        unsigned long timebase;
     } metadata;
 };
 

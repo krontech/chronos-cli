@@ -384,8 +384,8 @@ cam_video_segments_getter(struct pipeline_state *state, const struct pipeline_pa
         if (hash) {
             cam_dbus_dict_add_uint(hash, "length", seg->nframes);
             cam_dbus_dict_add_uint(hash, "offset", offset);
-            cam_dbus_dict_add_uint(hash, "exposure", seg->metadata.exposure);
-            cam_dbus_dict_add_uint(hash, "interval", seg->metadata.interval);
+            cam_dbus_dict_add_float(hash, "exposure", (double)seg->metadata.exposure / seg->metadata.timebase);
+            cam_dbus_dict_add_float(hash, "interval", (double)seg->metadata.interval / seg->metadata.timebase);
             g_ptr_array_add(array, hash);
         }
 

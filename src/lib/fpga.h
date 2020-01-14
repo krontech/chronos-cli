@@ -476,6 +476,7 @@ struct fpga {
     volatile struct fpga_overlay    *overlay;
     volatile struct fpga_zebra      *zebra;
     volatile struct fpga_imager     *imager;
+    volatile struct fpga_timing     *timing;
 };
 
 struct fpga *fpga_open(void);

@@ -97,14 +97,15 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     
     /* The list of EXIF tags. */
     time_t now = time(0);
-    char timestr[64];
     struct tm timebuf;
+    char timestr[64];
+    size_t timelen = strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf));
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
-        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, seg->metadata.timebase),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, timelen + 1),              /* DateTimeDigitized */
+        TIFF_TAG_STRING(42033, state->serial),                                      /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, seg->metadata.timebase, seg->metadata.interval),  /* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 
@@ -186,14 +187,15 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
 
     /* The list of EXIF tags. */
     time_t now = time(0);
-    char timestr[64];
     struct tm timebuf;
+    char timestr[64];
+    size_t timelen = strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf));
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
-        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, seg->metadata.timebase),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, timelen + 1),              /* DateTimeDigitized */
+        TIFF_TAG_STRING(42033, state->serial),                                      /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, seg->metadata.timebase, seg->metadata.interval),  /* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
@@ -313,14 +315,15 @@ tiff_probe_grayscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     
     /* The list of EXIF tags. */
     time_t now = time(0);
-    char timestr[64];
     struct tm timebuf;
+    char timestr[64];
+    size_t timelen = strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf));
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
-        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, seg->metadata.timebase),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, timelen + 1),              /* DateTimeDigitized */
+        TIFF_TAG_STRING(42033, state->serial),                                      /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, seg->metadata.timebase, seg->metadata.interval),  /* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 
@@ -382,14 +385,15 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
 
     /* The list of EXIF tags. */
     time_t now = time(0);
-    char timestr[64];
     struct tm timebuf;
+    char timestr[64];
+    size_t timelen = strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf));
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
-        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, seg->metadata.timebase),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, timelen + 1),              /* DateTimeDigitized */
+        TIFF_TAG_STRING(42033, state->serial),                                      /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, seg->metadata.timebase, seg->metadata.interval),  /* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
     
@@ -448,14 +452,15 @@ tiff_probe_raw(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     
     /* The list of EXIF tags. */
     time_t now = time(0);
-    char timestr[64];
     struct tm timebuf;
+    char timestr[64];
+    size_t timelen = strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf));
     const struct tiff_tag exif[] = {
-        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, FPGA_TIMEBASE_HZ), /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                 /* ExifVersion = 2.2 */
-        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf)) + 1),
-        TIFF_TAG_STRING(42033, state->serial),                              /* SerialNumber */
-        TIFF_TAG_SRATIONAL(51044, FPGA_TIMEBASE_HZ, seg->metadata.interval),/* FrameRate */
+        TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, seg->metadata.timebase),   /* ExposureTime */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVersion = 2.2 */
+        TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, timelen + 1),              /* DateTimeDigitize */
+        TIFF_TAG_STRING(42033, state->serial),                                      /* SerialNumber */
+        TIFF_TAG_SRATIONAL(51044, seg->metadata.timebase, seg->metadata.interval),  /* FrameRate */
     };
     struct tiff_ifd exif_ifd = {.tags = exif, sizeof(exif)/sizeof(struct tiff_tag)};
 

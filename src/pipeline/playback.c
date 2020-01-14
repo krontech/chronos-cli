@@ -308,8 +308,20 @@ playback_region_add(struct pipeline_state *state)
     if (!seg) {
         return -1;
     }
-    seg->metadata.interval = state->fpga->sensor->frame_period;
-    seg->metadata.exposure = state->fpga->sensor->int_time;
+
+    /* Check for the new timing engine, use it for the exposure time and frame period. */
+    if ((state->fpga->timing->version >= 1) && ((state->fpga->timing->control & TIMING_CONTROL_INHIBIT) == 0)) {
+        seg->metadata.interval = state->fpga->timing->period_time;
+        seg->metadata.exposure = state->fpga->timing->exp_abn_time;
+        /* TODO: This will be incorrect for the LUX2100, which operates at 75MHz */
+        seg->metadata.timebase = 90000000; /* LUX1310 timebase is 90MHz */
+    }
+    /* Otherwise, fall-back to the old timing engine, which may not be accurate. */
+    else {
+        seg->metadata.interval = state->fpga->sensor->frame_period;
+        seg->metadata.exposure = state->fpga->sensor->int_time;
+        seg->metadata.timebase = FPGA_TIMEBASE_HZ; /* FPGA internal timing is used */
+    }
 
     return 1;
 }
