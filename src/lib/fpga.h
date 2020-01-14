@@ -367,6 +367,45 @@ struct fpga_imager {
 
 #define IMAGER_IDENTIFER    0x000E
 
+/* Timing register block. */
+struct fpga_timing {
+    uint16_t identifier;
+    uint16_t version;
+    uint16_t subver;
+    uint16_t status;
+    uint16_t control;
+    uint16_t abn_pulse_low;
+    uint16_t abn_pulse_high;
+    uint16_t min_lines;
+    /* The following registers are available in version 1 and higher. */
+    uint16_t __reserved0[8];
+    uint32_t period_time;
+    uint32_t exp_abn_time;
+    uint32_t exp_abn2_time;
+    uint32_t __reserved1[1];
+    uint16_t __reserved2[8];
+    uint32_t operands[8];
+};
+
+#define TIMING_IDENTIFIER 0x000F
+
+#define TIMING_STATUS_ACTIVE_PAGE       (1 << 3)
+#define TIMING_STATUS_EXPOSURE_ENABLE   (1 << 6)
+#define TIMING_STATUS_FRAME_REQUEST     (1 << 7)
+#define TIMING_STATUS_WAIT_TRIG_ACTIVE  (1 << 8)
+#define TIMING_STATUS_WAIT_TRIG_INACTIVE (1 << 9)
+#define TIMING_STATUS_PAGE_SWAP_STATE   (0xF << 12)
+
+#define TIMING_CONTROL_INHIBIT          (1 << 0)
+#define TIMING_CONTROL_REQUEST_FLIP     (1 << 1)
+#define TIMING_CONTROL_SOFT_RESET       (1 << 2)
+#define TIMING_CONTROL_EXPOSURE_ENABLE  (1 << 4)
+#define TIMING_CONTROL_EXPOSURE_REQUEST (1 << 5)
+#define TIMING_CONTROL_FRAME_REQUEST    (1 << 7)
+#define TIMING_CONTROL_ABN_PULSE_ENABLE (1 << 8)
+#define TIMING_CONTROL_ABN_PULSE_INVERT (1 << 9)
+#define TIMING_CONTROL_WAVETABLE_LATCH  (1 << 10)
+
 #define SENSOR_DATA_WIDTH		        12
 #define COLOR_MATRIX_INT_BITS	        3
 #define COLOR_MATRIX_FRAC_BITS          12

@@ -28,6 +28,12 @@
     .reg_read = sci_reg_read \
 }
 
+static int
+lux1310_detect(const struct reggroup *group, struct fpga *fpga)
+{
+    return (sci_read_chipid(fpga) == 0xDA);
+}
+
 static const struct regdef lux1310_regdefs[] = {
     REG_LUX1310(LUX1310_SCI_REV_CHIP,      "rev_chip"),
     REG_LUX1310(LUX1310_SCI_CHIP_ID,       "reg_chip_id"),
@@ -118,5 +124,6 @@ static const struct regdef lux1310_regdefs[] = {
 };
 const struct reggroup lux1310_registers = {
     .name = "LUX1310",
+    .filter = "lux1310",
     .rtab = lux1310_regdefs,
 };

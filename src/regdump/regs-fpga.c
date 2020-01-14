@@ -67,6 +67,7 @@ const struct regdef sensor_regdefs[] = {
 };
 const struct reggroup sensor_registers = {
     .name = "Sensor",
+    .filter = "sensor",
     .rtab = sensor_regdefs
 };
 
@@ -95,6 +96,7 @@ const struct regdef seq_regdefs[] = {
 };
 const struct reggroup seq_registers = {
     .name = "Sequencer",
+    .filter = "seq",
     .rtab = seq_regdefs
 };
 
@@ -117,6 +119,7 @@ const struct regdef trigger_regdefs[] = {
 };
 const struct reggroup trigger_registers = {
     .name = "Trigger",
+    .filter = "trigger",
     .rtab = trigger_regdefs
 };
 
@@ -163,6 +166,7 @@ const struct regdef display_regdefs[] = {
 };
 const struct reggroup display_registers = {
     .name = "Display",
+    .filter = "display",
     .rtab = display_regdefs
 };
 
@@ -179,6 +183,7 @@ const struct regdef config_regdefs[] = {
 };
 const struct reggroup config_registers = {
     .name = "Config",
+    .filter = "config",
     .rtab = config_regdefs
 };
 
@@ -198,6 +203,7 @@ const struct regdef vram_regdefs[] = {
 };
 const struct reggroup vram_registers = {
     .name = "Video RAM",
+    .filter = "vram",
     .rtab = vram_regdefs
 };
 
@@ -218,6 +224,7 @@ const struct regdef seqpgm_regdefs[] = {
 };
 const struct reggroup seqpgm_registers = {
     .name = "Sequencer Program",
+    .filter = "seqpgm",
     .rtab = seqpgm_regdefs
 };
 
@@ -242,7 +249,48 @@ const struct regdef imager_regdefs[] = {
 };
 const struct reggroup imager_registers = {
     .name = "Imager",
+    .filter = "imager",
     .rtab = imager_regdefs
+};
+
+/*-------------------------------------
+ * Timing Control Registers
+ *-------------------------------------
+ */
+const struct regdef timing_regdefs[] = {
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, identifier),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, version),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, subver),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, status, "active_page", TIMING_STATUS_ACTIVE_PAGE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, status, "exposure_enable", TIMING_STATUS_EXPOSURE_ENABLE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, status, "frame_request", TIMING_STATUS_FRAME_REQUEST),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, status, "wait_trig_active", TIMING_STATUS_WAIT_TRIG_ACTIVE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, status, "wait_trig_inactive", TIMING_STATUS_WAIT_TRIG_INACTIVE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, status, "page_swap_state", TIMING_STATUS_PAGE_SWAP_STATE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "inhibit", TIMING_CONTROL_INHIBIT),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "request_flip", TIMING_CONTROL_REQUEST_FLIP),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "soft_reset", TIMING_CONTROL_SOFT_RESET),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "exposure_enable", TIMING_CONTROL_EXPOSURE_ENABLE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "exposure_request", TIMING_CONTROL_EXPOSURE_REQUEST),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "frame_request", TIMING_CONTROL_FRAME_REQUEST),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "abn_pulse_enable", TIMING_CONTROL_ABN_PULSE_ENABLE),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "abn_pulse_invert", TIMING_CONTROL_ABN_PULSE_INVERT),
+    REG_STRUCT_BIT(struct fpga_timing, FPGA_TIMING_BASE, control, "wavetable_latch", TIMING_CONTROL_WAVETABLE_LATCH),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, abn_pulse_low),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, abn_pulse_high),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, min_lines),
+    /* The following registers are available in version 1 and higher. */
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, period_time),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, exp_abn_time),
+    REG_STRUCT(struct fpga_timing, FPGA_TIMING_BASE, exp_abn2_time),
+    /* TODO: uint32_t operands[8]; */
+    /* TODO: decompile the program? */
+    {NULL, 0, 0, 0}
+};
+const struct reggroup timing_registers = {
+    .name = "Timing",
+    .filter = "timing",
+    .rtab = timing_regdefs
 };
 
 /*-------------------------------------
@@ -295,6 +343,7 @@ const struct regdef overlay_regdefs[] = {
 };
 const struct reggroup overlay_registers = {
     .name = "Overlay",
+    .filter = "overlay",
     .rtab = overlay_regdefs
 };
 
@@ -316,5 +365,6 @@ const struct regdef zebra_regdefs[] = {
 };
 const struct reggroup zebra_registers = {
     .name = "Zebra",
+    .filter = "zebra",
     .rtab = zebra_regdefs
 };

@@ -39,7 +39,7 @@ print_reg_group(FILE *fp, const struct reggroup *group, struct fpga *fpga)
     const char *format = "\t0x%04x  0x%08x  %24s  0x%x\n";
     int i;
 
-    if (group->name) fprintf(fp, "\n%s Registers:\n", group->name);
+    if (group->name) fprintf(fp, "%s Registers:\n", group->name);
     fprintf(fp, header, "ADDR", "MASK", "NAME", "VALUE");
 
     if (group->setup) {
@@ -52,44 +52,121 @@ print_reg_group(FILE *fp, const struct reggroup *group, struct fpga *fpga)
         uint32_t mask = (reg->mask) ? (reg->mask) : UINT32_MAX;
         fprintf(fp, format, reg->offset, mask, reg->name, getbits(value, mask));
     } /* for */
+    fputs("\n", fp);
     
     if (group->cleanup) {
         group->cleanup(group, fpga);
     }
 } /* print_reg_group */
 
+const struct reggroup *available[] = {
+    &sensor_registers,
+    &seq_registers,
+    &trigger_registers,
+    &display_registers,
+    &config_registers,
+    &vram_registers,
+    &seqpgm_registers,
+    &overlay_registers,
+    &imager_registers,
+    &timing_registers,
+    &zebra_registers,
+    /* Sensor registers */
+    &lux1310_registers,
+    &lux2100_sensor_registers,
+    &lux2100_datapath_registers,
+};
+const int num_groups = sizeof(available)/sizeof(available[0]);
+
+static void
+usage(int argc, char *const argv[])
+{
+    int i;
+
+    printf("usage: %s [options]\n\n", argv[0]);
+    printf("Dump the Chronos FPGA registers to standard outout.\n\n");
+    printf("options:\n");
+    printf("  --help         display this message and exit\n");
+    
+    /* Show the generated filter options */
+    for (i = 0; i < num_groups; i++) {
+        printf("  --%-12s display only the %s register group\n", available[i]->filter, available[i]->name);
+    }
+} 
+
 int
 main(int argc, char *const argv[])
 {
-    unsigned int chipid;
-    struct fpga *fpga = fpga_open();
+    struct fpga *fpga;
+    int luxdetect = 0;
+
+    const char *shortopts = "h";
+    unsigned long long mask = 0;
+    struct option options[num_groups+2];
+    int i;
+    
+    /* Build up the getopt options */
+    for (i = 0; i < num_groups; i++) {
+        options[i].name = available[i]->filter;
+        options[i].has_arg = no_argument;
+        options[i].flag = NULL;
+        options[i].val = i;
+    }
+    /* Add the help option. */
+    options[i].name = "help";
+    options[i].has_arg = no_argument;
+    options[i].flag = NULL;
+    options[i].val = 'h';
+    i++;
+
+    /* Add the option terminator */
+    options[i].name = NULL;
+    options[i].has_arg = 0;
+    options[i].flag = 0;
+    options[i].val = 0;
+
+    /* Parse the flags */
+    optind = 1;
+    while ((optind < argc) && (*argv[optind] == '-')) {
+        int c = getopt_long(argc, argv, shortopts, options, NULL);
+        if (c < 0) {
+            /* End of options */
+            break;
+        }
+        if (c == 'h') {
+            usage(argc, argv);
+            return 0;
+        }
+        if (c < 8 * sizeof(mask)) {
+            mask |= (1 << c);
+        }
+    }
+
+    /* Open the FPGA register mapping */
+    fpga = fpga_open();
     if (!fpga) {
         fprintf(stderr, "Failed to open FPGA register space: %s\n", strerror(errno));
         return EXIT_FAILURE;
     }
 
-    /* Pretty Print the registers. */
-    print_reg_group(stdout, &sensor_registers, fpga);
-    print_reg_group(stdout, &seq_registers, fpga);
-    print_reg_group(stdout, &trigger_registers, fpga);
-    print_reg_group(stdout, &display_registers, fpga);
-    print_reg_group(stdout, &config_registers, fpga);
-    print_reg_group(stdout, &vram_registers, fpga);
-    print_reg_group(stdout, &seqpgm_registers, fpga);
-    print_reg_group(stdout, &overlay_registers, fpga);
-    print_reg_group(stdout, &imager_registers, fpga);
-    print_reg_group(stdout, &zebra_registers, fpga);
+    /* Pretty print the registers. */
+    for (i = 0; i < num_groups; i++) {
+        /* If specifically enabled - print it. */
+        if (mask & (1 << i)) {
+            print_reg_group(stdout, available[i], fpga);
+        }
+        /* If nothing is filtered, print everything. */
+        if (!mask) {
+            if (available[i]->detect) {
+                if (!available[i]->detect(available[i], fpga)) continue;
+            }
+            if (memcmp(available[i]->name, "LUX", 3) == 0) luxdetect++;
+            print_reg_group(stdout, available[i], fpga);
+        }
+    }
 
-    /* Read the Luxima chip ID. */
-    chipid = sci_read_chipid(fpga);
-    if (chipid == LUX1310_CHIP_ID) {
-        print_reg_group(stdout, &lux1310_registers, fpga);
-    }
-    else if (chipid == LUX2100_CHIP_ID) {
-        print_reg_group(stdout, &lux2100_sensor_registers, fpga);
-        print_reg_group(stdout, &lux2100_datapath_registers, fpga);
-    }
-    else {
+    /* Special case - if chipid detection failed, print something. */
+    if ((mask == 0) && (luxdetect == 0)) {
         print_reg_group(stdout, &luxima_chipid_registers, fpga);
     }
 

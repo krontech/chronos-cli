@@ -33,7 +33,9 @@ struct regdef {
 /* Regsister group definition */
 struct reggroup {
     const char  *name;
-    /* Steps necessary to execute before accessing any register */
+    const char  *filter;
+    /* Hooks to run before accessing the register block. */
+    int         (*detect)(const struct reggroup *group, struct fpga *fpga);
     void        (*setup)(const struct reggroup *group, struct fpga *fpga);
     void        (*cleanup)(const struct reggroup *group, struct fpga *fpga);
     /* Table of register definitions */
@@ -55,6 +57,7 @@ extern const struct reggroup config_registers;
 extern const struct reggroup vram_registers;
 extern const struct reggroup seqpgm_registers;
 extern const struct reggroup imager_registers;
+extern const struct reggroup timing_registers;
 extern const struct reggroup overlay_registers;
 extern const struct reggroup zebra_registers;
 

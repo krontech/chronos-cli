@@ -24,6 +24,12 @@
     .reg_read = sci_reg_read, .reg_write = sci_reg_write \
 }
 
+static int
+lux2100_detect(const struct reggroup *group, struct fpga *fpga)
+{
+    return (sci_read_chipid(fpga) == 0x28);
+}
+
 static void
 lux2100_switch_bank(struct fpga *fpga, unsigned int val)
 {
@@ -117,6 +123,8 @@ lux2100_sensor_setup(const struct reggroup *group, struct fpga *fpga)
 
 const struct reggroup lux2100_sensor_registers = {
     .name = "LUX2100",
+    .filter = "lux2100",
+    .detect = lux2100_detect,
     .setup = lux2100_sensor_setup,
     .rtab = lux2100_sensor_regdefs,
 };
@@ -196,6 +204,8 @@ lux2100_datapath_cleanup(const struct reggroup *group, struct fpga *fpga)
 
 const struct reggroup lux2100_datapath_registers = {
     .name = "LUX2100 Datapath",
+    .filter = "lux2100data",
+    .detect = lux2100_detect,
     .setup = lux2100_datapath_setup,
     .cleanup = lux2100_datapath_cleanup,
     .rtab = lux2100_datapath_regdefs,
