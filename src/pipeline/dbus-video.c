@@ -152,7 +152,7 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
     while (g_hash_table_iter_next(&iter, &key, &value)) {
         if (dbus_set_param(state, key, value, err)) {
             if (names) names[i++] = key;
-        } else {
+        } else if (errdict) {
             err[sizeof(err)-1] = '\0';
             cam_dbus_dict_add_string(errdict, key, err);
             errcount++;
@@ -167,9 +167,9 @@ cam_video_set(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *error
 
     /* Return the dict of set values. */
     *data = cam_dbus_video_get(state, names);
-    if (errdict) {
+    if (errcount) {
         cam_dbus_dict_take_boxed(*data, "error", CAM_DBUS_HASH_MAP, errdict);
-    } else {
+    } else if (errdict) {
         cam_dbus_dict_free(errdict);
     }
     
