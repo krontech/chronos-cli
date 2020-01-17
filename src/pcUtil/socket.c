@@ -146,6 +146,12 @@ static void *socketConnectionHandler(void *socket_desc)
         {
             setFanOverrideMode(TRUE, 0) ? sprintf(str,"enabled fan override") : sprintf(str,"setFanOverrideMode() failed");
         }
+        else if (!memcmp(str, "SET_FAN_", 8))
+        {
+            // Assume it's of the form SET_FAN_xxx, where xxx = the specific fan speed to set in the range of 0-255
+            unsigned long speed = strtoul(str + 8, NULL, 10);
+            setFanOverrideMode(TRUE, speed) ? sprintf(str,"enabled fan override") : sprintf(str,"setFanOverrideMode() failed");
+        }
         else
         {
             //ignore invalid commands
