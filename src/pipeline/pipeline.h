@@ -212,6 +212,7 @@ void dbus_signal_update(struct CamVideo *video, const char **names);
 gboolean dbus_get_param(struct pipeline_state *state, const char *name, GHashTable *data);
 gboolean dbus_set_param(struct pipeline_state *state, const char *name, GValue *gval, char *err);
 GHashTable *dbus_describe_params(struct pipeline_state *state);
+int dbus_init_params(struct pipeline_state *state, int update);
 int dbus_save_params(struct pipeline_state *state, FILE *fp);
 int dbus_load_params(struct pipeline_state *state, FILE *fp);
 

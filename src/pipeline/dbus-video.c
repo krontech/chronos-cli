@@ -438,6 +438,20 @@ cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 }
 
 static gboolean
+cam_video_reset(CamVideo *vobj, GHashTable **data, GError **error)
+{
+    /* Clear all D-Bus parameters */
+    dbus_init_params(vobj->state, TRUE);
+    
+    /* Schedule a timer to update the config file too. */
+    if (vobj->timeout_id) g_source_remove(vobj->timeout_id);
+    vobj->timeout_id = g_timeout_add(1000, dbus_flush_params, vobj);
+    
+    /* Pause the video stream */
+    return cam_video_pause(vobj, data, error);
+}
+
+static gboolean
 cam_video_overlay(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;

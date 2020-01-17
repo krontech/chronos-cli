@@ -63,6 +63,7 @@ which implements the methods:
 | [`recordfile`](#recordfile)   | `a{sv}`    | Encode and write video to a file.
 | [`stop`](#stop)               |            | Terminate video encoding and return to playback mode.
 | [`overlay`](#overlay)         | `a{sv}`    | Configure an overlay text box for video and frame information.
+| [`reset`](#reset)             |            | Reset any configuration and return to the paused state.
 
 And emits the DBus signal:
  * [`sof`](#sof): The video pipeline has changed mode, and the video stream has started.
@@ -254,6 +255,11 @@ the form `"WIDTHxHEIGHT"` where `WIDTH` defines the horizontal size of the box i
 the vertical size. A vertical height of zero will default to the minimum height to draw a single line of
 text without clipping. A horizontal width of zero will extend the text box to use the maximum width of the
 video frame.
+
+reset
+-----
+Clears any configuration in the video system and returns the video system and terminates all video output
+by returning to the paused state.
 
 Video D-Bus Signals
 ===================

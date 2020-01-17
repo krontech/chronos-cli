@@ -33,7 +33,6 @@
 #define PARAM_F_NOTIFY   0x0001
 #define PARAM_F_SAVE     0x0002
 
-
 struct pipeline_param {
     const char      *name;
     GType           type;
@@ -41,14 +40,16 @@ struct pipeline_param {
     /* All parameters can be read using the type and possibly extra data. */
     size_t          offset;
     const void      *extra;
+    /* Default values to load on boot or reset. */
+    union {
+        intptr_t    defval;
+        const char *defstr;
+    };
     /* Complex parameters - callbacks to do translation and stateful stuff. */
     gboolean        (*setter)(struct pipeline_state *state, const struct pipeline_param *param, GValue *val, char *err);
     GValue *        (*getter)(struct pipeline_state *, const struct pipeline_param *);
 };
 static const struct pipeline_param *cam_dbus_params[];
-
-/* Getter method for complex/boxed types. */
-typedef GValue *(*param_boxed_getter_t)(struct pipeline_state *, const struct pipeline_param *);
 
 /* Retrieive the parameter value and add it to the hash table */
 static gboolean
@@ -160,6 +161,7 @@ static const struct pipeline_param cam_focus_peak_color_param = {
     .type = G_TYPE_ENUM,
     .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
     .offset = offsetof(struct pipeline_state, config.peak_color),
+    .defval = (DISPLAY_CTL_FOCUS_PEAK_CYAN >> DISPLAY_CTL_FOCUS_PEAK_SHIFT),
     .extra = focus_peak_colors,
     .setter = cam_focus_peak_color_setter,
 };
@@ -336,6 +338,7 @@ static const struct pipeline_param cam_overlay_position_param = {
     .name = "overlayPosition",
     .type = G_TYPE_STRING,
     .flags = PARAM_F_NOTIFY | PARAM_F_SAVE,
+    .defstr = "bottom",
     .setter = cam_overlay_position_setter,
     .getter = cam_overlay_position_getter,
 };
@@ -622,12 +625,76 @@ dbus_describe_params(struct pipeline_state *state)
     return h;
 }
 
+/* Load the default values for all parameters. */
+int
+dbus_init_params(struct pipeline_state *state, int update)
+{
+    const char **names = NULL;
+    int upcount = 0;
+    int i;
+
+    /* Set defaults to all settable and saved parameters */
+    for (i = 0; cam_dbus_params[i] != NULL; i++) {
+        const struct pipeline_param *p = cam_dbus_params[i];
+        char errmsg[PIPELINE_ERROR_MAXLEN];
+        GValue gval;
+
+        /* Only apply defaults to saved parameters with setters */
+        if (!(p->flags & PARAM_F_SAVE) || !p->setter) {
+            continue;
+        }
+        upcount++;
+
+        memset(&gval, 0, sizeof(gval));
+        if (p->type == G_TYPE_ENUM) {
+            g_value_init(&gval, G_TYPE_INT);
+            g_value_set_int(&gval, p->defval);
+        }
+        else if (p->type == G_TYPE_STRING) {
+            g_value_init(&gval, G_TYPE_STRING);
+            g_value_set_string(&gval, p->defstr ? p->defstr : "");
+        }
+        /* Otherwise, transform defval into the desired type. */
+        else {
+            GValue gv_int;
+            memset(&gv_int, 0, sizeof(gv_int));
+            g_value_init(&gv_int, G_TYPE_INT);
+            g_value_set_int(&gv_int, p->defval);
+            g_value_init(&gval, p->type);
+            g_value_transform(&gv_int, &gval);
+        }
+
+        /* Apply the default value. */
+        if (!p->setter(state, p, &gval, errmsg)) {
+            errmsg[sizeof(errmsg)-1] = '\0';
+            fprintf(stderr, "Failed to set parameter \'%s\' to default: %s.\n", (const char *)p->name, errmsg);
+        }
+        state->config.dirty = TRUE;
+    }
+
+    /* Schedule an update for any parameters that possibly got touched. */
+    if (update && upcount) names = (const char **)g_new0(char *, upcount + 1);
+    if (names) {
+        int j = 0;
+        for (i = 0; cam_dbus_params[i] != NULL; i++) {
+            const struct pipeline_param *p = cam_dbus_params[i];
+            if ((p->flags & PARAM_F_SAVE) && p->setter) {
+                names[j++] = p->name;
+            }
+        }
+        names[j++] = NULL;
+        dbus_signal_update(state->video, names);
+        g_free(names);
+    }
+
+    return 0;
+}
+
 /* Write all saveable parameters to a file. */
 int
 dbus_save_params(struct pipeline_state *state, FILE *fp)
 {
     int i;
-    GValue *vboxed;
     GHashTable *hash = cam_dbus_dict_new();
 
     /* Build up the configuration dict of all saveable parameters. */

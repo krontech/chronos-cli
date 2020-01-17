@@ -783,6 +783,7 @@ main(int argc, char * argv[])
     playback_init(state);
 
     /* Load JSON configuration, if present. */
+    dbus_init_params(state, FALSE);
     if (state->config.filename) {
         FILE *fp = fopen(state->config.filename, "r");
         if (!fp) {
