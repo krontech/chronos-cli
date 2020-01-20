@@ -270,12 +270,6 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
     /* Update the live display flags. */
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
     state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
-    if (state->config.zebra_level > 0.0) {
-        state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
-        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
-    } else {
-        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
-    }
     if (state->config.peak_color) {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
         state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
@@ -286,6 +280,18 @@ cam_video_configure(CamVideo *vobj, GHashTable *args, GHashTable **data, GError 
         state->control |= DISPLAY_CTL_COLOR_MODE;
     } else {
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
+    }
+    /* Only update the zebra levels if the parameter exists */
+    if (cam_dbus_dict_exists(args, "zebra")) {
+        if (cam_dbus_dict_get_boolean(args, "zebra", FALSE)) {
+            state->config.zebra_level = 0.05;
+            state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
+            state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+        }
+        else {
+            state->config.zebra_level = 0.0;
+            state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
+        }
     }
 
     /* Apply all changes immediately when live. */
@@ -322,12 +328,6 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     /* Update the live display flags. */
     state->source.color = cam_dbus_dict_get_boolean(args, "color", state->source.color);
     state->config.peak_color = cam_dbus_parse_focus_peak(args, "peaking", state->config.peak_color);
-    if (state->config.zebra_level > 0.0) {
-        state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
-        state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
-    } else {
-        state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
-    }
     if (state->config.peak_color && (state->config.zebra_level > 0.0)) {
         state->control &= ~DISPLAY_CTL_FOCUS_PEAK_COLOR;
         state->control |= (DISPLAY_CTL_FOCUS_PEAK_ENABLE | state->config.peak_color);
@@ -338,6 +338,18 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
         state->control |= DISPLAY_CTL_COLOR_MODE;
     } else {
         state->control &= ~DISPLAY_CTL_COLOR_MODE;
+    }
+    /* Only update the zebra levels if the parameter exists */
+    if (cam_dbus_dict_exists(args, "zebra")) {
+        if (cam_dbus_dict_get_boolean(args, "zebra", FALSE)) {
+            state->config.zebra_level = 0.05;
+            state->fpga->zebra->threshold = 255.0 * (1 - state->config.zebra_level);
+            state->control |= DISPLAY_CTL_ZEBRA_ENABLE;
+        }
+        else {
+            state->config.zebra_level = 0.0;
+            state->control &= ~DISPLAY_CTL_ZEBRA_ENABLE;
+        }
     }
 
     /* Check if resolution has changed. */
