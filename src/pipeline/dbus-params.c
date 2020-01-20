@@ -243,7 +243,7 @@ static const struct pipeline_param cam_dbus_params[] = {
     { "overlayFormat",      G_TYPE_STRING,  PARAM_F_NOTIFY, param_offset(overlay.format),      NULL,               cam_overlay_format_setter},
     { "focusPeakingColor",  G_TYPE_ENUM,    PARAM_F_NOTIFY, param_offset(config.peak_color),   focus_peak_colors,  cam_focus_peak_color_setter},
     { "focusPeakingLevel",  G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.peak_level),   NULL,               cam_focus_peak_level_setter},
-    { "zebraLevel",         G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.zebra_level),  NULL,               NULL},
+    { "zebraLevel",         G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.zebra_level),  NULL,               cam_zebra_level_setter},
     { "videoZoom",          G_TYPE_DOUBLE,  PARAM_F_NOTIFY, param_offset(config.video_zoom),   NULL,               cam_video_zoom_setter },
     /* Playback position and rate. */
     { "playbackRate",       G_TYPE_LONG,    PARAM_F_NOTIFY, param_offset(playrate),            NULL,               cam_playback_rate_setter},
