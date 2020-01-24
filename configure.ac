@@ -1,4 +1,4 @@
-AC_INIT([chronos-cli], [v0.4.0-alpha])
+AC_INIT([chronos-cli], [v0.4.0-beta])
 AM_INIT_AUTOMAKE([subdir-objects -Wall -Werror foreign])
 AM_SILENT_RULES([yes])
 AM_PROG_AR
