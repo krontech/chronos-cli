@@ -135,6 +135,7 @@ main(int argc, char * const argv[])
     dbus_g_proxy_add_signal(proxy, "segment", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
     dbus_g_proxy_add_signal(proxy, "update", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
     dbus_g_proxy_add_signal(proxy, "notify", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
+    dbus_g_proxy_add_signal(proxy, "complete", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
     
     /* Connect signal handlers. */
     dbus_g_proxy_connect_signal(proxy, "eof", G_CALLBACK(handler), "eof", NULL);
@@ -142,6 +143,7 @@ main(int argc, char * const argv[])
     dbus_g_proxy_connect_signal(proxy, "segment", G_CALLBACK(handler), "segment", NULL);
     dbus_g_proxy_connect_signal(proxy, "update", G_CALLBACK(handler), "update", NULL);
     dbus_g_proxy_connect_signal(proxy, "notify", G_CALLBACK(handler), "notify", NULL);
+    dbus_g_proxy_connect_signal(proxy, "complete", G_CALLBACK(handler), "complete", NULL);
 
     /* Run the loop until we exit. */
     g_main_loop_run(mainloop);
