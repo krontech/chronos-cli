@@ -69,6 +69,9 @@ scgi_process_data(struct scgi_conn *conn)
         /* Continue parsing the request headers */
         conn->rx.offset = (end - conn->rx.buffer) + 1;
         conn->state = SCGI_STATE_REQ_HEADERS;
+        conn->contentlen = 0;
+        conn->method = "";
+        conn->path = "";
     }
 
     if (conn->state == SCGI_STATE_REQ_HEADERS) {
@@ -104,17 +107,29 @@ scgi_process_data(struct scgi_conn *conn)
             else if (strcmp(name, "REQUEST_METHOD") == 0) {
                 conn->method = value;
             }
+            else if (strcmp(name, "PATH_INFO") == 0) {
+                conn->path = value;
+            }
 
             /* Process the next header */
             name = end;
         }
         conn->rx.offset = (netstrend - conn->rx.buffer) + 1;
 
+#ifdef DEBUG
+        for (i = 0; i < conn->numhdr; i++) {
+            fprintf(stderr, "DEBUG: %s=%s\n", conn->hdr[i].name, conn->hdr[i].value);
+        }
+#endif
+
         /* Continue parsing the request body, if present */
         conn->state = SCGI_STATE_REQ_BODY;
     }
 
     if (conn->state == SCGI_STATE_REQ_BODY) {
+        const char *path = conn->path;
+        int i;
+
         /* Do nothing until we receive the body. */
         if (conn->rx.length < (conn->rx.offset + conn->contentlen)) {
             return scgi_want_more(conn);
@@ -122,8 +137,24 @@ scgi_process_data(struct scgi_conn *conn)
 
         /* Handle the SCGI request */
         conn->state = SCGI_STATE_RESPONSE;
+
+        /* Search for registered paths */
+        while (*path == '/') path++;
+        for (i = 0; i < conn->ctx->npaths; i++) {
+            struct scgi_path *p = &conn->ctx->paths[i];
+            if (!p->hook) continue;
+            if (regexec(&p->re, path, 0, NULL, 0) != 0) continue;
+            p->hook(conn, conn->method, p->closure);
+            return 0;
+        }
+
+        /* Handle everything else if a global hook was provided */
         if (conn->ctx->hook) {
-            conn->ctx->hook(conn, conn->ctx->closure);
+            conn->ctx->hook(conn, conn->method, conn->ctx->closure);
+        }
+        /* Otherwise, it's a 404 error. */
+        else {
+            scgi_client_error(conn, 404, "Not Found");
         }
     }
 
@@ -149,7 +180,7 @@ static void
 scgi_write_done(GObject *obj, GAsyncResult *result, gpointer user_data)
 {
     struct scgi_conn *conn = user_data;
-    GError *error;
+    GError *error = NULL;
     int count = g_output_stream_write_finish(G_OUTPUT_STREAM(obj), result, &error);
     
     /* Check for errors */
@@ -349,7 +380,7 @@ scgi_ctx_foreach(struct scgi_ctx *ctx, scgi_request_t hook, void *closure)
 {
     struct scgi_conn *conn;
     for (conn = ctx->head; conn; conn = conn->next) {
-        hook(conn, closure);
+        hook(conn, "", closure);
 
         /* If data is ready to be written, write it */
         if (conn->tx.offset >= conn->tx.length) continue;
@@ -361,4 +392,31 @@ scgi_ctx_foreach(struct scgi_ctx *ctx, scgi_request_t hook, void *closure)
                                     scgi_write_done,
                                     conn);
     }
+}
+
+/* Register a path handler for the SCGI context */
+void
+scgi_ctx_register(struct scgi_ctx *ctx, const char *pattern, scgi_request_t hook, void *closure)
+{
+    struct scgi_path *newmem = g_realloc_n(ctx->paths, sizeof(struct scgi_path), ctx->npaths + 1);
+    if (!newmem) {
+        return;
+    }
+    ctx->paths = newmem;
+    
+    /* Compile the regex match for the path */
+    if (regcomp(&ctx->paths[ctx->npaths].re, pattern, REG_EXTENDED | REG_ICASE | REG_NOSUB) != 0) {
+        /* Regex compilation failed */
+        fprintf(stderr, "Regex compilation failed for pattern: %s\n", pattern);
+        return;
+    }
+#ifdef DEBUG
+    else {
+        fprintf(stderr, "Registered path for pattern: %s\n", pattern);
+    }
+#endif
+
+    ctx->paths[ctx->npaths].hook = hook;
+    ctx->paths[ctx->npaths].closure = closure;
+    ctx->npaths++;
 }

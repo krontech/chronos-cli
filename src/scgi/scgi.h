@@ -17,14 +17,15 @@
 #ifndef __SCGI_H
 #define __SCGI_H
 
+#include <regex.h>
 #include <glib.h>
 #include <gio/gio.h>
 
 #define SCGI_STATE_NEW          0   /* New connection - waiting for netstring length */
 #define SCGI_STATE_REQ_HEADERS  1   /* Receiving the request headers. */
 #define SCGI_STATE_REQ_BODY     2   /* Receiving the request body, if present. */
-#define SCGI_STATE_RESPONSE     3   /* Sending the SCGI response and closing when empty. */
-#define SCGI_STATE_SUBSCRIBE    5   /* Subscribed to the SSE event stream */
+#define SCGI_STATE_RESPONSE     3   /* Sending the inline SCGI response data and closing when empty. */
+#define SCGI_STATE_SUBSCRIBE    4   /* Subscribed an SSE event stream */
 
 struct scgi_header {
     const char *name;
@@ -46,6 +47,7 @@ struct scgi_conn {
     int numhdr;
     struct scgi_header hdr[64];
     const char *method;
+    const char *path;
 
     /* SCGI request contents. */
     struct {
@@ -58,15 +60,26 @@ struct scgi_conn {
     struct {
         int length;
         int offset;
-        char buffer[1024];
+        char buffer[1024];  /* Inline data to be sent directly */
     } tx;
 };
 
-typedef void (*scgi_request_t)(struct scgi_conn *conn, void *closure);
+typedef void (*scgi_request_t)(struct scgi_conn *conn, const char *method, void *closure);
+
+/* TODO: Would this be better as a regex? */
+struct scgi_path {
+    regex_t         re;
+    scgi_request_t  hook;
+    void            *closure;
+};
 
 struct scgi_ctx {
     struct scgi_conn *head;
     struct scgi_conn *tail;
+
+    /* Path handlers */
+    int npaths;
+    struct scgi_path *paths;
 
     scgi_request_t  hook;
     void            *closure;
@@ -74,6 +87,7 @@ struct scgi_ctx {
 };
 
 struct scgi_ctx *scgi_server_ctx(GSocketService *service, scgi_request_t hook, void *closure);
+void scgi_ctx_register(struct scgi_ctx *ctx, const char *regex, scgi_request_t hook, void *closure);
 void scgi_ctx_foreach(struct scgi_ctx *ctx, scgi_request_t hook, void *closure);
 
 void scgi_client_error(struct scgi_conn *conn, int code, const char *message);

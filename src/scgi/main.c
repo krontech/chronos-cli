@@ -31,7 +31,7 @@
 static struct scgi_ctx *ctx = NULL;
 
 static void
-sse_handler(struct scgi_conn *conn, void *closure)
+sse_handler(struct scgi_conn *conn, const char *method, void *closure)
 {
     if (conn->state == SCGI_STATE_SUBSCRIBE) {
         scgi_write_payload(conn, "%s", closure);
@@ -59,36 +59,133 @@ dbus_handler(DBusGProxy* proxy, GHashTable *args, gpointer user_data)
     free(json);
 } /* dbus_handler */
 
-/* This is a bit of a mess - handlers should be registered by path or something */
 static void
-scgi_handler(struct scgi_conn *conn, void *user_data)
+scgi_allow_cors(struct scgi_conn *conn, const char *allowed)
 {
-    const char *path = scgi_header_find(conn, "PATH_INFO");
-    const char *method = scgi_header_find(conn, "REQUEST_METHOD");
+    scgi_start_response(conn, 200, "OK");
+    scgi_write_header(conn, "Access-Control-Allow-Origin: *");
+    scgi_write_header(conn, "Access-Control-Allow-Methods: %s", allowed);
+    scgi_write_header(conn, "Content-Type: application/json");
+    scgi_write_header(conn, "Access-Control-Max-Age: %d", 2520);
+    scgi_write_header(conn, "");
+}
+
+static void
+scgi_subscribe(struct scgi_conn *conn, const char *method, void *user_data)
+{
+    /* Boilerplate to allow cross-origin requests */
+    if (strcmp(method, "OPTIONS") == 0) {
+        scgi_allow_cors(conn, "GET");
+        return;
+    }
+
+    scgi_start_response(conn, 200, "OK");
+    scgi_write_header(conn, "Content-type: text/event-stream");
+    scgi_write_header(conn, "");
+    conn->state = SCGI_STATE_SUBSCRIBE;
+}
+
+static void
+scgi_property(struct scgi_conn *conn, const char *method, void *user_data)
+{
     DBusGProxy* proxy = user_data;
-    GValue *params = NULL;
+    const char *path = scgi_header_find(conn, "PATH_INFO");
+    const char *name;
+    GError *error = NULL;
     GHashTable *h;
     gboolean okay;
-    GError *error;
     FILE *fp;
     char *json;
     size_t jslen;
 
-    if (!path || !method) {
+    /* parse the path info for the property name */
+    while (*path == '/') path++;
+    if ((name = strchr(path, '/')) == NULL) {
+        scgi_client_error(conn, 404, "Not Found");
+        return;
+    }
+    while (*name == '/') name++;
+
+    /* Boilerplate to allow cross-origin requests */
+    if (strcmp(method, "OPTIONS") == 0) {
+        scgi_allow_cors(conn, "GET");
+        return;
+    }
+
+    /* Handle the requests by method. */
+    if (strcmp(method, "GET") == 0) {
+        GPtrArray *array = g_ptr_array_sized_new(1);
+        if (!array) {
+            scgi_client_error(conn, 500, "Internal Server Error");
+            return;
+        }
+        g_ptr_array_add(array, (gpointer)name);
+
+        /* Execute the D-Bus get call. */
+        okay = dbus_g_proxy_call(proxy, "get", &error,
+                dbus_g_type_get_collection("GPtrArray", G_TYPE_STRING), array, G_TYPE_INVALID,
+                CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
+        g_ptr_array_free(array, TRUE);
+        if (!okay) {
+            scgi_client_error(conn, 500, "Internal Server Error");
+            return;
+        }
+    }
+    /* TODO: Other Methods... PUT and POST seem obvious */
+    else {
+        scgi_write_header(conn, "Status: 405 Method Not Allowed");
+        scgi_write_header(conn, "Allow: GET");
+        scgi_write_header(conn, "");
+        return;
+    }
+
+    /* Render the D-Bus reply into JSON */
+    if ((fp = open_memstream(&json, &jslen)) == NULL) {
+        g_hash_table_destroy(h);
+        scgi_client_error(conn, 500, "Internal Server Error");
+        return;
+    }
+    json_newline = "\r\n";
+    json_printf_dict(fp, h, 0);
+    fputs("\r\n", fp);
+    fclose(fp);
+    g_hash_table_destroy(h);
+    
+    /* Otherwise, keep testing... */
+    scgi_start_response(conn, 200, "OK");
+    scgi_write_header(conn, "Content-type: application/json");
+    scgi_write_header(conn, "");
+    scgi_write_payload(conn, "%s\r\n", json);
+    
+    /* Free the output buffer */
+    free(json);
+}
+
+static void
+scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
+{
+    const char *path = scgi_header_find(conn, "PATH_INFO");
+    DBusGProxy* proxy = user_data;
+    GValue *params = NULL;
+    GError *error = NULL;
+    GHashTable *h;
+    gboolean okay;
+    FILE *fp;
+    char *json;
+    size_t jslen;
+
+    if (!path) {
         scgi_client_error(conn, 500, "Internal Server Error");
         return;
     }
 
-    /* Special Case for subscription */
-    if (strcmp(path, "/subscribe") == 0) {
-        scgi_start_response(conn, 200, "OK");
-        scgi_write_header(conn, "Content-type: text/event-stream");
-        scgi_write_header(conn, "");
-        conn->state = SCGI_STATE_SUBSCRIBE;
+    /* Boilerplate to allow cross-origin requests */
+    if (strcmp(method, "OPTIONS") == 0) {
+        scgi_allow_cors(conn, "POST");
         return;
     }
 
-    /* Otherwise, turn POST into API calls. */
+    /* This only makes sense as a POST. */
     if (strcmp(method, "POST") != 0) {
         scgi_client_error(conn, 405, "Method Not Allowed");
         return;
@@ -96,8 +193,6 @@ scgi_handler(struct scgi_conn *conn, void *user_data)
     if (*path == '/') path++;
 
     /* Attempt to parse the method arguments from the POST data. */
-    fprintf(stderr, "DEBUG: Got %d bytes of content\n", conn->contentlen);
-    fwrite(conn->rx.buffer + conn->rx.offset, conn->contentlen, 1, stderr);
     params = json_parse(conn->rx.buffer + conn->rx.offset, conn->contentlen, NULL);
     if (!params) {
         scgi_client_error(conn, 400, "Bad Request");
@@ -230,8 +325,12 @@ main(int argc, char * const argv[])
     }
 
     /* Listen for incomming connections */
-    ctx = scgi_server_ctx(scgi_service, scgi_handler, proxy);
+    ctx = scgi_server_ctx(scgi_service, scgi_make_call, proxy);
     g_socket_service_start(scgi_service);
+
+    /* Register the SCGI path handlers */
+    scgi_ctx_register(ctx, "subscribe", scgi_subscribe, proxy);
+    scgi_ctx_register(ctx, "p/[a-z]*", scgi_property, proxy);
 
     /* Add signal handlers. */
     dbus_g_proxy_add_signal(proxy, "eof", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
