@@ -51,9 +51,11 @@ struct scgi_conn {
 
     /* SCGI request contents. */
     struct {
-        int length;   /* Number of received bytes in the buffer. */
-        int offset;   /* Offset of parsed data. */
+        int length;     /* Number of received bytes in the buffer. */
+        int offset;     /* Offset of parsed data. */
         char buffer[1024];
+        char *body;     /* Memory allocated for the request body. */
+        int bodylen;    /* Length of data received so far in the request body */
     } rx;
 
     /* SCGI reponse data. */

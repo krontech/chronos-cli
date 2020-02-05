@@ -70,6 +70,26 @@ scgi_allow_cors(struct scgi_conn *conn, const char *allowed)
     scgi_write_header(conn, "");
 }
 
+/* Parse the request arguments, accepting one of two formats:
+ *  - application/json as an HTTP PUT or POST body.
+ *  - QUERY_STRING when passed as an HTTP GET.
+ *
+ * Returns a GValue suitable for passing into a D-Bus call, or NULL on error.
+ */
+static GValue *
+scgi_parse_params(struct scgi_conn *conn, const char *method)
+{
+    if ((strcmp(method, "POST") == 0) || (strcmp(method, "PUT") == 0)) {
+        return json_parse(conn->rx.body, conn->contentlen, NULL);
+    }
+    else if (strcmp(method, "GET") == 0) {
+        /* TODO: Implement Me! */
+        return NULL;
+    }
+    /* Some method that we are not expecting... */
+    return NULL;
+}
+
 static void
 scgi_subscribe(struct scgi_conn *conn, const char *method, void *user_data)
 {
@@ -166,8 +186,8 @@ scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
 {
     const char *path = scgi_header_find(conn, "PATH_INFO");
     DBusGProxy* proxy = user_data;
-    GValue *params = NULL;
     GError *error = NULL;
+    GValue *params;
     GHashTable *h;
     gboolean okay;
     FILE *fp;
@@ -193,7 +213,7 @@ scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
     if (*path == '/') path++;
 
     /* Attempt to parse the method arguments from the POST data. */
-    params = json_parse(conn->rx.buffer + conn->rx.offset, conn->contentlen, NULL);
+    params = scgi_parse_params(conn, method);
     if (!params) {
         scgi_client_error(conn, 400, "Bad Request");
         return;
@@ -249,9 +269,10 @@ usage(FILE *fp, int argc, char * const argv[])
     fprintf(fp, "the D-Bus interface.\n\n");
 
     fprintf(fp, "options:\n");
-    fprintf(fp, "\t-n, --control connect to the control DBus interface\n");
-    fprintf(fp, "\t-v, --video   connect to the video DBus interface\n");
-    fprintf(fp, "\t-h, --help    display this help and exit\n");
+    fprintf(fp, "\t-p, --port NUM list on TCP port NUM for SCGI requests\n");
+    fprintf(fp, "\t-n, --control  connect to the control DBus interface\n");
+    fprintf(fp, "\t-v, --video    connect to the video DBus interface\n");
+    fprintf(fp, "\t-h, --help     display this help and exit\n");
 }
 
 int
@@ -263,24 +284,34 @@ main(int argc, char * const argv[])
     GSocketService *scgi_service;
     GError* error = NULL;
     gboolean okay;
-    int scgi_port = 8111;
+    unsigned int scgi_port = 8111;
     const char *service = CAM_DBUS_CONTROL_SERVICE;
     const char *path = CAM_DBUS_CONTROL_PATH;
     const char *iface = CAM_DBUS_CONTROL_INTERFACE;
     const char *method;
     
     /* Option Parsing */
-    const char *short_options = "nvh";
+    const char *short_options = "p:nvh";
     const struct option long_options[] = {
-        {"control", no_argument,    0, 'n'},
-        {"video",   no_argument,    0, 'v'},
-        {"help",    no_argument,    0, 'h'},
+        {"port",    required_argument, 0, 'p'},
+        {"control", no_argument,       0, 'n'},
+        {"video",   no_argument,       0, 'v'},
+        {"help",    no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
     int c;
     optind = 0;
     while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {
+        char *end;
         switch (c) {
+            case 'p':
+                scgi_port = strtoul(optarg, &end, 10);
+                if (!scgi_port || (*end != '\0')) {
+                    fprintf(stderr, "Invalid port number given: %s\n", optarg);
+                    return EXIT_FAILURE;
+                }
+                break;
+
             case 'v':
                 service = CAM_DBUS_VIDEO_SERVICE;
                 path = CAM_DBUS_VIDEO_PATH;

@@ -34,19 +34,25 @@ static void scgi_data_ready(GObject *obj, GAsyncResult *result, gpointer user_da
 static int
 scgi_want_more(struct scgi_conn *conn)
 {
-    /* Request too large */
-    if (conn->rx.length >= sizeof(conn->rx.buffer)) {
-        return -1;
-    }
+    char *buffer;
+    int length;
 
-    /* Start another async read */
-    g_input_stream_read_async(conn->istream, 
-                            conn->rx.buffer, sizeof(conn->rx.buffer) - conn->rx.length,
-                            G_PRIORITY_DEFAULT,
-                            NULL,
-                            scgi_data_ready,
-                            conn);
+    /* Receive data into the inline buffer, or request body */
+    if (conn->state == SCGI_STATE_REQ_BODY) {
+        buffer = conn->rx.body + conn->rx.bodylen;
+        length = conn->contentlen - conn->rx.bodylen;
+    }
+    else {
+        buffer = conn->rx.buffer + conn->rx.length;
+        length = sizeof(conn->rx.buffer) - conn->rx.length;
+    }
+    /* Request too large */
+    if (length <= 0) return -1;
     
+    /* Start another async read */
+    g_input_stream_read_async(conn->istream, buffer, length,
+                            G_PRIORITY_DEFAULT, NULL,
+                            scgi_data_ready, conn);
     return 0;
 }
 
@@ -122,6 +128,22 @@ scgi_process_data(struct scgi_conn *conn)
         }
 #endif
 
+        /* Determine how to handle the request body */
+        if (conn->contentlen < (sizeof(conn->rx.buffer) - conn->rx.offset)) {
+            /* Just use the inline buffer */
+            conn->rx.body = &conn->rx.buffer[conn->rx.offset];
+            conn->rx.bodylen = conn->rx.length - conn->rx.offset;
+        }
+        else {
+            /* Allocation Required. */
+            conn->rx.body = (conn->contentlen < 1024 * 1024) ? g_malloc(conn->contentlen) : NULL;
+            if (!conn->rx.body) {
+                scgi_client_error(conn, 413, "Request Entity Too Large");
+                return 0;
+            }
+            conn->rx.bodylen = conn->rx.length - conn->rx.offset;
+            memcpy(conn->rx.body, &conn->rx.buffer[conn->rx.offset], conn->rx.bodylen);
+        }
         /* Continue parsing the request body, if present */
         conn->state = SCGI_STATE_REQ_BODY;
     }
@@ -170,6 +192,13 @@ scgi_conn_destroy(struct scgi_conn *conn)
     else conn->ctx->tail = conn->prev;
     if (conn->prev) conn->prev->next = conn->next;
     else conn->ctx->head = conn->next;
+
+    /* If the body points outside of the inline buffer, free it. */
+    if (conn->rx.body) {
+        char *bufend = &conn->rx.buffer[sizeof(conn->rx.buffer)];
+        if (conn->rx.body < conn->rx.buffer) g_free(conn->rx.body);
+        else if (conn->rx.body > bufend) g_free(conn->rx.body);
+    }
 
     /* Free the resources */
     g_object_unref(conn->sock);
