@@ -139,6 +139,7 @@ struct pipeline_state {
     struct fpga         *fpga;
     const struct ioport *iops;
     int                 runmode;
+    int                 board_rev;
     int                 pipe_rfd;
     int                 pipe_wfd;
     int                 write_fd;

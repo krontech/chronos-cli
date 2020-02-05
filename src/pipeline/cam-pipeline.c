@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <getopt.h>
 #include <signal.h>
@@ -624,6 +625,30 @@ parse_resolution(const char *resxy, unsigned long *x, unsigned long *y)
     return TRUE;
 }
 
+static int
+parse_board_rev(void)
+{
+    FILE *fp = fopen("/proc/cpuinfo", "r");
+    char line[256];
+    if (!fp) {
+        return 0x0000;
+    }
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        /* Look for a line starting with "Revision" */
+        char revision[] = {'R', 'e', 'v', 'i', 's', 'i', 'o', 'n'};
+        char *p;
+        if (memcmp(line, revision, sizeof(revision)) != 0) continue;
+        /* Skip whitespace and colons. */
+        p = line + sizeof(revision);
+        while (isspace(*p) || (*p == ':')) p++;
+        /* We should be left with the board revision in hexadecimal */
+        fclose(fp);
+        return strtoul(p, NULL, 16);
+    }
+    fclose(fp);
+    return 0x0000;
+}
+
 static void *
 mainloop_thread(void *ctx)
 {
@@ -709,6 +734,7 @@ main(int argc, char * argv[])
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
     state->runmode = PIPELINE_MODE_PAUSE;
+    state->board_rev = parse_board_rev();
     state->write_fd = -1;
     state->control = 0;
     if (!state->fpga) {
