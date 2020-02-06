@@ -25,7 +25,8 @@
 #define SCGI_STATE_REQ_HEADERS  1   /* Receiving the request headers. */
 #define SCGI_STATE_REQ_BODY     2   /* Receiving the request body, if present. */
 #define SCGI_STATE_RESPONSE     3   /* Sending the inline SCGI response data and closing when empty. */
-#define SCGI_STATE_SUBSCRIBE    4   /* Subscribed an SSE event stream */
+#define SCGI_STATE_EXTRA        4   /* Sending extra body data after the inline response data. */
+#define SCGI_STATE_SUBSCRIBE    5   /* Subscribed an SSE event stream */
 
 struct scgi_header {
     const char *name;
@@ -54,7 +55,7 @@ struct scgi_conn {
         int length;     /* Number of received bytes in the buffer. */
         int offset;     /* Offset of parsed data. */
         char buffer[1024];
-        char *body;     /* Memory allocated for the request body. */
+        char *body;     /* Memory for the request body. */
         int bodylen;    /* Length of data received so far in the request body */
     } rx;
 
@@ -63,12 +64,13 @@ struct scgi_conn {
         int length;
         int offset;
         char buffer[1024];  /* Inline data to be sent directly */
+        char *extra;        /* Extra data allocated for the response body */
+        size_t extralen;    /* Length of extra data for the response body */
     } tx;
 };
 
 typedef void (*scgi_request_t)(struct scgi_conn *conn, const char *method, void *closure);
 
-/* TODO: Would this be better as a regex? */
 struct scgi_path {
     regex_t         re;
     scgi_request_t  hook;
@@ -97,6 +99,7 @@ void scgi_start_response(struct scgi_conn *conn, int code, const char *status);
 
 void scgi_write_header(struct scgi_conn *conn, const char *fmt, ...);
 void scgi_write_payload(struct scgi_conn *conn, const char *fmt, ...);
+void scgi_take_payload(struct scgi_conn *conn, void *data, size_t len);
 
 const char *scgi_header_find(struct scgi_conn *conn, const char *name);
 

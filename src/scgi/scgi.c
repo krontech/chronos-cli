@@ -29,6 +29,8 @@
 #include "api/cam-rpc.h"
 
 static void scgi_data_ready(GObject *obj, GAsyncResult *result, gpointer user_data);
+static void scgi_send_done(GObject *obj, GAsyncResult *result, gpointer user_data);
+static void scgi_conn_destroy(struct scgi_conn *conn);
 
 /* Helper to request more data from an SCGI connection before continuing. */
 static int
@@ -47,13 +49,99 @@ scgi_want_more(struct scgi_conn *conn)
         length = sizeof(conn->rx.buffer) - conn->rx.length;
     }
     /* Request too large */
-    if (length <= 0) return -1;
+    if (length <= 0) {
+        scgi_client_error(conn, 413, "Request Entity Too Large");
+        return -1;
+    }
     
     /* Start another async read */
     g_input_stream_read_async(conn->istream, buffer, length,
                             G_PRIORITY_DEFAULT, NULL,
                             scgi_data_ready, conn);
     return 0;
+}
+
+/* Start an async write and return the number of bytes left to send */
+static size_t
+scgi_send_more(struct scgi_conn *conn)
+{
+    char *buffer;
+    int length;
+
+    /* Receive data into the inline buffer, or request body */
+    switch (conn->state) {
+        case SCGI_STATE_RESPONSE:
+            buffer = conn->tx.buffer + conn->tx.offset;
+            length = conn->tx.length - conn->tx.offset;
+            if (length > 0) break;
+            /* Fall-through to the EXTRA state. */
+            conn->state = SCGI_STATE_EXTRA;
+            conn->tx.offset = 0;
+        case SCGI_STATE_EXTRA:
+            buffer = conn->tx.extra + conn->tx.offset;
+            length = conn->tx.extralen - conn->tx.offset;
+            break;
+
+        case SCGI_STATE_SUBSCRIBE:
+            buffer = conn->tx.buffer + conn->tx.offset;
+            length = conn->tx.length - conn->tx.offset;
+            break;
+
+        default:
+            /* don't send anything */
+            return 0;
+    }
+
+    /* Get out now if there is nothing to send */
+    if (length <= 0) {
+        return 0;
+    }
+    if (!g_output_stream_has_pending(conn->ostream)) {
+        /* Start another async write */
+        g_output_stream_write_async(conn->ostream, buffer, length,
+                                G_PRIORITY_DEFAULT, NULL,
+                                scgi_send_done, conn);
+    }
+    return length;
+}
+
+static void
+scgi_send_done(GObject *obj, GAsyncResult *result, gpointer user_data)
+{
+    struct scgi_conn *conn = user_data;
+    GError *error = NULL;
+    int count = g_output_stream_write_finish(G_OUTPUT_STREAM(obj), result, &error);
+    
+    /* Check for errors */
+    if (count < 0) {
+        scgi_conn_destroy(conn);
+        return;
+    }
+
+    conn->tx.offset += count;
+    switch (conn->state) {
+        case SCGI_STATE_RESPONSE:
+        case SCGI_STATE_EXTRA:
+            if (scgi_send_more(conn) == 0) {
+                /* Response has been sent - cleanup */
+                g_io_stream_close(G_IO_STREAM(conn->sock), NULL, &error);
+                scgi_conn_destroy(conn);
+            }
+            break;
+        
+        case SCGI_STATE_SUBSCRIBE:
+            /* Make room for more data */
+            conn->tx.length -= conn->tx.offset;
+            memmove(conn->tx.buffer, conn->tx.buffer + conn->tx.offset, conn->tx.length);
+            conn->tx.offset = 0;
+
+            /* Try to send more data, if any */
+            scgi_send_more(conn);
+            break;
+
+        default:
+            break;
+    }
 }
 
 static int
@@ -66,6 +154,7 @@ scgi_process_data(struct scgi_conn *conn)
         if (!sep) {
             return scgi_want_more(conn);
         }
+        *sep = '\0';
         conn->netstrlen = strtoul(conn->rx.buffer, &end, 10);
         if ((conn->netstrlen == 0) || (end != sep)) {
             /* Not a valid netstring */
@@ -136,7 +225,7 @@ scgi_process_data(struct scgi_conn *conn)
         }
         else {
             /* Allocation Required. */
-            conn->rx.body = (conn->contentlen < 1024 * 1024) ? g_malloc(conn->contentlen) : NULL;
+            conn->rx.body = (conn->contentlen < (1024 * 1024)) ? g_malloc(conn->contentlen) : NULL;
             if (!conn->rx.body) {
                 scgi_client_error(conn, 413, "Request Entity Too Large");
                 return 0;
@@ -153,7 +242,7 @@ scgi_process_data(struct scgi_conn *conn)
         int i;
 
         /* Do nothing until we receive the body. */
-        if (conn->rx.length < (conn->rx.offset + conn->contentlen)) {
+        if (conn->rx.bodylen < conn->contentlen) {
             return scgi_want_more(conn);
         }
 
@@ -199,41 +288,12 @@ scgi_conn_destroy(struct scgi_conn *conn)
         if (conn->rx.body < conn->rx.buffer) g_free(conn->rx.body);
         else if (conn->rx.body > bufend) g_free(conn->rx.body);
     }
+    /* Clear up any extra response body data */
+    if (conn->tx.extra) free(conn->tx.extra);
 
     /* Free the resources */
     g_object_unref(conn->sock);
     g_free(conn);
-}
-
-static void
-scgi_write_done(GObject *obj, GAsyncResult *result, gpointer user_data)
-{
-    struct scgi_conn *conn = user_data;
-    GError *error = NULL;
-    int count = g_output_stream_write_finish(G_OUTPUT_STREAM(obj), result, &error);
-    
-    /* Check for errors */
-    if (count < 0) {
-        scgi_conn_destroy(conn);
-        return;
-    }
-
-    conn->tx.offset += count;
-    if (conn->tx.offset < conn->tx.length) {
-        /* There is more data to be sent */
-        g_output_stream_write_async(G_OUTPUT_STREAM(obj),
-                                    conn->tx.buffer + conn->tx.offset,
-                                    conn->tx.length - conn->tx.offset,
-                                    G_PRIORITY_DEFAULT,
-                                    NULL,
-                                    scgi_write_done,
-                                    user_data);
-    }
-    else if (conn->state == SCGI_STATE_RESPONSE) {
-        /* Response has been sent - clenaup */
-        g_io_stream_close(G_IO_STREAM(conn->sock), NULL, &error);
-        scgi_conn_destroy(conn);
-    }
 }
 
 static void
@@ -250,14 +310,20 @@ scgi_data_ready(GObject *obj, GAsyncResult *result, gpointer user_data)
         return;
     }
 
-    /* Process the request data. */
-    conn->rx.length += count;
-    if (conn->rx.length >= sizeof(conn->rx.buffer)) {
-        /* Request too large */
-        scgi_conn_destroy(conn);
-        return;
+    /* Receive the request body data. */
+    if (conn->state == SCGI_STATE_REQ_BODY) {
+        conn->rx.bodylen += count;
+        if (conn->rx.bodylen > conn->contentlen) {
+            scgi_client_error(conn, 413, "Request Entity Too Large");
+        }
     }
-    conn->rx.buffer[conn->rx.length] = '\0';
+    /* Receive the request header data. */
+    else {
+        conn->rx.length += count;
+        if (conn->rx.length > sizeof(conn->rx.buffer)) {
+            scgi_client_error(conn, 413, "Request Entity Too Large");
+        }
+    }
 
     if (scgi_process_data(conn) < 0) {
         scgi_conn_destroy(conn);
@@ -265,15 +331,7 @@ scgi_data_ready(GObject *obj, GAsyncResult *result, gpointer user_data)
     }
 
     /* If there is data to be sent - send it. */
-    if (conn->tx.offset < conn->tx.length) {
-        g_output_stream_write_async(conn->ostream,
-                                    conn->tx.buffer + conn->tx.offset,
-                                    conn->tx.length - conn->tx.offset,
-                                    G_PRIORITY_DEFAULT,
-                                    NULL,
-                                    scgi_write_done,
-                                    user_data);
-    }
+    scgi_send_more(conn);
 }
 
 static gboolean
@@ -392,6 +450,14 @@ scgi_write_payload(struct scgi_conn *conn, const char *fmt, ...)
     }
 }
 
+void
+scgi_take_payload(struct scgi_conn *conn, void *data, size_t len)
+{
+    if (conn->tx.extra) free(conn->tx.extra);
+    conn->tx.extra = data;
+    conn->tx.extralen = len;
+}
+
 const char *
 scgi_header_find(struct scgi_conn *conn, const char *name)
 {
@@ -412,14 +478,9 @@ scgi_ctx_foreach(struct scgi_ctx *ctx, scgi_request_t hook, void *closure)
         hook(conn, "", closure);
 
         /* If data is ready to be written, write it */
-        if (conn->tx.offset >= conn->tx.length) continue;
-        g_output_stream_write_async(conn->ostream,
-                                    conn->tx.buffer + conn->tx.offset,
-                                    conn->tx.length - conn->tx.offset,
-                                    G_PRIORITY_DEFAULT,
-                                    NULL,
-                                    scgi_write_done,
-                                    conn);
+        if (conn->tx.offset < conn->tx.length) {
+            scgi_send_more(conn);
+        }
     }
 }
 

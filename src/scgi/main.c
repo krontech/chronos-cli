@@ -175,10 +175,7 @@ scgi_property(struct scgi_conn *conn, const char *method, void *user_data)
     scgi_start_response(conn, 200, "OK");
     scgi_write_header(conn, "Content-type: application/json");
     scgi_write_header(conn, "");
-    scgi_write_payload(conn, "%s\r\n", json);
-    
-    /* Free the output buffer */
-    free(json);
+    scgi_take_payload(conn, json, jslen);
 }
 
 static void
@@ -245,10 +242,7 @@ scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
     scgi_start_response(conn, 200, "OK");
     scgi_write_header(conn, "Content-type: application/json");
     scgi_write_header(conn, "");
-    scgi_write_payload(conn, "%s\r\n", json);
-
-    /* Free the output buffer */
-    free(json);
+    scgi_take_payload(conn, json, jslen);
 }
 
 static void
