@@ -510,3 +510,41 @@ scgi_ctx_register(struct scgi_ctx *ctx, const char *pattern, scgi_request_t hook
     ctx->paths[ctx->npaths].closure = closure;
     ctx->npaths++;
 }
+
+/* Perform URL-decoding in-place */
+char *
+scgi_urldecode(char *input)
+{
+    char *start = input;
+    char *output = input;
+    char val;
+
+    do {
+        val = *input++;
+        if (val == '%') {
+            char c;
+            val = 0;
+
+            /* Hex-decode the byte value */
+            c = *input++;
+            if ((c >= '0') && (c <= '9')) val += (c - '0') << 4;
+            else if ((c >= 'A') && (c <= 'F')) val += (c - 'A' + 10) << 4;
+            else if ((c >= 'a') && (c <= 'f')) val += (c - 'a' + 10) << 4;
+            else break; /* Invalid encoding */
+            c = *input++;
+            if ((c >= '0') && (c <= '9')) val += (c - '0') << 0;
+            else if ((c >= 'A') && (c <= 'F')) val += (c - 'A' + 10) << 0;
+            else if ((c >= 'a') && (c <= 'f')) val += (c - 'a' + 10) << 0;
+            else break; /* Invalid encoding */
+
+            *output++ = val;
+        }
+        else {
+            /* Copy the character as-is */
+            *output++ = val;
+        }
+    } while (val != '\0');
+
+    /* Return the length of the decoded string */
+    return start;
+}

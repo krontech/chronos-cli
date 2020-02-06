@@ -83,8 +83,71 @@ scgi_parse_params(struct scgi_conn *conn, const char *method)
         return json_parse(conn->rx.body, conn->contentlen, NULL);
     }
     else if (strcmp(method, "GET") == 0) {
-        /* TODO: Implement Me! */
-        return NULL;
+        GHashTable *h = cam_dbus_dict_new();
+        GValue *gval;
+        char *query = (char *)scgi_header_find(conn, "QUERY_STRING");
+        if (!query) query = "";
+
+        /* Parse the query string into a simple dictionary. */
+        while (*query) {
+            char *name = query;
+            char *sep = strchr(query, '&');
+            char *value;
+            char *end;
+            size_t len;
+
+            /* Parse out the query parameters */
+            if (sep) {
+                *sep++ = '\0';
+                query = sep;
+            }
+            else query = "";
+            scgi_urldecode(name);
+
+            /* Check if the query string also set a value. */
+            value = strchr(name, '=');
+            if (!value) {
+                /* For empty parameters, just set name=true */
+                cam_dbus_dict_add_boolean(h, name, TRUE);
+                continue;
+            }
+            
+            /* Decode the value */
+            *value++ = '\0';
+            scgi_urldecode(value);
+            if (strcmp(value, "true") == 0) {
+                cam_dbus_dict_add_boolean(h, name, TRUE);
+                continue;
+            }
+            else if (strcmp(value, "false") == 0) {
+                cam_dbus_dict_add_boolean(h, name, FALSE);
+                continue;
+            }
+
+            /* Try parsing numeric types */
+            long longval = strtol(value, &end, 10);
+            if (*end == '\0') {
+                cam_dbus_dict_add_int(h, name, longval);
+                continue;
+            }
+            double floatval = strtod(value, &end);
+            if (*end == '\0') {
+                cam_dbus_dict_add_float(h, name, floatval);
+                continue;
+            }
+
+            /* Otherwise, treat it like a string. */
+            cam_dbus_dict_add_printf(h, name, "%s", value);
+        }
+
+        /* Allocate a GValue for the result. */
+        if ((gval = g_new0(GValue, 1)) == NULL) {
+            cam_dbus_dict_free(h);
+            return NULL;
+        }
+        g_value_init(gval, CAM_DBUS_HASH_MAP);
+        g_value_take_boxed(gval, h);
+        return gval;
     }
     /* Some method that we are not expecting... */
     return NULL;
@@ -179,6 +242,50 @@ scgi_property(struct scgi_conn *conn, const char *method, void *user_data)
 }
 
 static void
+scgi_describe(struct scgi_conn *conn, const char *method, void *user_data)
+{
+    DBusGProxy* proxy = user_data;
+    GError *error = NULL;
+    GHashTable *h;
+    gboolean okay;
+    FILE *fp;
+    char *json;
+    size_t jslen;
+
+    /* Boilerplate to allow cross-origin requests */
+    if (strcmp(method, "OPTIONS") == 0) {
+        scgi_allow_cors(conn, "GET");
+        return;
+    }
+
+    /* Request the list of parameters in the API */
+    okay = dbus_g_proxy_call(proxy, "availableKeys", &error, G_TYPE_INVALID,
+            CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
+    if (!okay) {
+        scgi_client_error(conn, 500, "Internal Server Error");
+        return;
+    }
+
+    /* Render the D-Bus reply into JSON */
+    if ((fp = open_memstream(&json, &jslen)) == NULL) {
+        g_hash_table_destroy(h);
+        scgi_client_error(conn, 500, "Internal Server Error");
+        return;
+    }
+    json_newline = "\r\n";
+    json_printf_dict(fp, h, 0);
+    fputs("\r\n", fp);
+    fclose(fp);
+    g_hash_table_destroy(h);
+    
+    /* Otherwise, keep testing... */
+    scgi_start_response(conn, 200, "OK");
+    scgi_write_header(conn, "Content-type: application/json");
+    scgi_write_header(conn, "");
+    scgi_take_payload(conn, json, jslen);
+}
+
+static void
 scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
 {
     const char *path = scgi_header_find(conn, "PATH_INFO");
@@ -195,19 +302,13 @@ scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
         scgi_client_error(conn, 500, "Internal Server Error");
         return;
     }
+    if (*path == '/') path++;
 
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
         scgi_allow_cors(conn, "POST");
         return;
     }
-
-    /* This only makes sense as a POST. */
-    if (strcmp(method, "POST") != 0) {
-        scgi_client_error(conn, 405, "Method Not Allowed");
-        return;
-    }
-    if (*path == '/') path++;
 
     /* Attempt to parse the method arguments from the POST data. */
     params = scgi_parse_params(conn, method);
@@ -355,6 +456,7 @@ main(int argc, char * const argv[])
 
     /* Register the SCGI path handlers */
     scgi_ctx_register(ctx, "subscribe", scgi_subscribe, proxy);
+    scgi_ctx_register(ctx, "describe", scgi_describe, proxy);
     scgi_ctx_register(ctx, "p/[a-z]*", scgi_property, proxy);
 
     /* Add signal handlers. */

@@ -103,4 +103,6 @@ void scgi_take_payload(struct scgi_conn *conn, void *data, size_t len);
 
 const char *scgi_header_find(struct scgi_conn *conn, const char *name);
 
+char *scgi_urldecode(char *input);
+
 #endif /* __SCGI_H */
