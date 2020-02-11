@@ -29,98 +29,101 @@
 #include "api/cam-rpc.h"
 
 /* Parse the request arguments, accepting one of two formats:
- *  - application/json as an HTTP PUT or POST body.
+ *  - application/json (preferrred)
+ *  - application/x-www-form-urlencoded
  *  - QUERY_STRING when passed as an HTTP GET.
  * 
- * TODO: Add support for form-encoded data similar to the QUERY_STRING.
- *
  * Returns a GValue suitable for passing into a D-Bus call, or NULL on error.
  */
+static GValue *
+scgi_parse_form_data(char *form, size_t len)
+{
+    GHashTable *h = cam_dbus_dict_new();
+    GValue *gval;
+    char *formend = form + len;
+
+    /* Parse the query string into a simple dictionary. */
+    while (form < formend) {
+        char *name = form;
+        size_t toklen = strcspn(form, "&");
+        char *value;
+        char *end;
+        size_t len;
+
+        /* Parse out the query parameters */
+        form[toklen] = '\0';
+        form += toklen + 1;
+
+        /* Check if the query string also set a value. */
+        value = strchr(name, '=');
+        if (!value) {
+            /* For empty parameters, just set name=true */
+            cam_dbus_dict_add_boolean(h, scgi_urldecode(name), TRUE);
+            continue;
+        }
+        
+        /* Decode the value */
+        *value++ = '\0';
+        scgi_urldecode(name);
+        scgi_urldecode(value);
+        if (strcmp(value, "true") == 0) {
+            cam_dbus_dict_add_boolean(h, name, TRUE);
+            continue;
+        }
+        else if (strcmp(value, "false") == 0) {
+            cam_dbus_dict_add_boolean(h, name, FALSE);
+            continue;
+        }
+
+        /* Try parsing numeric types */
+        long longval = strtol(value, &end, 10);
+        if (*end == '\0') {
+            cam_dbus_dict_add_int(h, name, longval);
+            continue;
+        }
+        double floatval = strtod(value, &end);
+        if (*end == '\0') {
+            cam_dbus_dict_add_float(h, name, floatval);
+            continue;
+        }
+
+        /* Otherwise, treat it like a string. */
+        cam_dbus_dict_add_printf(h, name, "%s", value);
+    }
+
+    /* Allocate a GValue for the result. */
+    if ((gval = g_new0(GValue, 1)) == NULL) {
+        cam_dbus_dict_free(h);
+        return NULL;
+    }
+    g_value_init(gval, CAM_DBUS_HASH_MAP);
+    g_value_take_boxed(gval, h);
+    return gval;
+}
+
 GValue *
 scgi_parse_params(struct scgi_conn *conn, const char *method)
 {
+    const char *type = scgi_header_find(conn, "CONTENT_TYPE");
+    if (!type) type = "application/json";
+
     /* GET requests can pass arguments via query strings */
     if (strcmp(method, "GET") == 0) {
-        GHashTable *h = cam_dbus_dict_new();
-        GValue *gval;
         char *query = (char *)scgi_header_find(conn, "QUERY_STRING");
         if (!query) query = "";
-
-        /* Parse the query string into a simple dictionary. */
-        while (*query) {
-            char *name = query;
-            char *sep = strchr(query, '&');
-            char *value;
-            char *end;
-            size_t len;
-
-            /* Parse out the query parameters */
-            if (sep) {
-                *sep++ = '\0';
-                query = sep;
-            }
-            else query = "";
-            scgi_urldecode(name);
-
-            /* Check if the query string also set a value. */
-            value = strchr(name, '=');
-            if (!value) {
-                /* For empty parameters, just set name=true */
-                cam_dbus_dict_add_boolean(h, name, TRUE);
-                continue;
-            }
-            
-            /* Decode the value */
-            *value++ = '\0';
-            scgi_urldecode(value);
-            if (strcmp(value, "true") == 0) {
-                cam_dbus_dict_add_boolean(h, name, TRUE);
-                continue;
-            }
-            else if (strcmp(value, "false") == 0) {
-                cam_dbus_dict_add_boolean(h, name, FALSE);
-                continue;
-            }
-
-            /* Try parsing numeric types */
-            long longval = strtol(value, &end, 10);
-            if (*end == '\0') {
-                cam_dbus_dict_add_int(h, name, longval);
-                continue;
-            }
-            double floatval = strtod(value, &end);
-            if (*end == '\0') {
-                cam_dbus_dict_add_float(h, name, floatval);
-                continue;
-            }
-
-            /* Otherwise, treat it like a string. */
-            cam_dbus_dict_add_printf(h, name, "%s", value);
-        }
-
-        /* Allocate a GValue for the result. */
-        if ((gval = g_new0(GValue, 1)) == NULL) {
-            cam_dbus_dict_free(h);
-            return NULL;
-        }
-        g_value_init(gval, CAM_DBUS_HASH_MAP);
-        g_value_take_boxed(gval, h);
-        return gval;
+        return scgi_parse_form_data(query, strlen(query));
     }
-    else if ((strcmp(method, "POST") != 0) && (strcmp(method, "PUT") != 0)) {
-        /* Method is not allowed. */
-        return NULL;
-    }
-    else if (conn->contentlen == 0) {
-        /* If there was no request body, then this would be a void call. */
-        GValue *gval = g_new0(GValue, 1);
-        if (gval) g_value_init(gval, G_TYPE_NONE);
-        return gval;
-    }
-    else {
-        /* Otherwise, we expect a JSON request */
+
+    /* Otherwise, attempt to parse the arguments by their content type. */
+    if (strcmp(type, "application/json") == 0) {
         return json_parse(conn->rx.body, conn->contentlen, NULL);
     }
+    if (strcmp(type, "application/x-www-form-urlencoded") == 0) {
+        return scgi_parse_form_data(conn->rx.body, conn->contentlen);
+    }
+    
+    /* This is not any content that we could make sense of. */
+    return NULL;
 }
 
 void
