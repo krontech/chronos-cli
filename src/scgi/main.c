@@ -161,6 +161,101 @@ scgi_property(struct scgi_conn *conn, const char *method, void *user_data)
 }
 
 static void
+scgi_property_group(struct scgi_conn *conn, const char *method, void *user_data)
+{
+    DBusGProxy* proxy = user_data;
+    GError *error = NULL;
+    GHashTable *result;
+    gboolean okay;
+    FILE *fp;
+    char *json;
+    size_t jslen;
+
+    /* Boilerplate to allow cross-origin requests */
+    if (strcmp(method, "OPTIONS") == 0) {
+        scgi_allow_cors(conn, "GET");
+        return;
+    }
+
+    /* When processing a GET - generate the entire parameter set */
+    if (strcmp(method, "GET") == 0) {
+        GPtrArray *array;
+        GHashTable *available;
+        GHashTableIter iter;
+        gpointer key, value;
+
+        /* Request the list of parameters in the API */
+        okay = dbus_g_proxy_call(proxy, "availableKeys", &error, G_TYPE_INVALID,
+                CAM_DBUS_HASH_MAP, &available, G_TYPE_INVALID);
+        if (!okay) {
+            scgi_error_handler(conn, error);
+            g_error_free(error);
+            return;
+        }
+
+        /* Build a string array of all the keys */
+        array = g_ptr_array_sized_new(g_hash_table_size(available));
+        g_hash_table_iter_init(&iter, available);
+        while (array && g_hash_table_iter_next(&iter, &key, &value)) {
+            g_ptr_array_add(array, key);
+        }
+
+        /* Request the parameters from the API. */
+        okay = dbus_g_proxy_call(proxy, "get", &error,
+                dbus_g_type_get_collection("GPtrArray", G_TYPE_STRING), array, G_TYPE_INVALID,
+                CAM_DBUS_HASH_MAP, &result, G_TYPE_INVALID);
+        cam_dbus_dict_free(available);
+        g_ptr_array_free(array, TRUE);
+    }
+    /* When processing a POST - take a dictionary of parameters and their new values */
+    else if (strcmp(method, "POST") == 0) {
+        GValue *params = scgi_parse_params(conn, method);
+        if (!params) {
+            scgi_client_error(conn, 400, "Bad Request");
+            return;
+        }
+
+        /* PATH_INFO should be the D-Bus method name */
+        okay = dbus_g_proxy_call(proxy, "set", &error,
+                G_VALUE_TYPE(params), g_value_peek_pointer(params), G_TYPE_INVALID,
+                CAM_DBUS_HASH_MAP, &result, G_TYPE_INVALID);
+        g_free(params);
+    }
+    /* Otherwise, this method is not allowed. */
+    else {
+        scgi_start_response(conn, 405, "Method Not Allowed");
+        scgi_write_header(conn, "Allowed: GET, OPTION");
+        scgi_write_header(conn, "");
+        return;
+    }
+
+    /* Check if the call succeeded */
+    if (!okay) {
+        scgi_error_handler(conn, error);
+        g_error_free(error);
+        return;
+    }
+
+    /* Render the D-Bus reply into JSON */
+    if ((fp = open_memstream(&json, &jslen)) == NULL) {
+        g_hash_table_destroy(result);
+        scgi_client_error(conn, 500, "Internal Server Error");
+        return;
+    }
+    json_newline = "\r\n";
+    json_printf_dict(fp, result, 0);
+    fputs("\r\n", fp);
+    fclose(fp);
+    g_hash_table_destroy(result);
+    
+    /* Otherwise, keep testing... */
+    scgi_start_response(conn, 200, "OK");
+    scgi_write_header(conn, "Content-type: application/json");
+    scgi_write_header(conn, "");
+    scgi_take_payload(conn, json, jslen);
+}
+
+static void
 scgi_describe(struct scgi_conn *conn, const char *method, void *user_data)
 {
     DBusGProxy* proxy = user_data;
@@ -314,10 +409,11 @@ main(int argc, char * const argv[])
     ctx = scgi_server_ctx(scgi_service, NULL, NULL);
     g_socket_service_start(scgi_service);
 
-    /* Register the SCGI path handlers */
+    /* Register the special SCGI path handlers */
     scgi_ctx_register(ctx, "subscribe", scgi_subscribe, proxy);
     scgi_ctx_register(ctx, "describe", scgi_describe, proxy);
     scgi_ctx_register(ctx, "p/[a-z]*", scgi_property, proxy);
+    scgi_ctx_register(ctx, "p$", scgi_property_group, proxy);
 
     /* Add signal and call handlers by introspecting */
     scgi_introspect(ctx, bus, proxy);

@@ -36,7 +36,7 @@
  *
  * Returns a GValue suitable for passing into a D-Bus call, or NULL on error.
  */
-static GValue *
+GValue *
 scgi_parse_params(struct scgi_conn *conn, const char *method)
 {
     /* GET requests can pass arguments via query strings */
@@ -123,7 +123,7 @@ scgi_parse_params(struct scgi_conn *conn, const char *method)
     }
 }
 
-static void
+void
 scgi_error_handler(struct scgi_conn *conn, GError *err)
 {
     const char *name;
