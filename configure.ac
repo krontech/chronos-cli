@@ -22,6 +22,7 @@ GST_REQUIRED=0.10.32
 
 PKG_CHECK_MODULES(GLIB, [glib-2.0 gio-2.0])
 PKG_CHECK_MODULES(DBUS, [dbus-glib-1])
+PKG_CHECK_MODULES(XML, [libxml-2.0])
 PKG_CHECK_MODULES(GST, [
   gstreamer-0.10 >= $GST_REQUIRED
   gstreamer-base-0.10 >= $GST_REQUIRED

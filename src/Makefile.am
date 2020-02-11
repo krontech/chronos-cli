@@ -80,11 +80,13 @@ cam_listener_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
 cam_listener_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_listener_LDFLAGS = ${AM_LDFLAGS}
 cam_listener_SOURCES = client/cam-listener.c
-cam_scgi_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
-cam_scgi_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
+cam_scgi_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} ${XML_LIBS} libcamera.a
+cam_scgi_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${XML_CFLAGS}
 cam_scgi_LDFLAGS = ${AM_LDFLAGS}
 cam_scgi_SOURCES = scgi/main.c
 cam_scgi_SOURCES += scgi/scgi.c
+cam_scgi_SOURCES += scgi/introspect.c
+cam_scgi_SOURCES += scgi/methods.c
 
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.

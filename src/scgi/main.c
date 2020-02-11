@@ -22,6 +22,8 @@
 #include <glib.h>
 #include <gio/gio.h>
 #include <dbus/dbus-glib.h>
+#include <libxml/parser.h>
+#include <libxml/tree.h>
 
 #include "jsmn.h"
 #include "scgi.h"
@@ -39,10 +41,9 @@ sse_handler(struct scgi_conn *conn, const char *method, void *closure)
 }
 
 /* D-Bus event handler */
-static void
-dbus_handler(DBusGProxy* proxy, GHashTable *args, gpointer user_data)
+void
+scgi_signal_handler(DBusGProxy* proxy, GHashTable *args, const char *name)
 {
-    const char *name = user_data;
     char *json;
     size_t jslen;
     FILE *fp = open_memstream(&json, &jslen);
@@ -59,7 +60,7 @@ dbus_handler(DBusGProxy* proxy, GHashTable *args, gpointer user_data)
     free(json);
 } /* dbus_handler */
 
-static void
+void
 scgi_allow_cors(struct scgi_conn *conn, const char *allowed)
 {
     scgi_start_response(conn, 200, "OK");
@@ -68,89 +69,6 @@ scgi_allow_cors(struct scgi_conn *conn, const char *allowed)
     scgi_write_header(conn, "Content-Type: application/json");
     scgi_write_header(conn, "Access-Control-Max-Age: %d", 2520);
     scgi_write_header(conn, "");
-}
-
-/* Parse the request arguments, accepting one of two formats:
- *  - application/json as an HTTP PUT or POST body.
- *  - QUERY_STRING when passed as an HTTP GET.
- *
- * Returns a GValue suitable for passing into a D-Bus call, or NULL on error.
- */
-static GValue *
-scgi_parse_params(struct scgi_conn *conn, const char *method)
-{
-    if ((strcmp(method, "POST") == 0) || (strcmp(method, "PUT") == 0)) {
-        return json_parse(conn->rx.body, conn->contentlen, NULL);
-    }
-    else if (strcmp(method, "GET") == 0) {
-        GHashTable *h = cam_dbus_dict_new();
-        GValue *gval;
-        char *query = (char *)scgi_header_find(conn, "QUERY_STRING");
-        if (!query) query = "";
-
-        /* Parse the query string into a simple dictionary. */
-        while (*query) {
-            char *name = query;
-            char *sep = strchr(query, '&');
-            char *value;
-            char *end;
-            size_t len;
-
-            /* Parse out the query parameters */
-            if (sep) {
-                *sep++ = '\0';
-                query = sep;
-            }
-            else query = "";
-            scgi_urldecode(name);
-
-            /* Check if the query string also set a value. */
-            value = strchr(name, '=');
-            if (!value) {
-                /* For empty parameters, just set name=true */
-                cam_dbus_dict_add_boolean(h, name, TRUE);
-                continue;
-            }
-            
-            /* Decode the value */
-            *value++ = '\0';
-            scgi_urldecode(value);
-            if (strcmp(value, "true") == 0) {
-                cam_dbus_dict_add_boolean(h, name, TRUE);
-                continue;
-            }
-            else if (strcmp(value, "false") == 0) {
-                cam_dbus_dict_add_boolean(h, name, FALSE);
-                continue;
-            }
-
-            /* Try parsing numeric types */
-            long longval = strtol(value, &end, 10);
-            if (*end == '\0') {
-                cam_dbus_dict_add_int(h, name, longval);
-                continue;
-            }
-            double floatval = strtod(value, &end);
-            if (*end == '\0') {
-                cam_dbus_dict_add_float(h, name, floatval);
-                continue;
-            }
-
-            /* Otherwise, treat it like a string. */
-            cam_dbus_dict_add_printf(h, name, "%s", value);
-        }
-
-        /* Allocate a GValue for the result. */
-        if ((gval = g_new0(GValue, 1)) == NULL) {
-            cam_dbus_dict_free(h);
-            return NULL;
-        }
-        g_value_init(gval, CAM_DBUS_HASH_MAP);
-        g_value_take_boxed(gval, h);
-        return gval;
-    }
-    /* Some method that we are not expecting... */
-    return NULL;
 }
 
 static void
@@ -164,6 +82,7 @@ scgi_subscribe(struct scgi_conn *conn, const char *method, void *user_data)
 
     scgi_start_response(conn, 200, "OK");
     scgi_write_header(conn, "Content-type: text/event-stream");
+    scgi_write_header(conn, "Cache-Control: no-cache");
     scgi_write_header(conn, "");
     conn->state = SCGI_STATE_SUBSCRIBE;
 }
@@ -266,66 +185,7 @@ scgi_describe(struct scgi_conn *conn, const char *method, void *user_data)
         return;
     }
 
-    /* Render the D-Bus reply into JSON */
-    if ((fp = open_memstream(&json, &jslen)) == NULL) {
-        g_hash_table_destroy(h);
-        scgi_client_error(conn, 500, "Internal Server Error");
-        return;
-    }
-    json_newline = "\r\n";
-    json_printf_dict(fp, h, 0);
-    fputs("\r\n", fp);
-    fclose(fp);
-    g_hash_table_destroy(h);
-    
-    /* Otherwise, keep testing... */
-    scgi_start_response(conn, 200, "OK");
-    scgi_write_header(conn, "Content-type: application/json");
-    scgi_write_header(conn, "");
-    scgi_take_payload(conn, json, jslen);
-}
-
-static void
-scgi_make_call(struct scgi_conn *conn, const char *method, void *user_data)
-{
-    const char *path = scgi_header_find(conn, "PATH_INFO");
-    DBusGProxy* proxy = user_data;
-    GError *error = NULL;
-    GValue *params;
-    GHashTable *h;
-    gboolean okay;
-    FILE *fp;
-    char *json;
-    size_t jslen;
-
-    if (!path) {
-        scgi_client_error(conn, 500, "Internal Server Error");
-        return;
-    }
-    if (*path == '/') path++;
-
-    /* Boilerplate to allow cross-origin requests */
-    if (strcmp(method, "OPTIONS") == 0) {
-        scgi_allow_cors(conn, "POST");
-        return;
-    }
-
-    /* Attempt to parse the method arguments from the POST data. */
-    params = scgi_parse_params(conn, method);
-    if (!params) {
-        scgi_client_error(conn, 400, "Bad Request");
-        return;
-    }
-
-    /* PATH_INFO should be the D-Bus method name */
-    okay = dbus_g_proxy_call(proxy, path, &error,
-            G_VALUE_TYPE(params), g_value_peek_pointer(params), G_TYPE_INVALID,
-            CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
-    g_free(params);
-    if (!okay) {
-        scgi_client_error(conn, 500, "Internal Server Error");
-        return;
-    }
+    /* TODO: Use D-Bus introspection on the API to get the list of calls */
 
     /* Render the D-Bus reply into JSON */
     if ((fp = open_memstream(&json, &jslen)) == NULL) {
@@ -451,7 +311,7 @@ main(int argc, char * const argv[])
     }
 
     /* Listen for incomming connections */
-    ctx = scgi_server_ctx(scgi_service, scgi_make_call, proxy);
+    ctx = scgi_server_ctx(scgi_service, NULL, NULL);
     g_socket_service_start(scgi_service);
 
     /* Register the SCGI path handlers */
@@ -459,21 +319,8 @@ main(int argc, char * const argv[])
     scgi_ctx_register(ctx, "describe", scgi_describe, proxy);
     scgi_ctx_register(ctx, "p/[a-z]*", scgi_property, proxy);
 
-    /* Add signal handlers. */
-    dbus_g_proxy_add_signal(proxy, "eof", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
-    dbus_g_proxy_add_signal(proxy, "sof", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
-    dbus_g_proxy_add_signal(proxy, "segment", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
-    dbus_g_proxy_add_signal(proxy, "update", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
-    dbus_g_proxy_add_signal(proxy, "notify", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
-    dbus_g_proxy_add_signal(proxy, "complete", CAM_DBUS_HASH_MAP, G_TYPE_INVALID);
-    
-    /* Connect signal handlers. */
-    dbus_g_proxy_connect_signal(proxy, "eof", G_CALLBACK(dbus_handler), "eof", NULL);
-    dbus_g_proxy_connect_signal(proxy, "sof", G_CALLBACK(dbus_handler), "sof", NULL);
-    dbus_g_proxy_connect_signal(proxy, "segment", G_CALLBACK(dbus_handler), "segment", NULL);
-    dbus_g_proxy_connect_signal(proxy, "update", G_CALLBACK(dbus_handler), "update", NULL);
-    dbus_g_proxy_connect_signal(proxy, "notify", G_CALLBACK(dbus_handler), "notify", NULL);
-    dbus_g_proxy_connect_signal(proxy, "complete", G_CALLBACK(dbus_handler), "complete", NULL);
+    /* Add signal and call handlers by introspecting */
+    scgi_introspect(ctx, bus, proxy);
 
     /* Run the loop until we exit. */
     g_main_loop_run(mainloop);

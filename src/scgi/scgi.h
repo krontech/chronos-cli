@@ -105,4 +105,11 @@ const char *scgi_header_find(struct scgi_conn *conn, const char *name);
 
 char *scgi_urldecode(char *input);
 
+/* D-Bus Methods and Signal Handlers */
+void scgi_introspect(struct scgi_ctx *ctx, DBusGConnection* bus, DBusGProxy *proxy);
+void scgi_signal_handler(DBusGProxy* proxy, GHashTable *args, const char *name);
+void scgi_call_void(struct scgi_conn *conn, const char *method, void *user_data);
+void scgi_call_args(struct scgi_conn *conn, const char *method, void *user_data);
+void scgi_allow_cors(struct scgi_conn *conn, const char *allowed);
+
 #endif /* __SCGI_H */
