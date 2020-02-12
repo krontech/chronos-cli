@@ -28,13 +28,6 @@
 #include "dbus-json.h"
 #include "api/cam-rpc.h"
 
-/* Parse the request arguments, accepting one of two formats:
- *  - application/json (preferrred)
- *  - application/x-www-form-urlencoded
- *  - QUERY_STRING when passed as an HTTP GET.
- * 
- * Returns a GValue suitable for passing into a D-Bus call, or NULL on error.
- */
 static GValue *
 scgi_parse_form_data(char *form, size_t len)
 {
@@ -45,28 +38,28 @@ scgi_parse_form_data(char *form, size_t len)
     /* Parse the query string into a simple dictionary. */
     while (form < formend) {
         char *name = form;
-        size_t toklen = strcspn(form, "&");
         char *value;
         char *end;
-        size_t len;
 
-        /* Parse out the query parameters */
-        form[toklen] = '\0';
-        form += toklen + 1;
+        /* Find the end of the parameter. */
+        form += strcspn(form, "&");
+        *form++ '\0';
 
         /* Check if the query string also set a value. */
         value = strchr(name, '=');
+        if (value) {
+            *value = '\0';
+            value = scgi_urldecode(value+1);
+        }
+        name = scgi_urldecode(name);
+        if (!strlen(name)) break; 
+
         if (!value) {
             /* For empty parameters, just set name=true */
-            cam_dbus_dict_add_boolean(h, scgi_urldecode(name), TRUE);
+            cam_dbus_dict_add_boolean(h, name, TRUE);
             continue;
         }
-        
-        /* Decode the value */
-        *value++ = '\0';
-        scgi_urldecode(name);
-        scgi_urldecode(value);
-        if (strcmp(value, "true") == 0) {
+        else if (strcmp(value, "true") == 0) {
             cam_dbus_dict_add_boolean(h, name, TRUE);
             continue;
         }
@@ -101,6 +94,13 @@ scgi_parse_form_data(char *form, size_t len)
     return gval;
 }
 
+/* Parse the request arguments, accepting one of these formats:
+ *  - application/json (preferrred)
+ *  - application/x-www-form-urlencoded
+ *  - QUERY_STRING when passed as an HTTP GET.
+ * 
+ * Returns a GValue suitable for passing into a D-Bus call, or NULL on error.
+ */
 GValue *
 scgi_parse_params(struct scgi_conn *conn, const char *method)
 {
