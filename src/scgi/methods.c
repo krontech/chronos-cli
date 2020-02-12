@@ -43,7 +43,7 @@ scgi_parse_form_data(char *form, size_t len)
 
         /* Find the end of the parameter. */
         form += strcspn(form, "&");
-        *form++ '\0';
+        *form++ = '\0';
 
         /* Check if the query string also set a value. */
         value = strchr(name, '=');
