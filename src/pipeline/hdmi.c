@@ -170,7 +170,7 @@ cam_hdmi_sink(struct pipeline_state *state)
     }
     /* Fall-back to 1080p if all else fails. */
     if (pref >= EDID_MAX_TIMINGS) {
-        fprintf(stderr, "HDMI: No supported timgings, falling back to 1080p @60Hz\n");
+        fprintf(stderr, "HDMI: No supported timings, falling back to 1080p @60Hz\n");
         panel_hres = 1920;
         panel_vres = 1080;
         panel_refresh = 60;

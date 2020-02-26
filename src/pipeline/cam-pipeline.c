@@ -154,7 +154,7 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     }
 
     /* Attempt to create the h.264 livestream sink */
-    sinkpad = cam_h264_live_sink(state);
+    sinkpad = cam_h264_live_sink(state, args);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
@@ -529,6 +529,11 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
             if (debug) {
                 fprintf(stderr, "GST debug info: %s\n", debug);
                 g_free(debug);
+            }
+            /* Gracefully handle errors with live recording mode */
+            if(!strcmp(GST_OBJECT_NAME(msg->src), "liverec-file-sink")){
+                state->args.liverecord = FALSE;
+                state->playstate = PLAYBACK_STATE_LIVE;
             }
             strncpy(state->error, error->message, sizeof(state->error));
             state->error[sizeof(state->error)-1] = '\0';
@@ -925,6 +930,11 @@ main(int argc, char * argv[])
             close(state->write_fd);
             state->write_fd = -1;
         }
+        if (state->liverec_fd >= 0) {
+            close(state->liverec_fd);
+            state->liverec_fd = -1;
+        }
+
 
         /* Signal end of video after teardown and syncing output files. */
         dbus_signal_eof(state->video, state->error);
@@ -934,6 +944,7 @@ main(int argc, char * argv[])
     } while(catch_sigint == 0);
     
     fprintf(stderr, "Exiting the pipeline...\n");
+    state->args.liverecord = FALSE;
     playback_cleanup(state);
     rtsp_server_cleanup(state->rtsp);
     dbus_service_cleanup(state->video);

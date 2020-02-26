@@ -25,6 +25,7 @@
 #include <pthread.h>
 #include <dbus/dbus-glib.h>
 #include <dbus/dbus-glib-lowlevel.h>
+#include <sys/statvfs.h>
 
 #include "pipeline.h"
 #include "api/cam-rpc.h"
@@ -38,6 +39,7 @@ cam_dbus_video_status(struct pipeline_state *state)
     cam_dbus_dict_add_string(dict, "apiVersion", "1.0");
     cam_dbus_dict_add_boolean(dict, "playback", (state->runmode == PIPELINE_MODE_PLAY));
     cam_dbus_dict_add_boolean(dict, "filesave", PIPELINE_IS_SAVING(state->runmode));
+    cam_dbus_dict_add_boolean(dict, "liverecord", state->args.liverecord);
     cam_dbus_dict_add_uint(dict, "totalFrames", state->seglist.totalframes);
     cam_dbus_dict_add_uint(dict, "totalSegments", state->seglist.totalsegs);
     cam_dbus_dict_add_int(dict, "position", state->position);
@@ -48,6 +50,9 @@ cam_dbus_video_status(struct pipeline_state *state)
         cam_dbus_dict_add_string(dict, "filename", state->args.filename);
     } else {
         cam_dbus_dict_add_float(dict, "framerate", (double)state->playrate);
+    }
+    if (state->args.liverecord) {
+        cam_dbus_dict_add_string(dict, "liverecordFilename", state->liverec_filename);
     }
     return dict;
 }
@@ -419,6 +424,102 @@ cam_video_recordfile(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
 }
 
 static gboolean
+cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError **error)
+{
+    struct pipeline_state *state = vobj->state;
+    GHashTable *dict;
+    state->args.liverecord = cam_dbus_dict_get_boolean(args, "liverecord", FALSE);
+    const char *filename = cam_dbus_dict_get_string(args, "liverec_filename", NULL);
+    state->args.multifile = cam_dbus_dict_get_boolean(args, "multifile", TRUE);
+    unsigned int framerate = cam_dbus_dict_get_uint(args, "framerate", 60);
+    unsigned long bitrate = cam_dbus_dict_get_uint(args, "bitrate", 6000000);
+    unsigned int duration = cam_dbus_dict_get_uint(args, "duration", 0);
+    double maxFilesize = cam_dbus_dict_get_uint(args, "maxFilesize", LIVEREC_MAX_FILESIZE);
+    struct statvfs fsInfoBuf;
+    char folderPath[PATH_MAX] = {'\0'};
+    const char *lastDelim;
+
+    if(state->args.liverecord){
+        /* Filename is mandatory if liverecord is enabled. */
+        if(!filename) {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Missing filename.");
+            return 0;
+        }
+
+        /* Sanity check the file name. */
+        if(filename[0] != '/') {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid filename or save path.");
+            return 0;
+        }
+        if (strlen(filename) >= sizeof(state->args.filename)) {
+            *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "File name too long.");
+            return 0;
+        }
+        strcpy(state->args.live_filename, filename);
+    }
+
+    /* Framerate is optional, but must be in an acceptable range if specified. */
+    if(framerate > LIVE_MAX_FRAMERATE) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid framerate for live recording.");
+        return 0;
+    }
+    state->args.framerate = framerate;
+
+    /* Bitrate is optional, but must be in an acceptable range if specified. */
+    if(bitrate > LIVEREC_MAX_BITRATE) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid bitrate for live recording.");
+        return 0;
+    }
+    state->args.bitrate = bitrate;
+
+    /* If the duration parameter is set, it will override the maximum filesize value. */
+    if(duration > 0){
+        maxFilesize = (double)duration * (double)bitrate/8;
+    }
+
+    /* Maximum filesize for each .mp4 is optional, but must be in an acceptable range if specified. */
+    if(maxFilesize > LIVEREC_MAX_FILESIZE) {
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Invalid max file size for live recording.");
+        return 0;
+    }
+
+    /* Get parent folder path from filepath */
+    lastDelim = strrchr(filename, '/');
+
+    if(lastDelim != NULL)
+        strncpy(folderPath, filename, lastDelim-filename+1);
+
+    /* Check if storage device exists */ 
+    if(statvfs(folderPath, &fsInfoBuf) == -1){
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "No storage device found.");
+        perror("statvfs() error");
+        return 0;
+    }
+
+    /* Check if save path is mounted as read only */
+    if(fsInfoBuf.f_flag & ST_RDONLY){
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Storage device is not writeable.");
+        perror("statvfs() error");
+        return 0;
+    }
+
+    /* Check if there's enough space to save the live recording on the storage device*/
+    if (maxFilesize > (double)fsInfoBuf.f_bavail * fsInfoBuf.f_frsize){
+        *error = g_error_new(CAM_ERROR_PARAMETERS, 0, "Not enough free space on the storage device.");
+        return 0;     
+    }
+    state->args.maxFilesize = maxFilesize;
+
+    /* Restart the pipeline in live display mode */
+    state->args.mode = PIPELINE_MODE_LIVE;
+    cam_pipeline_restart(state);
+
+    *data = cam_dbus_video_status(state);
+    return (data != NULL);
+
+}
+
+static gboolean
 cam_video_pause(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
@@ -432,6 +533,7 @@ static gboolean
 cam_video_stop(CamVideo *vobj, GHashTable **data, GError **error)
 {
     struct pipeline_state *state = vobj->state;
+    state->args.liverecord = FALSE;
     cam_pipeline_restart(state);
     *data = cam_dbus_video_status(state);
     return (data != NULL);
