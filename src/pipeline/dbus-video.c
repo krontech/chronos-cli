@@ -486,8 +486,9 @@ cam_video_liverecord(CamVideo *vobj, GHashTable *args, GHashTable **data, GError
     /* Get parent folder path from filepath */
     lastDelim = strrchr(filename, '/');
 
-    if(lastDelim != NULL)
+    if(lastDelim != NULL) {
         strncpy(folderPath, filename, lastDelim-filename+1);
+    }
 
     /* Check if storage device exists */ 
     if(statvfs(folderPath, &fsInfoBuf) == -1){

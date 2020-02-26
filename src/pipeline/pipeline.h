@@ -190,7 +190,7 @@ struct pipeline_state {
     /* Live Recording Mode */
     int             liverec_fd;
     char            liverec_filename[PATH_MAX];
-    pthread_t       liverec_sizemon;
+    guint           liverec_bufprobe;
 
     /* Pipeline config */
     struct pipeline_args args;

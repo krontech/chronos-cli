@@ -186,13 +186,80 @@ cam_rtsp_sink(struct pipeline_state *state)
 }
 #endif /* ENABLE_RTSP_SERVER */
 
+static void
+cam_liverec_add_audio(struct pipeline_state *state, GstElement *sink)
+{
+    GstElement *source, *prequeue, *queue, *encoder, *parser, *rate;
+    GstCaps *caps;
+
+    /* Allocate the audio pipeline */
+    source =    gst_element_factory_make("alsasrc",       "liverec-alsasrc");
+    prequeue =  gst_element_factory_make("queue",         "liverec-soundprequeue");
+    encoder =   gst_element_factory_make("omx_aacenc",    "liverec-soundencoder");
+    queue =     gst_element_factory_make("queue",         "liverec-soundqueue");
+    parser =    gst_element_factory_make("aacparse",      "liverec-soundparser");
+    if (!source || !prequeue || !encoder || !queue || !parser){
+        return;
+    }
+    gst_bin_add_many(GST_BIN(state->pipeline), source, prequeue, encoder, queue, parser, NULL);
+
+    /* Configure the ALSA sound source */
+    g_object_set(G_OBJECT(source), "buffer-time", (gint64)800000, NULL);
+    g_object_set(G_OBJECT(source), "latency-time", (gint64)20000, NULL);
+    g_object_set(G_OBJECT(source), "provide-clock", (gboolean)FALSE, NULL);
+    g_object_set(G_OBJECT(source), "slave-method", (guint)0, NULL);
+    g_object_set(G_OBJECT(source), "do-timestamp", (gboolean)TRUE, NULL);
+
+    /* Configure sound prequeue */
+    g_object_set(G_OBJECT(prequeue), "max-size-bytes",     (guint)4294967294, NULL);
+    g_object_set(G_OBJECT(prequeue), "max-size-time",      (guint64)1844674407370955161, NULL);
+    g_object_set(G_OBJECT(prequeue), "max-size-buffers",   (guint)4294967294, NULL);
+
+    /* Configure the omx aac encoder */
+    g_object_set(G_OBJECT(encoder), "output-format", (gint)4, NULL);
+
+    /* Configure the audio format for the ALSA source. */
+    caps = gst_caps_new_simple( "audio/x-raw-int",
+                                "channels", G_TYPE_INT, 2,
+                                "width",    G_TYPE_INT, 16,
+                                "depth",    G_TYPE_INT, 16,
+                                "rate",     G_TYPE_INT, 48000,
+                                "signed",   G_TYPE_BOOLEAN, TRUE,
+                                NULL);
+
+    /* Link audio elements to mp4mux */
+    gst_element_link_filtered(source, prequeue, caps);
+    gst_element_link_many(prequeue, encoder, queue, parser, sink, NULL);
+    gst_caps_unref(caps);
+}
+
+/*
+ * Buffer probe called at every time an element of data is written to the
+ * output file. We use it to check the file size and terminate it before
+ * we run out of space.
+ */
+static gboolean
+liverec_check_filesize(GstPad *pad, GstBuffer *buffer, gpointer cbdata)
+{
+    struct pipeline_state *state = cbdata;
+    if (state->liverec_fd >= 0) {
+        off_t filesize = lseek(state->liverec_fd, 0, SEEK_CUR);
+        if (filesize > state->args.maxFilesize) {
+            /* File has gotten too big, we need terminate it by restarting. */
+            gst_pad_remove_buffer_probe(pad, state->liverec_bufprobe);
+            cam_pipeline_restart(state);
+            return TRUE;
+        }
+    }
+    /* Return true to let the buffer pass. */
+    return TRUE;
+} /* liverec_check_filesize */
+
 static GstPad *
 cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
-    GstElement *mux, *sink;      /* MPEG-4 pipeline segment */
-    GstElement *queue, *parser; /* H.264 pipeline segment. */
-    GstElement *soundsource, *soundcapsfilt, *soundprequeue, *soundqueue, *soundencoder, *soundparser, *soundrate;
-    GstCaps *caps;
+    GstElement *queue, *parser, *mux, *sink;
+    GstPad *pad;
 
     char timestampStr[32];
     char scratchStr[PATH_MAX] = {'\0'};
@@ -245,95 +312,23 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     /* Configure the MPEG-4 Multiplexer */
     g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
 
-    /* Link video elements to mp4mux */
-    gst_element_link_many(queue, parser, mux, NULL);
-
-    /* Allocate the audio pipeline */
-    soundsource =    gst_element_factory_make("alsasrc",       "liverec-alsasrc");
-    soundcapsfilt =  gst_element_factory_make("capsfilter",    "liverec-capsfilter");
-    soundprequeue =  gst_element_factory_make("queue",         "liverec-soundprequeue");
-    soundencoder =   gst_element_factory_make("omx_aacenc",    "liverec-soundencoder");
-    soundqueue =     gst_element_factory_make("queue",         "liverec-soundqueue");
-    soundparser =    gst_element_factory_make("aacparse",      "liverec-soundparser");
-    if (!soundsource || !soundcapsfilt || !soundprequeue || !soundqueue || !soundencoder || !soundparser){
-        close(state->liverec_fd);
-        return NULL;
-    }
-    gst_bin_add_many(GST_BIN(state->pipeline), soundsource, soundcapsfilt, soundprequeue, soundqueue, soundencoder, soundparser, NULL);
-
-    /* Configure the ALSA sound source */
-    g_object_set(G_OBJECT(soundsource), "buffer-time", (gint64)800000, NULL);
-    g_object_set(G_OBJECT(soundsource), "latency-time", (gint64)20000, NULL);
-    g_object_set(G_OBJECT(soundsource), "provide-clock", (gboolean)FALSE, NULL);
-    g_object_set(G_OBJECT(soundsource), "slave-method", (guint)0, NULL);
-    g_object_set(G_OBJECT(soundsource), "do-timestamp", (gboolean)TRUE, NULL);
-
-    /* Configure sound prequeue */
-    g_object_set(G_OBJECT(soundprequeue), "max-size-bytes",     (guint)4294967294, NULL);
-    g_object_set(G_OBJECT(soundprequeue), "max-size-time",      (guint64)1844674407370955161, NULL);
-    g_object_set(G_OBJECT(soundprequeue), "max-size-buffers",   (guint)4294967294, NULL);
-
-    /* Configure the omx aac encoder */
-    g_object_set(G_OBJECT(soundencoder), "output-format", (gint)4, NULL);
-
-    /* Configure the audio format for the ALSA source. */
-    caps = gst_caps_new_simple( "audio/x-raw-int",
-                                "channels", G_TYPE_INT, 2,
-                                "width",    G_TYPE_INT, 16,
-                                "depth",    G_TYPE_INT, 16,
-                                "rate",     G_TYPE_INT, 48000,
-                                "signed",   G_TYPE_BOOLEAN, TRUE,
-                                NULL);
-
-    /* Link audio elements to mp4mux */
-    gst_element_link_filtered(soundsource, soundprequeue, caps);
-    gst_element_link_many(soundprequeue, soundencoder, soundqueue, soundparser, mux, NULL);
-    gst_caps_unref(caps);
-
-    /* Link and configure the mp4mux to its file sink */
+    /* Configure the file sink */
     g_object_set(G_OBJECT(sink), "fd", (gint)state->liverec_fd, NULL);
     g_object_set(G_OBJECT(sink), "sync", FALSE, NULL);
-    gst_element_link_many(mux, sink, NULL);
 
-    /* Create a thread to monitor the file size. */
-    pthread_create(&state->liverec_sizemon, NULL, liverec_size_monitor, state);
+    /* Link video elements to mp4mux */
+    gst_element_link_many(queue, parser, mux, sink, NULL);
+
+    /* TODO: Link audo elements to mp4mux */
+    /* This breaks for now - probably missing the alsa daemon or something. */
+    //cam_liverec_add_audio(state, mux);
+
+    /* Monitor the file size after each frame */
+    pad = gst_element_get_static_pad(sink, "sink");
+    state->liverec_bufprobe = gst_pad_add_buffer_probe(pad, G_CALLBACK(liverec_check_filesize), state);
+    gst_object_unref(pad);
 
     return gst_element_get_static_pad(queue, "sink");
-}
-
-/* Monitor filesize of a live recording on a seperate thread. */
-static void *
-liverec_size_monitor(void *data)
-{
-
-    struct pipeline_state *state = data;
-    struct stat *buf;
-    double currentFileSize = 0;
-
-    buf = malloc(sizeof(struct stat));    
-
-    while(state->args.liverecord){
-        stat(state->liverec_filename, buf);
-        currentFileSize = buf->st_size;
-
-        if(currentFileSize >= state->args.maxFilesize){
-            fprintf(stderr,"liverec_size_monitor: max filesize reached\n");
-
-            /* Gracefully stop and restart the liverec element */
-            if (state->playstate != PLAYBACK_STATE_FILESAVE) {
-                currentFileSize = 0;
-                cam_pipeline_restart(state);
-                break;
-            }
-
-        }
-        
-        sleep(1);
-    
-    }
-    
-    free(buf);
-    pthread_exit(NULL);
 }
 
 GstPad *
