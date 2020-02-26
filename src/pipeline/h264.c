@@ -139,8 +139,14 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     return gst_element_get_static_pad(encoder, "sink");
 }
 
-#if ENABLE_RTSP_SERVER
+static GstPad *
+cam_liverec_sink(struct pipeline_state *state)
+{
+    return NULL;
+}
 
+
+#if ENABLE_RTSP_SERVER
 static void
 cam_network_sink_add_host(const struct rtsp_session *sess, void *closure)
 {
@@ -162,24 +168,47 @@ cam_network_sink_update(const struct rtsp_session *sess, void *closure)
     }
 }
 
-GstPad *
-cam_network_sink(struct pipeline_state *state)
+static GstPad *
+cam_rtsp_sink(struct pipeline_state *state)
 {
-    GstElement *encoder, *queue, *parser, *neon, *payload, *sink;
+    GstElement *queue, *parser, *payload, *sink;
     struct in_addr addr;
 
     /* Allocate our segment of the video pipeline. */
     queue =   gst_element_factory_make("queue",       "net-queue");
-    encoder = gst_element_factory_make("omx_h264enc", "net-encoder");
-    neon =    gst_element_factory_make("neon",        "net-neon");
     parser =  gst_element_factory_make("h264parse",   "net-parse");
     payload = gst_element_factory_make("rtph264pay",  "net-payload");
     sink =    gst_element_factory_make("multiudpsink", "net-sink");
-    if (!queue || !encoder || !neon || !parser || !payload || !sink) {
+    if (!queue || !parser || !payload || !sink) {
         return NULL;
     }
 
-    /* Configure the H264 encoder for low-latency low-birate operation. */
+    /* Register RTSP clients. */
+    rtsp_session_foreach(state->rtsp, cam_network_sink_add_host, sink);
+    rtsp_server_set_hook(state->rtsp, cam_network_sink_update, sink);
+
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, parser, payload, sink, NULL);
+    gst_element_link_many(queue, parser, payload, sink, NULL);
+    return gst_element_get_static_pad(queue, "sink");
+}
+#endif /* ENABLE_RTSP_SERVER */
+
+GstPad *
+cam_h264_live_sink(struct pipeline_state *state)
+{
+    GstElement *queue, *encoder, *neon, *tee;
+    GstPad *sinkpad;
+
+    /* Allocate our segment of the video pipeline. */
+    queue =   gst_element_factory_make("queue",       "h264-queue");
+    encoder = gst_element_factory_make("omx_h264enc", "h264-encoder");
+    neon =    gst_element_factory_make("neon",        "h264-neon");
+    tee =     gst_element_factory_make("tee",         "h264-tee");
+    if (!queue || !encoder || !neon || !tee) {
+        return NULL;
+    }
+
+    /* Configure the H264 encoder for low-latency medium-birate operation. */
     g_object_set(G_OBJECT(encoder), "force-idr-period", (guint)90, NULL);
     g_object_set(G_OBJECT(encoder), "i-period", (guint)90, NULL);
     g_object_set(G_OBJECT(encoder), "bitrate", (guint)5000000, NULL);
@@ -189,18 +218,26 @@ cam_network_sink(struct pipeline_state *state)
     g_object_set(G_OBJECT(encoder), "rateControlPreset", (guint)OMX_H264ENC_RATE_LOW_DELAY, NULL);
     g_object_set(G_OBJECT(encoder), "framerate", (guint)LIVE_MAX_FRAMERATE, NULL);
 
-    /* Register RTSP clients. */
-    rtsp_session_foreach(state->rtsp, cam_network_sink_add_host, sink);
-    rtsp_server_set_hook(state->rtsp, cam_network_sink_update, sink);
+    gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, tee, NULL);
+    gst_element_link_many(queue, encoder, neon, tee, NULL);
 
-    gst_bin_add_many(GST_BIN(state->pipeline), queue, encoder, neon, parser, payload, sink, NULL);
-    gst_element_link_many(queue, encoder, neon, parser, payload, sink, NULL);
+    /* Add sinks to consume the live h.264 stream. */
+#if ENABLE_RTSP_SERVER
+    sinkpad = cam_rtsp_sink(state);
+    if (sinkpad) {
+        GstPad *teepad = gst_element_get_request_pad(tee, "src%d");
+        gst_pad_link(teepad, sinkpad);
+        gst_object_unref(sinkpad);
+    }
+#endif
+
+    sinkpad = cam_liverec_sink(state);
+    if (sinkpad) {
+        GstPad *teepad = gst_element_get_request_pad(tee, "src%d");
+        gst_pad_link(teepad, sinkpad);
+        gst_object_unref(sinkpad);
+    }
+
     return gst_element_get_static_pad(queue, "sink");
 }
-#else /* ENABLE_RTSP_SERVER */
-GstPad *
-cam_network_sink(struct pipeline_state *state)
-{
-    return NULL;
-}
-#endif
+

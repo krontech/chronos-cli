@@ -153,8 +153,8 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
-    /* Attempt to create the TCP sink */
-    sinkpad = cam_network_sink(state);
+    /* Attempt to create the h.264 livestream sink */
+    sinkpad = cam_h264_live_sink(state);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
