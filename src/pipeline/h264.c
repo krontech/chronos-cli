@@ -129,6 +129,11 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 
     /* Configure the MPEG-4 Multiplexer */
     g_object_set(G_OBJECT(mux), "dts-method", (guint)0, NULL);
+    if (lseek(state->write_fd, 0, SEEK_CUR) == (off_t)-1) {
+        /* Some kind of streaming thing...  pipes or sockets. */
+        g_object_set(G_OBJECT(mux), "fragment-duration", (guint)5000, NULL);
+        g_object_set(G_OBJECT(mux), "streamable", (gboolean)TRUE, NULL);
+    }
 
     /* Configure the file sink */
     g_object_set(G_OBJECT(sink), "fd", (gint)state->write_fd, NULL);
@@ -319,7 +324,7 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     /* Link video elements to mp4mux */
     gst_element_link_many(queue, parser, mux, sink, NULL);
 
-    /* TODO: Link audo elements to mp4mux */
+    /* Link audo elements to mp4mux */
     cam_liverec_add_audio(state, mux);
 
     /* Monitor the file size after each frame */
