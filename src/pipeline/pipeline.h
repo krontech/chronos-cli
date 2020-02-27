@@ -173,6 +173,7 @@ struct pipeline_state {
     unsigned long   playlength;     /* Length of video to play from when in playback mode. */
     unsigned int    playloop;       /* Loop playback or return to live display. */
     pthread_t       playthread;     /* Thread handle for the playback frame manager. */
+    pthread_t       audiothread;    /* Thread handle for the ALSA line mux manager. */
 
     /* Recording Mode */
     unsigned int    phantom;        /* OMX buffering workaround */
@@ -245,6 +246,10 @@ void playback_play_once(struct pipeline_state *state, unsigned long start, int f
 void playback_loop(struct pipeline_state *state, unsigned long start, int framerate, unsigned long count);
 void playback_flush(struct pipeline_state *state);
 void playback_cleanup(struct pipeline_state *state);
+
+/* ALSA line mux control. */
+void audiomux_init(struct pipeline_state *state);
+void audiomux_cleanup(struct pipeline_state *state);
 
 /* Video overlay control. */
 void overlay_clear(struct pipeline_state *state);

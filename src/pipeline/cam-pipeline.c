@@ -553,6 +553,13 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
     return TRUE;
 } /* cam_bus_watch */
 
+static void cam_foreach_eos(gpointer element, gpointer user_data)
+{
+    GstEvent *event = user_data;
+    gst_event_ref(event);
+    gst_element_send_event(GST_ELEMENT(element), event);
+}
+
 /*===============================================
  * Signal Handlers
  *===============================================
@@ -812,6 +819,7 @@ main(int argc, char * argv[])
     state->rtsp = rtsp_server_launch(state);
     hdmi_hotplug_launch(state);
     playback_init(state);
+    audiomux_init(state);
 
     /* Load JSON configuration, if present. */
     dbus_init_params(state, FALSE);
@@ -891,8 +899,11 @@ main(int argc, char * argv[])
                 }
                 /* Stop the pipeline when instructed. */
                 if ((signo == SIGHUP) || (signo == SIGINT) || (signo == SIGTERM)) {
+                    GstIterator *iter = gst_bin_iterate_sources(GST_BIN(state->pipeline));
                     event = gst_event_new_eos();
-                    gst_element_send_event(state->vidsrc, event);
+                    gst_iterator_foreach(iter, cam_foreach_eos, event);
+                    gst_iterator_free(iter);
+                    gst_event_unref(event);
                 }
                 /* Signal 0 is used to indicate the end of this loop */
             } while (signo != 0);
@@ -935,7 +946,6 @@ main(int argc, char * argv[])
             state->liverec_fd = -1;
         }
 
-
         /* Signal end of video after teardown and syncing output files. */
         dbus_signal_eof(state->video, state->error);
 
@@ -945,6 +955,7 @@ main(int argc, char * argv[])
     
     fprintf(stderr, "Exiting the pipeline...\n");
     state->args.liverecord = FALSE;
+    audiomux_cleanup(state);
     playback_cleanup(state);
     rtsp_server_cleanup(state->rtsp);
     dbus_service_cleanup(state->video);

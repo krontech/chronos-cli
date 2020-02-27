@@ -320,8 +320,7 @@ cam_liverec_sink(struct pipeline_state *state, struct pipeline_args *args)
     gst_element_link_many(queue, parser, mux, sink, NULL);
 
     /* TODO: Link audo elements to mp4mux */
-    /* This breaks for now - probably missing the alsa daemon or something. */
-    //cam_liverec_add_audio(state, mux);
+    cam_liverec_add_audio(state, mux);
 
     /* Monitor the file size after each frame */
     pad = gst_element_get_static_pad(sink, "sink");
