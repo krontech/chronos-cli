@@ -1,1 +1,3 @@
 /usr/bin/cam-pcUtil
+src/pcUtil/*.hex lib/firmware
+scripts/chronos-pmic-loader.sh lib/firmware/scripts
