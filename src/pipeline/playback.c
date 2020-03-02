@@ -760,7 +760,7 @@ playback_thread(void *arg)
 }
 
 /*===============================================
- * Playback Module Setuo
+ * Playback Module Setup
  *===============================================
  */
 void

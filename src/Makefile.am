@@ -102,6 +102,7 @@ cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
 cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -pthread
 cam_pipeline_LDADD += -ljpeg -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
+cam_pipeline_SOURCES += pipeline/audiomux.c
 cam_pipeline_SOURCES += pipeline/dbus-params.c
 cam_pipeline_SOURCES += pipeline/dbus-video.c
 cam_pipeline_SOURCES += pipeline/dng.c
