@@ -195,8 +195,6 @@ cam_dbus_dict_get_string(GHashTable *h, const char *name, const char *defval)
     return (x && G_VALUE_HOLDS_STRING(x)) ? g_value_get_string(x) : defval;
 }
 
-void cam_dbus_dict_to_json(GHashTable *h, FILE *fp);
-
 /*-------------------------------------
  * Camera Client API
  *-------------------------------------
