@@ -845,21 +845,28 @@ main(int argc, char * argv[])
         /* Pause playback while we get setup. */
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
-        state->runmode = args.mode;
         playback_pause(state);
 
         /* File saving modes should fail gracefully back to playback. */
-        if (PIPELINE_IS_SAVING(state->runmode)) {
-            /* Return to playback mode after saving. */
-            state->args.mode = PIPELINE_MODE_PLAY;
+        if (PIPELINE_IS_SAVING(args.mode)) {
+            if (!PIPELINE_IS_SAVING(state->runmode)) {
+                /* Return to the previous mode at the end of the filesave. */
+                state->args.mode = state->runmode;
+            }
+            else {
+                /* Unless it would cause a loop, then go back to PLAY instead. */
+                state->args.mode = PIPELINE_MODE_PLAY;
+            }
+
+            state->runmode = args.mode;
             if (!cam_filesave(state, &args)) {
-                /* Throw an EOF and revert to playback. */
                 dbus_signal_eof(state->video, state->error);
                 continue;
             }
         }
         /* Launch the video pipeline in live and playback modes. */
-        else if (state->runmode != PIPELINE_MODE_PAUSE) {
+        else if (args.mode != PIPELINE_MODE_PAUSE) {
+            state->runmode = args.mode;
             if (!cam_pipeline(state, &args)) {
                 /* Throw an EOF and revert to paused. */
                 state->args.mode = PIPELINE_MODE_PAUSE;
@@ -870,6 +877,7 @@ main(int argc, char * argv[])
         }
         /* Otherwise, there is nothing to play, generate a test pattern. */
         else {
+            state->runmode = PIPELINE_MODE_PAUSE;
             if (!cam_videotest(state)) {
                 dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");

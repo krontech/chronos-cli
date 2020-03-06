@@ -219,6 +219,7 @@ cam_video_playback(CamVideo *vobj, GHashTable *args, GHashTable **data, GError *
         } else {
             playback_play(state, position, framerate);
         }
+        state->runmode = PIPELINE_MODE_PLAY;
     }
     /* Otherwise, unless we're saving, give the video system a reboot. */
     else if (!PIPELINE_IS_SAVING(state->runmode)) {
@@ -319,13 +320,14 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     state->source.starty = starty;
 
     /* If we're in playback or live, send a seek command. */
-    state->args.mode = PLAYBACK_STATE_LIVE;
+    state->args.mode = PIPELINE_MODE_LIVE;
     if ((state->playstate == PLAYBACK_STATE_LIVE) || (state->playstate == PLAYBACK_STATE_PLAY)) {
         if (diff) {
             /* A change of video geometry will require a restart. */
             cam_pipeline_restart(state);
         } else {
             /* Otherwise, seek directly to live. */
+            state->runmode = PIPELINE_MODE_LIVE;
             playback_live(state);
         }
     }
