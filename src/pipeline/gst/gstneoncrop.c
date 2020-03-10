@@ -69,7 +69,7 @@ GST_BOILERPLATE_FULL (GstNeonCrop, gst_neon_crop, GstBaseTransform,
     GST_TYPE_BASE_TRANSFORM, DEBUG_INIT);
 
 /* Caps negotiation */
-//static gboolean gst_neon_crop_recalc_transform(GstNeonCrop *crop);
+static void gst_neon_crop_recalc_transform(GstNeonCrop *crop);
 static GstCaps *gst_neon_crop_transform_caps(GstBaseTransform *base, GstPadDirection direction, GstCaps *from);
 static gboolean gst_neon_crop_set_caps(GstBaseTransform *base, GstCaps *in, GstCaps *out);
 static gboolean gst_neon_crop_get_unit_size(GstBaseTransform *base, GstCaps *caps, guint *size);
@@ -106,7 +106,7 @@ gst_neon_crop_class_init(GstNeonCropClass *klass)
 
   g_object_class_install_property (gobject_class, PROP_FLIP,
       g_param_spec_boolean ("flip", "Flip", "Flip image 180 degrees during crop.",
-          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_CONTROLLABLE));
+          FALSE, G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_CONTROLLABLE | GST_PARAM_MUTABLE_PLAYING));
   g_object_class_install_property (gobject_class, PROP_TOP,
       g_param_spec_int ("top", "Top", "Pixels to crop from the top (<0 to add border)",
           G_MININT, G_MAXINT, 0,
@@ -118,6 +118,7 @@ gst_neon_crop_class_init(GstNeonCropClass *klass)
 
   GST_BASE_TRANSFORM_CLASS (klass)->transform = GST_DEBUG_FUNCPTR(gst_neon_crop_transform);
   GST_BASE_TRANSFORM_CLASS (klass)->transform_caps = GST_DEBUG_FUNCPTR(gst_neon_crop_transform_caps);
+  GST_BASE_TRANSFORM_CLASS (klass)->set_caps = GST_DEBUG_FUNCPTR(gst_neon_crop_set_caps);
   GST_BASE_TRANSFORM_CLASS (klass)->get_unit_size = GST_DEBUG_FUNCPTR(gst_neon_crop_get_unit_size);
 }
 
@@ -142,17 +143,16 @@ gst_neon_crop_set_property(GObject *object, guint prop_id, const GValue *value, 
       filter->flip = g_value_get_boolean(value);
       break;
     case PROP_TOP:
-      GST_WARNING_OBJECT(filter, "setting top=%d", g_value_get_int(value));
       filter->top = g_value_get_int(value);
       break;
     case PROP_BOTTOM:
-      GST_WARNING_OBJECT(filter, "setting bottom=%d", g_value_get_int(value));
       filter->bottom = g_value_get_int(value);
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, prop_id, pspec);
       break;
   }
+  gst_neon_crop_recalc_transform(filter);
 }
 
 static void
@@ -248,7 +248,7 @@ gst_neon_crop_transform_caps(GstBaseTransform *base, GstPadDirection direction, 
   ret = gst_caps_intersect(to, templ);
   gst_caps_unref(to);
 
-  GST_WARNING_OBJECT (crop, "direction %d, transformed %" GST_PTR_FORMAT
+  GST_DEBUG_OBJECT (crop, "direction %d, transformed %" GST_PTR_FORMAT
       " to %" GST_PTR_FORMAT, direction, from, ret);
 
   return ret;
@@ -263,9 +263,26 @@ gst_neon_crop_get_unit_size(GstBaseTransform *base, GstCaps *caps, guint *size)
 
   g_assert (size);
   *size = (xres * yres * 12) / 8; /* NV12 is 12-bits per pixel */
-  GST_WARNING_OBJECT(base, "Returning from _unit_size %d", *size);
 
   return TRUE;
+}
+
+static void
+gst_neon_crop_recalc_transform(GstNeonCrop *crop)
+{
+  if ((crop->top == 0) && (crop->bottom == 0)) {
+    GST_INFO_OBJECT(crop, "Using Passthrough Mode");
+    gst_base_transform_set_passthrough(GST_BASE_TRANSFORM_CAST(crop), TRUE);
+  } else {
+    GST_INFO_OBJECT(crop, "Using Non-Passthrough Mode");
+    gst_base_transform_set_passthrough(GST_BASE_TRANSFORM_CAST(crop), FALSE);
+  }
+}
+
+static gboolean
+gst_neon_crop_set_caps(GstBaseTransform *base, GstCaps *in, GstCaps *out)
+{
+  gst_neon_crop_recalc_transform(GST_NEON_CROP(base));
 }
 
 static void *fill_luma(void *dst, uint8_t val, unsigned long size)
@@ -285,24 +302,54 @@ static void *fill_luma(void *dst, uint8_t val, unsigned long size)
 
 static void copy_data(void *dst, const void *src, unsigned long size)
 {
-  /* Fill 64-byte chunks using NEON. */
-  if (size >= 64) {
-    asm volatile (
-        "   subs %[count],%[count], #64 \n"
-        "neon_crop_memcpy:              \n"
-        "   pld [%[s], #0xc0]           \n"
-        "   vldm %[s]!,{d0-d7}          \n"
-        "   vstm %[d]!,{d0-d7}          \n"
-        "   subs %[count],%[count], #64 \n"
-        "   bge neon_crop_memcpy        \n"
-        "   add %[count],%[count], #64  \n"
-        : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(size)
-        :: "cc", "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7" );
-  }
-  /* Handle leftovers */
-  if (size) {
-    memcpy(dst, src, size);
-  }
+  /* Truncate the size to a multiple of the NEON word width */
+  size &= ~0x7UL;
+  asm volatile (
+      /* First loop copies as wide of a burst as we can fit */
+      "   subs %[count],%[count], #64 \n"
+      "neon_crop_memcpy_large:        \n"
+      "   pld [%[s], #0xc0]           \n"
+      "   vldm %[s]!,{d0-d7}          \n"
+      "   vstm %[d]!,{d0-d7}          \n"
+      "   subs %[count],%[count], #64 \n"
+      "   bge neon_crop_memcpy_large  \n"
+      "   add %[count],%[count], #64  \n"
+      /* Second loop copies as narrow of a burst as we can */
+      "neon_crop_memcpy_small:        \n"
+      "   vldm %[s]!,{d0}             \n"
+      "   vstm %[d]!,{d0}             \n"
+      "   subs %[count],%[count], #8  \n"
+      "   bge neon_crop_memcpy_small  \n"
+      : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(size)
+      :: "cc", "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7" );
+}
+
+static void brev_data(void *dst, const void *src, unsigned long size)
+{
+  const uint8_t *end = src + size;
+  asm volatile (
+ 	"neon_crop_brev:                  \n"
+    "   vldmdb %[end]!, {d0-d1}     \n"
+    "   vrev64.8 d3, d0             \n"
+    "   vrev64.8 d2, d1             \n"
+    "   vstmia %[dst]!, {d2-d3}     \n"
+    "   cmp %[end], %[start]        \n"
+    "   bgt neon_crop_brev          \n"
+    : [dst]"+r"(dst), [end]"+r"(end) : [start]"r"(src) : "cc" );
+}
+
+static void brev_chroma(void *dst, const void *src, unsigned long size)
+{
+  const uint8_t *end = src + size;
+  asm volatile (
+    "neon_crop_brev_chroma:         \n"
+    "   vldmdb %[end]!, {d0-d1}     \n"
+    "   vrev64.16 d3, d0            \n"
+    "   vrev64.16 d2, d1            \n"
+    "   vstmia %[dst]!, {d2-d3}     \n"
+    "   cmp %[end], %[start]        \n"
+    "   bgt neon_crop_brev_chroma   \n"
+    : [dst]"+r"(dst), [end]"+r"(end) : [start]"r"(src) : "cc" );
 }
 
 static GstFlowReturn
@@ -338,11 +385,19 @@ gst_neon_crop_transform(GstBaseTransform *base, GstBuffer *src, GstBuffer *dst)
   }
 
   /* Copy the luma plane */
-  copy_data(dstluma, srcluma, xres * yres);
+  if (crop->flip) {
+    brev_data(dstluma, srcluma, xres * yres);
+  } else {
+    copy_data(dstluma, srcluma, xres * yres);
+  }
   dstluma += xres * yres;
 
   /* Copy the chroma plane */
-  copy_data(dstchroma, srcchroma, xres * yres / 2);
+  if (crop->flip) {
+    brev_chroma(dstchroma, srcchroma, xres * yres / 2);
+  } else {
+    copy_data(dstchroma, srcchroma, xres * yres / 2);
+  }
   dstchroma += xres * yres / 2;
 
   /* Apply bottom padding. */
