@@ -51,6 +51,10 @@
 
 G_BEGIN_DECLS
 
+/*=========================================================
+ * NEON Accelerated Buffer Deepcopy Element
+ *=========================================================
+ */
 #define GST_TYPE_NEON         (gst_neon_get_type())
 #define GST_NEON(obj)         (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_NEON,GstNeon))
 #define GST_NEON_CLASS(klass) (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_NEON,GstNeonClass))
@@ -72,6 +76,10 @@ struct _GstNeonClass {
 
 GType gst_neon_get_type (void);
 
+/*=========================================================
+ * NEON Accelerated Video Flip Element
+ *=========================================================
+ */
 typedef enum {
   GST_NEON_FLIP_METHOD_IDENTITY,
   GST_NEON_FLIP_METHOD_HORIZ,
@@ -104,6 +112,38 @@ struct _GstNeonFlipClass {
 };
 
 GType gst_neon_flip_get_type (void);
+
+/*=========================================================
+ * NEON Accelerated Video Crop/Pad Element
+ *=========================================================
+ */
+#define GST_TYPE_NEON_CROP \
+  (gst_neon_crop_get_type())
+#define GST_NEON_CROP(obj) \
+  (G_TYPE_CHECK_INSTANCE_CAST((obj),GST_TYPE_NEON_CROP,GstNeonCrop))
+#define GST_NEON_CROP_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_CAST((klass),GST_TYPE_NEON_CROP,GstNeonCropClass))
+#define GST_IS_NEON_CROP(obj) \
+  (G_TYPE_CHECK_INSTANCE_TYPE((obj),GST_TYPE_NEON_CROP))
+#define GST_IS_NEON_CROP_CLASS(klass) \
+  (G_TYPE_CHECK_CLASS_TYPE((klass),GST_TYPE_NEON_CROP))
+
+typedef struct _GstNeonCrop      GstNeonCrop;
+typedef struct _GstNeonCropClass GstNeonCropClass;
+
+struct _GstNeonCrop {
+  GstBaseTransform element;
+
+  gboolean flip;
+  gint top;
+  gint bottom;
+};
+
+struct _GstNeonCropClass {
+  GstBaseTransformClass parent_class;
+};
+
+GType gst_neon_crop_get_type (void);
 
 G_END_DECLS
 

@@ -2,7 +2,7 @@
 noinst_LIBRARIES = libcamera.a
 bin_PROGRAMS = cam-pipeline cam-pcUtil
 bin_PROGRAMS += cam-loader cam-regdump cam-recover
-bin_PROGRAMS += cam-json cam-listener
+bin_PROGRAMS += cam-json cam-listener cam-scgi
 bin_PROGRAMS += fw-logger
 AM_CFLAGS = -I ${srcdir}/lib
 AM_CFLAGS += -Wno-deprecated-declarations
@@ -80,6 +80,13 @@ cam_listener_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} libcamera.a
 cam_listener_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS}
 cam_listener_LDFLAGS = ${AM_LDFLAGS}
 cam_listener_SOURCES = client/cam-listener.c
+cam_scgi_LDADD = ${DBUS_LIBS} ${GLIB_LIBS} ${XML_LIBS} libcamera.a
+cam_scgi_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${XML_CFLAGS}
+cam_scgi_LDFLAGS = ${AM_LDFLAGS}
+cam_scgi_SOURCES = scgi/main.c
+cam_scgi_SOURCES += scgi/scgi.c
+cam_scgi_SOURCES += scgi/introspect.c
+cam_scgi_SOURCES += scgi/methods.c
 
 ## CLI Program to load the FPGA image and setup peripherals.
 ## TODO: This should ultimately be moved into a kernel module.
@@ -95,6 +102,7 @@ cam_pipeline_CFLAGS = ${AM_CFLAGS} ${DBUS_CFLAGS} ${GST_CFLAGS}
 cam_pipeline_LDFLAGS = ${AM_LDFLAGS} -pthread
 cam_pipeline_LDADD += -ljpeg -lrt
 cam_pipeline_SOURCES = pipeline/cam-pipeline.c
+cam_pipeline_SOURCES += pipeline/audiomux.c
 cam_pipeline_SOURCES += pipeline/dbus-params.c
 cam_pipeline_SOURCES += pipeline/dbus-video.c
 cam_pipeline_SOURCES += pipeline/dng.c
@@ -115,6 +123,7 @@ cam_pipeline_SOURCES += pipeline/gst/gifdec.h
 cam_pipeline_SOURCES += pipeline/gst/gstgifsrc.c
 cam_pipeline_SOURCES += pipeline/gst/gstgifsrc.h
 cam_pipeline_SOURCES += pipeline/gst/gstneon.c
+cam_pipeline_SOURCES += pipeline/gst/gstneoncrop.c
 cam_pipeline_SOURCES += pipeline/gst/gstneonflip.c
 cam_pipeline_SOURCES += pipeline/gst/gstneon.h
 

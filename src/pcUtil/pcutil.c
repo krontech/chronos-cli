@@ -91,6 +91,7 @@ set_blocking (int fd, int should_block)
 
 int main(int argc, const char * argv[])
 {
+	int exitCode = EXIT_SUCCESS;
 	int retVal;
 	BOOL inBootloader;
 	const char *portname = "/dev/ttyO0";
@@ -240,6 +241,7 @@ int main(int argc, const char * argv[])
 		}
 		else
 		{
+			exitCode = EXIT_FAILURE;
 			printf("Firmware update failed!\r\n");
 		}
 	}
@@ -256,14 +258,19 @@ int main(int argc, const char * argv[])
 		retVal = isInBootloader(&inBootloader);
 		if(retVal)
 		{
-			if(inBootloader)
+			if(inBootloader) {
 				printf("In bootloader\r\n");
-			else
+				exitCode = EXIT_SUCCESS;
+			} else {
+				/* It's not really failure - just let the shell know our findings. */
 				printf("In application\r\n");
+				exitCode = 1;
+			}
 		}
 		else
 		{
 			printf("isInBootloader() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-pm", argv[1]))	//Set powerup mode
@@ -296,6 +303,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getPowerupMode() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-fan", argv[1]))	//Set fan override
@@ -316,6 +324,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("setFanOverrideMode() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-qfan", argv[1]))	//Query fan override mode/speed
@@ -332,6 +341,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getFanOverrideMode() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-d", argv[1])) //start daemon, create unix stream socket
@@ -361,6 +371,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getBatteryData() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 
 	}
@@ -392,6 +403,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getShippingMode() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-v", argv[1])) //query PMIC fw version
@@ -407,6 +419,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getPMICVersion() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-qsr", argv[1])) //query the last shutdown reason
@@ -444,7 +457,7 @@ int main(int argc, const char * argv[])
 
 	close(sfd);
 
-	exit(EXIT_SUCCESS);
+	exit(exitCode);
 	return 0;
 
 }

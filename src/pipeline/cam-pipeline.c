@@ -18,6 +18,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdlib.h>
 #include <getopt.h>
 #include <signal.h>
@@ -152,8 +153,8 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
         gst_object_unref(sinkpad);
     }
 
-    /* Attempt to create the TCP sink */
-    sinkpad = cam_network_sink(state);
+    /* Attempt to create the h.264 livestream sink */
+    sinkpad = cam_h264_live_sink(state, args);
     if (sinkpad) {
         tpad = gst_element_get_request_pad(tee, "src%d");
         gst_pad_link(tpad, sinkpad);
@@ -529,6 +530,11 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
                 fprintf(stderr, "GST debug info: %s\n", debug);
                 g_free(debug);
             }
+            /* Gracefully handle errors with live recording mode */
+            if(!strcmp(GST_OBJECT_NAME(msg->src), "liverec-file-sink")){
+                state->args.liverecord = FALSE;
+                state->playstate = PLAYBACK_STATE_LIVE;
+            }
             strncpy(state->error, error->message, sizeof(state->error));
             state->error[sizeof(state->error)-1] = '\0';
             g_error_free(error);
@@ -546,6 +552,13 @@ cam_bus_watch(GstBus *bus, GstMessage *msg, gpointer data)
 
     return TRUE;
 } /* cam_bus_watch */
+
+static void cam_foreach_eos(gpointer element, gpointer user_data)
+{
+    GstEvent *event = user_data;
+    gst_event_ref(event);
+    gst_element_send_event(GST_ELEMENT(element), event);
+}
 
 /*===============================================
  * Signal Handlers
@@ -624,6 +637,30 @@ parse_resolution(const char *resxy, unsigned long *x, unsigned long *y)
     return TRUE;
 }
 
+static int
+parse_board_rev(void)
+{
+    FILE *fp = fopen("/proc/cpuinfo", "r");
+    char line[256];
+    if (!fp) {
+        return 0x0000;
+    }
+    while (fgets(line, sizeof(line), fp) != NULL) {
+        /* Look for a line starting with "Revision" */
+        char revision[] = {'R', 'e', 'v', 'i', 's', 'i', 'o', 'n'};
+        char *p;
+        if (memcmp(line, revision, sizeof(revision)) != 0) continue;
+        /* Skip whitespace and colons. */
+        p = line + sizeof(revision);
+        while (isspace(*p) || (*p == ':')) p++;
+        /* We should be left with the board revision in hexadecimal */
+        fclose(fp);
+        return strtoul(p, NULL, 16);
+    }
+    fclose(fp);
+    return 0x0000;
+}
+
 static void *
 mainloop_thread(void *ctx)
 {
@@ -698,6 +735,9 @@ main(int argc, char * argv[])
     if (!gst_element_register(NULL, "neon", GST_RANK_NONE, GST_TYPE_NEON)) {
         fprintf(stderr, "Failed to register Gstreamer NEON acceleration element.\n");
     }
+    if (!gst_element_register(NULL, "neoncrop", GST_RANK_NONE, GST_TYPE_NEON_CROP)) {
+        fprintf(stderr, "Failed to register Gstreamer NEON crop element.\n");
+    }
     if (!gst_element_register(NULL, "neonflip", GST_RANK_NONE, GST_TYPE_NEON_FLIP)) {
         fprintf(stderr, "Failed to register Gstreamer NEON flip element.\n");
     }
@@ -709,6 +749,7 @@ main(int argc, char * argv[])
     state->fpga = fpga_open();
     state->iops = board_chronos14_ioports;
     state->runmode = PIPELINE_MODE_PAUSE;
+    state->board_rev = parse_board_rev();
     state->write_fd = -1;
     state->control = 0;
     if (!state->fpga) {
@@ -781,6 +822,7 @@ main(int argc, char * argv[])
     state->rtsp = rtsp_server_launch(state);
     hdmi_hotplug_launch(state);
     playback_init(state);
+    audiomux_init(state);
 
     /* Load JSON configuration, if present. */
     dbus_init_params(state, FALSE);
@@ -806,21 +848,28 @@ main(int argc, char * argv[])
         /* Pause playback while we get setup. */
         memset(state->error, 0, sizeof(state->error));
         memcpy(&args, &state->args, sizeof(args));
-        state->runmode = args.mode;
         playback_pause(state);
 
         /* File saving modes should fail gracefully back to playback. */
-        if (PIPELINE_IS_SAVING(state->runmode)) {
-            /* Return to playback mode after saving. */
-            state->args.mode = PIPELINE_MODE_PLAY;
+        if (PIPELINE_IS_SAVING(args.mode)) {
+            if (!PIPELINE_IS_SAVING(state->runmode)) {
+                /* Return to the previous mode at the end of the filesave. */
+                state->args.mode = state->runmode;
+            }
+            else {
+                /* Unless it would cause a loop, then go back to PLAY instead. */
+                state->args.mode = PIPELINE_MODE_PLAY;
+            }
+
+            state->runmode = args.mode;
             if (!cam_filesave(state, &args)) {
-                /* Throw an EOF and revert to playback. */
                 dbus_signal_eof(state->video, state->error);
                 continue;
             }
         }
         /* Launch the video pipeline in live and playback modes. */
-        else if (state->runmode != PIPELINE_MODE_PAUSE) {
+        else if (args.mode != PIPELINE_MODE_PAUSE) {
+            state->runmode = args.mode;
             if (!cam_pipeline(state, &args)) {
                 /* Throw an EOF and revert to paused. */
                 state->args.mode = PIPELINE_MODE_PAUSE;
@@ -831,6 +880,7 @@ main(int argc, char * argv[])
         }
         /* Otherwise, there is nothing to play, generate a test pattern. */
         else {
+            state->runmode = PIPELINE_MODE_PAUSE;
             if (!cam_videotest(state)) {
                 dbus_signal_eof(state->video, state->error);
                 fprintf(stderr, "Failed to launch pipeline. Aborting...\n");
@@ -860,8 +910,11 @@ main(int argc, char * argv[])
                 }
                 /* Stop the pipeline when instructed. */
                 if ((signo == SIGHUP) || (signo == SIGINT) || (signo == SIGTERM)) {
+                    GstIterator *iter = gst_bin_iterate_sources(GST_BIN(state->pipeline));
                     event = gst_event_new_eos();
-                    gst_element_send_event(state->vidsrc, event);
+                    gst_iterator_foreach(iter, cam_foreach_eos, event);
+                    gst_iterator_free(iter);
+                    gst_event_unref(event);
                 }
                 /* Signal 0 is used to indicate the end of this loop */
             } while (signo != 0);
@@ -899,6 +952,10 @@ main(int argc, char * argv[])
             close(state->write_fd);
             state->write_fd = -1;
         }
+        if (state->liverec_fd >= 0) {
+            close(state->liverec_fd);
+            state->liverec_fd = -1;
+        }
 
         /* Signal end of video after teardown and syncing output files. */
         dbus_signal_eof(state->video, state->error);
@@ -908,6 +965,8 @@ main(int argc, char * argv[])
     } while(catch_sigint == 0);
     
     fprintf(stderr, "Exiting the pipeline...\n");
+    state->args.liverecord = FALSE;
+    audiomux_cleanup(state);
     playback_cleanup(state);
     rtsp_server_cleanup(state->rtsp);
     dbus_service_cleanup(state->video);

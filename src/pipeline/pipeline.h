@@ -30,6 +30,9 @@
 #define LIVE_MAX_FRAMERATE  60
 #define SAVE_MAX_FRAMERATE  230
 
+#define LIVEREC_MAX_BITRATE  6000000
+#define LIVEREC_MAX_FILESIZE 4294967295 /* FAT32 Max Size (Bytes) */
+
 #define CAM_LCD_HRES    800
 #define CAM_LCD_VRES    480
 
@@ -78,10 +81,15 @@ typedef void (*rtsp_session_hook_t)(const struct rtsp_session *sess, void *closu
 struct pipeline_args {
     unsigned int    mode;
     char            filename[PATH_MAX];
+    char            live_filename[PATH_MAX];
     unsigned long   start;
     unsigned long   length;
     unsigned int    framerate;
     unsigned long   bitrate;
+    unsigned int    duration;
+    double          maxFilesize;
+    gboolean        liverecord;
+    gboolean        multifile;
 };
 
 struct source_config {
@@ -139,6 +147,7 @@ struct pipeline_state {
     struct fpga         *fpga;
     const struct ioport *iops;
     int                 runmode;
+    int                 board_rev;
     int                 pipe_rfd;
     int                 pipe_wfd;
     int                 write_fd;
@@ -164,6 +173,7 @@ struct pipeline_state {
     unsigned long   playlength;     /* Length of video to play from when in playback mode. */
     unsigned int    playloop;       /* Loop playback or return to live display. */
     pthread_t       playthread;     /* Thread handle for the playback frame manager. */
+    pthread_t       audiothread;    /* Thread handle for the ALSA line mux manager. */
 
     /* Recording Mode */
     unsigned int    phantom;        /* OMX buffering workaround */
@@ -177,6 +187,11 @@ struct pipeline_state {
     unsigned int    frameidx;
     unsigned long   frameival[FRAMERATE_IVAL_BUCKETS]; /* track microseconds between frames. */
     unsigned long long frameisum;   /* Rolling sum of frameival */
+
+    /* Live Recording Mode */
+    int             liverec_fd;
+    char            liverec_filename[PATH_MAX];
+    guint           liverec_bufprobe;
 
     /* Pipeline config */
     struct pipeline_args args;
@@ -196,7 +211,7 @@ GstPad *cam_lcd_sink(struct pipeline_state *state, const struct display_config *
 void    cam_lcd_reconfig(struct pipeline_state *state, const struct display_config *config);
 GstPad *cam_hdmi_sink(struct pipeline_state *state);
 GstPad *cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args);
-GstPad *cam_network_sink(struct pipeline_state *state);
+GstPad *cam_h264_live_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_raw_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_dng_sink(struct pipeline_state *state, struct pipeline_args *args);
 GstPad *cam_tiff_sink(struct pipeline_state *state, struct pipeline_args *args);
@@ -232,6 +247,10 @@ void playback_loop(struct pipeline_state *state, unsigned long start, int framer
 void playback_flush(struct pipeline_state *state);
 void playback_cleanup(struct pipeline_state *state);
 
+/* ALSA line mux control. */
+void audiomux_init(struct pipeline_state *state);
+void audiomux_cleanup(struct pipeline_state *state);
+
 /* Video overlay control. */
 void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
@@ -243,5 +262,8 @@ void rtsp_server_cleanup(struct rtsp_ctx *ctx);
 void rtsp_session_foreach(struct rtsp_ctx *ctx, rtsp_session_hook_t callback, void *closure);
 void rtsp_server_set_hook(struct rtsp_ctx *ctx, rtsp_session_hook_t callback, void *closure);
 #define rtsp_server_clear_hook(_ctx_) rtsp_server_set_hook(_ctx_, NULL, NULL)
+
+/* Live Recording mode functions. */
+static void * liverec_size_monitor(void *data);
 
 #endif /* __PIPELINE */

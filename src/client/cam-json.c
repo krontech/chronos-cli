@@ -23,10 +23,15 @@
 #include <glib.h>
 #include <dbus/dbus-glib.h>
 
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
 #include "dbus-json.h"
 #include "api/cam-rpc.h"
 
-#define OPT_FLAG_RPC    (1<<0)
+#define OPT_FLAG_JSRPC  (1<<0)
 #define OPT_FLAG_CGI    (1<<1)
 #define OPT_FLAG_GET    (1<<2)
 
@@ -54,18 +59,7 @@ jsonrpc_err_message(int code)
 static void
 handle_error(int code, const char *message, unsigned long flags)
 {
-    if (flags & OPT_FLAG_RPC) {
-        fputs("{\n", stdout);
-        fprintf(stdout, "%*.s\"jsonrpc\": \"2.0\",\n", JSON_TAB_SIZE, "");
-        fprintf(stdout, "%*.s\"id\": null,\n", JSON_TAB_SIZE, "");
-        fprintf(stdout, "%*.s\"error\": {\n", JSON_TAB_SIZE, "");
-        fprintf(stdout, "%*.s\"code\": %d,\n", 2 * JSON_TAB_SIZE, "", code);
-        fprintf(stdout, "%*.s\"message\": ", 2 * JSON_TAB_SIZE, "");
-        json_printf_utf8(stdout, message);
-        fprintf(stdout, "\n%*.s}\n", JSON_TAB_SIZE, "");
-        fputs("}\n", stdout);
-    }
-    else if (flags & OPT_FLAG_CGI) {
+    if (flags & OPT_FLAG_CGI) {
         fprintf(stdout, "Content-type: application/json\n");
         switch (code) {
             case JSONRPC_ERR_PARSE_ERROR:
@@ -94,6 +88,14 @@ handle_error(int code, const char *message, unsigned long flags)
 }
 
 static void
+cleanup_socket(void)
+{
+    struct sockaddr_un addr;
+    sprintf(addr.sun_path, "/tmp/cam-json-%d.sock", getpid());
+    unlink(addr.sun_path);
+}
+
+static void
 usage(FILE *fp, int argc, char * const argv[])
 {
     fprintf(fp, "Usage: %s [options] [METHOD [PARAMS]]\n\n", argv[0]);
@@ -114,46 +116,45 @@ usage(FILE *fp, int argc, char * const argv[])
     fprintf(fp, "to retrieve are provided as the positional arguments to %s.\n\n", argv[0]);
 
     fprintf(fp, "options:\n");
-    fprintf(fp, "\t-r, --rpc     encode the results in JSON-RPC format\n");
-    fprintf(fp, "\t-c, --cgi     encode the results in CGI/1.0 format\n");
-    fprintf(fp, "\t-g, --get     get paramereters from the DBus interface\n");
-    fprintf(fp, "\t-n, --control connect to the control DBus interface\n");
-    fprintf(fp, "\t-v, --video   connect to the video DBus interface\n");
-    fprintf(fp, "\t-h, --help    display this help and exit\n");
+    fprintf(fp, "\t-c, --cgi        encode the results in CGI/1.0 format\n");
+    fprintf(fp, "\t-g, --get        get paramereters from the DBus interface\n");
+    fprintf(fp, "\t-j, --jsrpc SOCK Use JSON-RPC over a UNIX datagram socket at SOCK\n");
+    fprintf(fp, "\t-n, --control    connect to the control DBus interface\n");
+    fprintf(fp, "\t-v, --video      connect to the video DBus interface\n");
+    fprintf(fp, "\t-h, --help       display this help and exit\n");
 }
 
 int
 main(int argc, char * const argv[])
 {
-    DBusGConnection* bus;
-    DBusGProxy* proxy;
     GHashTable *h;
     GValue *params = NULL;
     GError* error = NULL;
-    gboolean okay;
     const char *service = CAM_DBUS_CONTROL_SERVICE;
     const char *path = CAM_DBUS_CONTROL_PATH;
     const char *iface = CAM_DBUS_CONTROL_INTERFACE;
+    const char *sockname = NULL;
     const char *method;
     unsigned long flags = 0;
     
     /* Option Parsing */
-    const char *short_options = "rcgvnh";
+    const char *short_options = "j:cgvnh";
     const struct option long_options[] = {
-        {"rpc",     no_argument,    0, 'r'},
-        {"cgi",     no_argument,    0, 'c'},
-        {"get",     no_argument,    0, 'g'},
-        {"control", no_argument,    0, 'n'},
-        {"video",   no_argument,    0, 'v'},
-        {"help",    no_argument,    0, 'h'},
+        {"jsrpc",   required_argument,  0, 'j'},
+        {"cgi",     no_argument,        0, 'c'},
+        {"get",     no_argument,        0, 'g'},
+        {"control", no_argument,        0, 'n'},
+        {"video",   no_argument,        0, 'v'},
+        {"help",    no_argument,        0, 'h'},
         {0, 0, 0, 0}
     };
     int c;
     optind = 0;
     while ((c = getopt_long(argc, argv, short_options, long_options, NULL)) > 0) {
         switch (c) {
-            case 'r':
-                flags |= OPT_FLAG_RPC;
+            case 'j':
+                flags |= OPT_FLAG_JSRPC;
+                sockname = optarg;
                 break;
             
             case 'c':
@@ -250,26 +251,98 @@ main(int argc, char * const argv[])
             }
         }
     }
-    
+
+    /* Initialize the JSON-RPC socket. */
+    if (flags & OPT_FLAG_JSRPC) {
+        char msgbuf[16384];
+        int sock;
+        int msglen;
+        int errcode;
+        struct sockaddr_un addr;
+        FILE *fp;
+        char *json;
+        size_t jslen;
+        GValue *gval;
+
+        /* Bind to a local socket name to get the reply. */
+        sock = socket(AF_UNIX, SOCK_DGRAM, 0);
+        if (sock < 0) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        addr.sun_family = AF_UNIX;
+        sprintf(addr.sun_path, "/tmp/cam-json-%d.sock", getpid());
+        if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        atexit(cleanup_socket);
+
+        /* Create the JSON-RPC request */
+        h = cam_dbus_dict_new();
+        cam_dbus_dict_add_string(h, "jsonrpc", "2.0");
+        cam_dbus_dict_add_string(h, "method", method);
+        cam_dbus_dict_add_uint(h, "id", getpid());
+        if (params) {
+            cam_dbus_dict_take_boxed(h, "params", G_VALUE_TYPE(params), g_value_peek_pointer(params));
+        }
+
+        /* Render the D-Bus request into JSON */
+        if ((fp = open_memstream(&json, &jslen)) == NULL) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        json_newline = "\r\n";
+        json_printf_dict(fp, h, 0);
+        fputs("\r\n", fp);
+        fclose(fp);
+        g_hash_table_destroy(h);
+
+        /* Send the JSON-RPC request to the destination socket. */
+        addr.sun_family = AF_UNIX;
+        strcpy(addr.sun_path, sockname);
+        if (sendto(sock, json, jslen, 0, (struct sockaddr *)&addr, sizeof(addr)) < jslen) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        free(json);
+
+        /* Wait for the reply from the server */
+        jslen = recv(sock, msgbuf, sizeof(msgbuf), 0);
+        close(sock);
+        if (jslen <= 0) {
+
+        }
+        gval = json_parse(msgbuf, jslen, &errcode);
+        if (errcode != 0) {
+            handle_error(errcode, jsonrpc_err_message(errcode), flags);
+        }
+        if (G_VALUE_TYPE(gval) != CAM_DBUS_HASH_MAP) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        h = g_value_peek_pointer(gval);
+    }
     /* Initialize the DBus system. */
-    bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
-    if (error != NULL) {
-        handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
-    }
-    proxy = dbus_g_proxy_new_for_name(bus, service, path, iface);
-    if (proxy == NULL) {
-        handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
-    }
-    if (params) {
-        okay = dbus_g_proxy_call(proxy, method, &error,
-                G_VALUE_TYPE(params), g_value_peek_pointer(params), G_TYPE_INVALID,
-                CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
-    } else {
-        okay = dbus_g_proxy_call(proxy, method, &error, G_TYPE_INVALID,
-                CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
-    }
-    if (!okay) {
-        handle_error(error->code, error->message, flags);
+    else {
+        DBusGConnection* bus;
+        DBusGProxy* proxy;
+        gboolean okay;
+
+        bus = dbus_g_bus_get(DBUS_BUS_SYSTEM, &error);
+        if (error != NULL) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        proxy = dbus_g_proxy_new_for_name(bus, service, path, iface);
+        if (proxy == NULL) {
+            handle_error(JSONRPC_ERR_INTERNAL_ERROR, "Internal Error", flags);
+        }
+        if (params) {
+            okay = dbus_g_proxy_call(proxy, method, &error,
+                    G_VALUE_TYPE(params), g_value_peek_pointer(params), G_TYPE_INVALID,
+                    CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
+        } else {
+            okay = dbus_g_proxy_call(proxy, method, &error, G_TYPE_INVALID,
+                    CAM_DBUS_HASH_MAP, &h, G_TYPE_INVALID);
+        }
+        if (!okay) {
+            handle_error(error->code, error->message, flags);
+        }
     }
 
     /* Output CGI header data */
@@ -278,19 +351,8 @@ main(int argc, char * const argv[])
         fprintf(stdout, "\n");
     }
 
-    /* Output format: JSON-RPC */
-    if (flags & OPT_FLAG_RPC) {
-        fputs("{\n", stdout);
-        fprintf(stdout, "%*.s\"jsonrpc\": \"2.0\",\n", JSON_TAB_SIZE, "");
-        fprintf(stdout, "%*.s\"id\": null,\n", JSON_TAB_SIZE, "");
-        fprintf(stdout, "%*.s\"result\": ", JSON_TAB_SIZE, "");
-        json_printf_dict(stdout, h, 1);
-        fputs("\n}\n", stdout);
-    }
     /* Output format: Naked JSON */
-    else {
-        json_printf_dict(stdout, h, 0);
-        fputc('\n', stdout);
-    }
+    json_printf_dict(stdout, h, 0);
+    fputc('\n', stdout);
     g_hash_table_destroy(h);
 }

@@ -20,14 +20,12 @@
  * Date: 	June 12th, 2019.
  *
  * Desc: 	This program handles automatic switching between line in/out
- * 		and the built in microphone and speaker on the Chronos 1.4 Camera.
- * 		It can be used to verify that all of the audio hardware is working correctly,
- * 		and outputs <timestamp>.wav files to /tmp/audio whenever video is being recorded.
+ * 		and the built in microphone and speaker on Chronos cameras.
  *
  * Compile:	arm-linux-gnueabi-gcc (v 5.4.0) for Debian builds with kernel 3.2.0
  *
  * Notes:	- The camera must have the alsa-utils package installed for this code to work.
- * 		- To play audio that has been recorded, use aplay <audio file>.
+ *
  */
 
 #include <stdio.h>
@@ -45,8 +43,6 @@ int main (void)
 	int lineOutVal, lineInVal, recordingVal; //lineInVal and lineOutVal are active low
 	int lineInValLast = -1, lineOutValLast = -1;
 	int isRecording = 0;
-	char timeStampStr[100];
-	char recordCmdStr[100];
 
 #ifdef DAEMON
 	pid_t pid, sid;
@@ -97,9 +93,6 @@ int main (void)
 	system("echo 9 > /sys/class/gpio/export");
 	system("echo 'in' > /sys/class/gpio/gpio9/direction");
 
-	//Create folder for recorded wav files to be saved in
-	system("mkdir /tmp/audio");
-
 	while(1){
 
 		//Open GPIO value file descriptors:
@@ -139,29 +132,18 @@ int main (void)
 		}
 
 		if(recordingVal && isRecording == 0){
-			//build timestamp for filename
-			time_t now = time(NULL);
-			struct tm *t = localtime(&now);
-			strftime(timeStampStr, sizeof(timeStampStr)-1,"%d-%m-%Y_%H:%M:%S",t);
-
 			//turn off MicBias to reduce noise from line in
 			if(lineInVal){
 				system("echo 0 > /sys/class/gpio/gpio15/value");
 			}
-
-			sprintf(recordCmdStr,"arecord -f cd /tmp/audio/%s.wav &", timeStampStr);
-			system(recordCmdStr);
-			isRecording = 1;
+			isRecording = 1; //flag to only make the above system call once
 		}
 
 		if(recordingVal == 0 && isRecording){
-			system("killall arecord");
-
 			//turn on MicBias to capture line in
 			if(lineInVal){
 				system("echo 1 > /sys/class/gpio/gpio15/value");
 			}
-
 			isRecording = 0;
 		}
 

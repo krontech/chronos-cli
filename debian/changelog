@@ -1,56 +1,6 @@
-chronos-cli (0.4.0~alpha51) unstable; urgency=medium
+chronos-cli (0.4.0~beta) unstable; urgency=medium
 
-  * Fix compiler errors in strict C mode.
-  * pipeline: Remove second Glib main loop for Gstreamer.
-  * pipeline: Fix possible leak in OMX teardown.
-  * pcUtil: Convert to a C application.
-  * pcUtil: Fix polling bugs leading to choppy performance.
-  * Replace LCD cropping with videoZoom parameter.
-  * OMX deadlock workaround due to VIP parser overflow.
-  * Add teardown and session timeouts to RTSP server.
-  * cam-json: dynamically allocate parser tokens
-  * Prevent glitched overlay when horizontal resolution is below 480 pixels or so.
-  * pcUtil: Use condition variables for data signaling.
-  * Revert TIFF/DNG orientation tag.
-  * Fix video segment metadata causing zero timestamps.
-  * Make RTSP server conditional on GStreamer version.
-  * Add RTSP session hook for dynamic client connection.
-  * Add RTSP client registration on SETUP.
-  * Add prototype RTSP server.
-  * Use Glib's default context for D-Bus.
-  * pcUtil: Poll battery data on boot to disable watchdog.
-  * Fix gst asserts in h264parse.
-  * Fix state transition bugs between LIVE and PLAY
-  * Replace MPEG-TS network stream with RTP/H264 transport.
-  * Generate EOF after syncing the filesave.
-  * Merge branch 'master' of github.com:krontech/chronos-cli
-  * Slight updates to README.md, reflecting new APIs.
-  * Move D-Bus API handling into a separate thread.
-  * Add videoSegments property to the video API.
-  * Fix g_value_init assertion in D-Bus type conversion.
-  * pipeline: Bugfix for delayed focus/zebra aids when live.
-  * Convert chronos-pwrutil to start via systemd.
-  * Fix issues in pcUtil debian package (now chronos-pwrutil).
-  * Updated pcUtil sources with new socket code.
-  * Removed upower sources, added pcUtil init.
-  * Added pcUtil sources to build cam-pcUtil.
-  * pipeline readme - fix minor mistakes
-  * Add build of TI firmware logger tool.
-  * Fix compile errors on Glib version < 2.28
-  * Added alsaDaemon.c, which is a program that records .wav files when the camera is recording and outputs them to /tmp/audio/. It also monitors the line in/out jacks and automatically switches between line inand mic, and line out and speaker based on whether cables are plugged in. The alsa-utils debian package is required for this program to work correctly.
-  * Add pause method to disable video stream.
-  * Geenrate 'error' when getting non-existent properties.
-  * Create parent directories when saving DNG/TIFF.
-  * Add error generation to the DBus set method.
-  * Replace custom getters with a generic enum helper.
-  * Split live and play states, and implement updates.
-  * Add support for arrays of doubles to cam-json.
-  * Add parameter introspection to the video system.
-  * Move DBus services to ca.krontech domain.
-  * Increase vBackPorch to fix frame jitter on Chronos2.
-  * Add LUX2100 support to cam-regdump.
-  * Add --get option to cam-json for parameter retrieval.
-  * Add DBus-to-JSON parsing for array types.
-  * Upstream release v0.4.0-alpha
 
- -- Owen Kirby <oskirby@gmail.com>  Tue, 15 Oct 2019 12:36:17 -0700
+  * Upstream release v0.4.0-beta
+
+ -- Owen Kirby <oskirby@gmail.com>  Fri, 24 Jan 2020 05:06:45 -0800
