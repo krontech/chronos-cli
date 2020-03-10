@@ -226,6 +226,22 @@ BOOL getPMICVersion(uint16 * version)
 		return FALSE;
 }
 
+BOOL getLastShutdownReason(uint8 * reason)
+{
+	uint8 response[2];
+	uint16 length;
+	txByteMessage(COM_CMD_GET_SHUTDOWN_REASON);
+
+	length = rxDataReceive(response, sizeof(response));
+	if (COM_CMD_GET_SHUTDOWN_REASON == response[0])
+	{
+		*reason = response[1];
+		return TRUE;
+	}
+	else
+		return FALSE;
+}
+
 void doShutdown(void)
 {
      txByteMessage(COM_CMD_SHUTDOWN);

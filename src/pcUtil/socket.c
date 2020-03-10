@@ -152,6 +152,11 @@ static void *socketConnectionHandler(void *socket_desc)
             unsigned long speed = strtoul(str + 8, NULL, 10);
             setFanOverrideMode(TRUE, speed) ? sprintf(str,"enabled fan override") : sprintf(str,"setFanOverrideMode() failed");
         }
+        else if (!strcmp(str, "GET_SHUTDOWN_REASON"))
+        {
+            uint8 reason;
+            getLastShutdownReason(&reason) ? sprintf(str, "lastShutdownReason %d\n", reason) : sprintf(str, "getLastShutdownReason() failed\n");
+        }
         else
         {
             //ignore invalid commands

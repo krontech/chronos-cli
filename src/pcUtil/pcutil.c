@@ -217,7 +217,8 @@ int main(int argc, const char * argv[])
         		"-sm <mode> Set shipping mode: <mode>: \"on\" to ignore pwr btn until AC is applied,\r\n"
         		"            \"off\" to turn on when power button is pressed\r\n"
         		"-qsm       Query current setting of shipping mode\r\n"
-        		"-v         Query current PMIC firmware version\r\n");
+        		"-v         Query current PMIC firmware version\r\n"
+        		"-qsr       Query the last shutdown reason\r\n");
 
     	exit(EXIT_FAILURE);
     	return 1;
@@ -406,6 +407,38 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getPMICVersion() failed\r\n");
+		}
+	}
+	else if(0 == strcmp("-qsr", argv[1])) //query the last shutdown reason
+	{
+		uint8 reason;
+
+		retVal = getLastShutdownReason(&reason);
+
+		if(retVal)
+		{
+			printf("Last Shutdown Reason: %d\r\n", reason);
+			if(reason == 0) 		printf("Unintentional shutdown\n");
+			if(reason & 0b00000010) printf("Low Battery\n");
+			if(reason & 0b00000100) printf("Watchdog\n");
+			if(reason & 0b00001000) printf("Overtemperature\n");
+			if(reason & 0b00010000) printf("Auto Power Off Mode\n");
+			if(reason & 0b00100000) printf("Requested by software\n");
+			if(reason & 0b01000000) printf("Shutdown via power button\n");
+			if(reason & 0b10000000) printf("Force shutdown via power button\n");
+
+			if(reason & 0b00000001)
+			{
+				printf("PM acknowledged, reached off state.\n");
+			}
+			else
+			{
+				printf("PM did not reach off state.\n");
+			}
+		}
+		else
+		{
+			printf("getLastShutdownReason() failed\r\n");
 		}
 	}
 
