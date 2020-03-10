@@ -735,6 +735,9 @@ main(int argc, char * argv[])
     if (!gst_element_register(NULL, "neon", GST_RANK_NONE, GST_TYPE_NEON)) {
         fprintf(stderr, "Failed to register Gstreamer NEON acceleration element.\n");
     }
+    if (!gst_element_register(NULL, "neoncrop", GST_RANK_NONE, GST_TYPE_NEON_CROP)) {
+        fprintf(stderr, "Failed to register Gstreamer NEON crop element.\n");
+    }
     if (!gst_element_register(NULL, "neonflip", GST_RANK_NONE, GST_TYPE_NEON_FLIP)) {
         fprintf(stderr, "Failed to register Gstreamer NEON flip element.\n");
     }

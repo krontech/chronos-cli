@@ -123,6 +123,7 @@ cam_pipeline_SOURCES += pipeline/gst/gifdec.h
 cam_pipeline_SOURCES += pipeline/gst/gstgifsrc.c
 cam_pipeline_SOURCES += pipeline/gst/gstgifsrc.h
 cam_pipeline_SOURCES += pipeline/gst/gstneon.c
+cam_pipeline_SOURCES += pipeline/gst/gstneoncrop.c
 cam_pipeline_SOURCES += pipeline/gst/gstneonflip.c
 cam_pipeline_SOURCES += pipeline/gst/gstneon.h
 
