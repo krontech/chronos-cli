@@ -34,6 +34,10 @@
 GST_DEBUG_CATEGORY_STATIC (gst_neon_crop_debug);
 #define GST_CAT_DEFAULT gst_neon_crop_debug
 
+#define FILL_YUV_LUMA 16
+#define FILL_YUV_U_CB 128
+#define FILL_YUV_V_CR 128
+
 /* Filter signals and args */
 enum
 {
@@ -298,6 +302,22 @@ static void *fill_luma(void *dst, uint8_t val, unsigned long size)
     "   add %[count],%[count], #16  \n"
     : [d]"+r"(dst), [count]"+r"(size) : [v]"r"(val) : "cc" );
   return dst;
+ }
+
+static void *fill_chroma(void *dst, uint8_t u, uint8_t v, unsigned long size)
+{
+  /* Fill 16-byte chunks using NEON. */
+  asm volatile (
+    "   vdup.8 d0, %[u]             \n"
+    "   vdup.8 d1, %[v]             \n"
+    "   subs %[count],%[count], #16 \n"
+    "neon_fill_chroma%=:            \n"
+    "   vst2.8 {d0,d1}, [%[d]]!     \n"
+    "   subs %[count],%[count], #16 \n"
+    "   bge neon_fill_chroma%=      \n"
+    "   add %[count],%[count], #16  \n"
+    : [d]"+r"(dst), [count]"+r"(size) : [u]"r"(u), [v]"r"(v): "cc" );
+  return dst;
 }
 
 static void copy_data(void *dst, const void *src, unsigned long size)
@@ -306,20 +326,20 @@ static void copy_data(void *dst, const void *src, unsigned long size)
   size &= ~0x7UL;
   asm volatile (
       /* First loop copies as wide of a burst as we can fit */
-      "   subs %[count],%[count], #64 \n"
-      "neon_crop_memcpy_large:        \n"
-      "   pld [%[s], #0xc0]           \n"
-      "   vldm %[s]!,{d0-d7}          \n"
-      "   vstm %[d]!,{d0-d7}          \n"
-      "   subs %[count],%[count], #64 \n"
-      "   bge neon_crop_memcpy_large  \n"
-      "   add %[count],%[count], #64  \n"
+      "   subs %[count],%[count], #64   \n"
+      "neon_crop_memcpy_large%=:        \n"
+      "   pld [%[s], #0xc0]             \n"
+      "   vldm %[s]!,{d0-d7}            \n"
+      "   vstm %[d]!,{d0-d7}            \n"
+      "   subs %[count],%[count], #64   \n"
+      "   bge neon_crop_memcpy_large%=  \n"
+      "   add %[count],%[count], #64    \n"
       /* Second loop copies as narrow of a burst as we can */
-      "neon_crop_memcpy_small:        \n"
-      "   vldm %[s]!,{d0}             \n"
-      "   vstm %[d]!,{d0}             \n"
-      "   subs %[count],%[count], #8  \n"
-      "   bge neon_crop_memcpy_small  \n"
+      "neon_crop_memcpy_small%=:        \n"
+      "   vldm %[s]!,{d0}               \n"
+      "   vstm %[d]!,{d0}               \n"
+      "   subs %[count],%[count], #8    \n"
+      "   bge neon_crop_memcpy_small%=  \n"
       : [d]"+r"(dst), [s]"+r"(src), [count]"+r"(size)
       :: "cc", "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7" );
 }
@@ -328,13 +348,13 @@ static void brev_data(void *dst, const void *src, unsigned long size)
 {
   const uint8_t *end = src + size;
   asm volatile (
- 	"neon_crop_brev:                  \n"
+    "neon_crop_brev%=:              \n"
     "   vldmdb %[end]!, {d0-d1}     \n"
     "   vrev64.8 d3, d0             \n"
     "   vrev64.8 d2, d1             \n"
     "   vstmia %[dst]!, {d2-d3}     \n"
     "   cmp %[end], %[start]        \n"
-    "   bgt neon_crop_brev          \n"
+    "   bgt neon_crop_brev%=        \n"
     : [dst]"+r"(dst), [end]"+r"(end) : [start]"r"(src) : "cc" );
 }
 
@@ -342,13 +362,13 @@ static void brev_chroma(void *dst, const void *src, unsigned long size)
 {
   const uint8_t *end = src + size;
   asm volatile (
-    "neon_crop_brev_chroma:         \n"
+    "neon_crop_brev_chroma%=:       \n"
     "   vldmdb %[end]!, {d0-d1}     \n"
     "   vrev64.16 d3, d0            \n"
     "   vrev64.16 d2, d1            \n"
     "   vstmia %[dst]!, {d2-d3}     \n"
     "   cmp %[end], %[start]        \n"
-    "   bgt neon_crop_brev_chroma   \n"
+    "   bgt neon_crop_brev_chroma%= \n"
     : [dst]"+r"(dst), [end]"+r"(end) : [start]"r"(src) : "cc" );
 }
 
@@ -369,9 +389,9 @@ gst_neon_crop_transform(GstBaseTransform *base, GstBuffer *src, GstBuffer *dst)
   if (crop->top < 0) {
       unsigned int top = -crop->top;
       /* Luma */
-      dstluma = fill_luma(dstluma, 0, xres * top);
+      dstluma = fill_luma(dstluma, FILL_YUV_LUMA, xres * top);
       /* Chroma */
-      dstchroma = fill_luma(dstchroma, 0, xres * top / 2);
+      dstchroma = fill_chroma(dstchroma, FILL_YUV_U_CB, FILL_YUV_V_CR, xres * top / 2);
   }
   /* Apply top cropping. */
   else {
@@ -404,9 +424,9 @@ gst_neon_crop_transform(GstBaseTransform *base, GstBuffer *src, GstBuffer *dst)
   if (crop->bottom < 0) {
       unsigned int bottom = -crop->bottom;
       /* Luma */
-      dstluma = fill_luma(dstluma, 0, xres * bottom);
+      dstluma = fill_luma(dstluma, FILL_YUV_LUMA, xres * bottom);
       /* Chroma */
-      dstchroma = fill_luma(dstchroma, 0, xres * bottom / 2);
+      dstchroma = fill_chroma(dstchroma, FILL_YUV_U_CB, FILL_YUV_V_CR, xres * bottom / 2);
   }
 
   return GST_FLOW_OK;

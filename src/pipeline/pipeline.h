@@ -38,6 +38,7 @@
 
 #define PIPELINE_MAX_HRES   1920
 #define PIPELINE_MAX_VRES   1080
+#define PIPELINE_MIN_VRES   96
 #define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES * 4)
 
 #define NETWORK_STREAM_PORT 5000
@@ -94,13 +95,14 @@ struct pipeline_args {
 
 struct source_config {
     unsigned int    color;
-    unsigned int    hres;
-    unsigned int    vres;
+    unsigned int    hres;    /* Horizontal size of the video stream */
+    unsigned int    vres;    /* Vertical size of the video stream */
+    unsigned int    hframe;  /* Horizontal size of the video frame in the FPGA. */
+    unsigned int    vframe;  /* Vertical size of the video frame in the FPGA. */
     unsigned int    cropx;
     unsigned int    cropy;
     unsigned int    startx;
     unsigned int    starty;
-    unsigned int    flip;
     unsigned int    rate;
 };
 

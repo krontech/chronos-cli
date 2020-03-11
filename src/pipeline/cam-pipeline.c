@@ -74,26 +74,26 @@ static GstElement *
 cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
-    GstElement *tee, *flip;
+    GstElement *tee, *crop;
     GstPad *sinkpad;
     GstPad *tpad;
     GstCaps *caps;
 
     /* Get the active video size. */
-    state->source.hres = state->fpga->imager->hres_count;
-    state->source.vres = state->fpga->imager->vres_count;
-    if ((state->source.hres == 0) || (state->source.hres > PIPELINE_MAX_HRES) ||
-        (state->source.vres == 0) || (state->source.vres > PIPELINE_MAX_VRES)) {
-        sprintf(state->error, "Invalid source resolution (%dx%d)", state->source.hres, state->source.vres);
+    state->source.hframe = state->fpga->imager->hres_count;
+    state->source.vframe = state->fpga->imager->vres_count;
+    if ((state->source.hframe == 0) || (state->source.hframe > PIPELINE_MAX_HRES) ||
+        (state->source.vframe == 0) || (state->source.vframe > PIPELINE_MAX_VRES)) {
+        sprintf(state->error, "Invalid source resolution (%dx%d)", state->source.hframe, state->source.vframe);
         return NULL;
     }
 
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
     state->vidsrc   = gst_element_factory_make("omx_camera",  "vfcc-source");
-    flip            = gst_element_factory_make("neonflip",    "vfcc-flip");
+    crop            = gst_element_factory_make("neoncrop",    "vfcc-crop");
     tee             = gst_element_factory_make("tee",         "tee");
-    if (!state->pipeline || !state->vidsrc || !flip || !tee) {
+    if (!state->pipeline || !state->vidsrc || !crop || !tee) {
         return NULL;
     }
 
@@ -104,26 +104,32 @@ cam_pipeline(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(state->vidsrc), "output-buffers", (guint)10, NULL);
     g_object_set(G_OBJECT(state->vidsrc), "skip-frames", (guint)0, NULL);
 
-    if (state->source.flip) {
-        g_object_set(G_OBJECT(flip), "method", (guint)GST_NEON_FLIP_METHOD_180, NULL);
+    /* Pad and crop the video stream if necessary. */
+    state->source.hres = state->source.hframe;
+    state->source.vres = state->source.vframe;
+    if (state->source.vres < PIPELINE_MIN_VRES) {
+        gint vpad = (PIPELINE_MIN_VRES - state->source.vframe + 3) & ~0x3; /* Round up to a multiple of 4. */
+        g_object_set(G_OBJECT(crop), "top", -vpad / 2, NULL);
+        g_object_set(G_OBJECT(crop), "bottom", -vpad / 2, NULL);
+        state->source.vres = state->source.vframe + vpad;
     }
 
-    gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, flip, tee, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, crop, tee, NULL);
 
     caps = gst_caps_new_simple ("video/x-raw-yuv",
                 "format", GST_TYPE_FOURCC, GST_MAKE_FOURCC('N', 'V', '1', '2'),
-                "width", G_TYPE_INT, state->source.hres,
-                "height", G_TYPE_INT, state->source.vres,
+                "width", G_TYPE_INT, state->source.hframe,
+                "height", G_TYPE_INT, state->source.vframe,
                 "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                 "buffer-count-requested", G_TYPE_INT, 4,
                 NULL);
-    ret = gst_element_link_filtered(state->vidsrc, flip, caps);
+    ret = gst_element_link_filtered(state->vidsrc, crop, caps);
     if (!ret) {
         gst_object_unref(GST_OBJECT(state->pipeline));
         return NULL;
     }
     gst_caps_unref(caps);
-    gst_element_link_many(flip, tee, NULL);
+    gst_element_link_many(crop, tee, NULL);
 
     /* Create a framegrab sink and link it into the pipeline. */
     sinkpad = cam_screencap(state);
@@ -285,7 +291,7 @@ static GstElement *
 cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
 {
     gboolean ret;
-    GstElement *tee, *flip;
+    GstElement *tee, *crop;
     GstPad *sinkpad;
     GstPad *tpad;
     GstPad *pad;
@@ -294,11 +300,15 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     /* Build the GStreamer Pipeline */
     state->pipeline = gst_pipeline_new ("pipeline");
     state->vidsrc   = gst_element_factory_make("omx_camera",  "vfcc-source");
-    flip            = gst_element_factory_make("neonflip",    "vfcc-flip");
+    crop            = gst_element_factory_make("neoncrop",    "vfcc-crop");
     tee             = gst_element_factory_make("tee",         "tee");
-    if (!state->pipeline || !state->vidsrc || !flip || !tee) {
+    if (!state->pipeline || !state->vidsrc || !tee || !crop) {
         return NULL;
     }
+
+    /* Unless one of the formats need it, neither crop nor pad the video */
+    state->source.hres = state->source.hframe;
+    state->source.vres = state->source.vframe;
 
     /*
      * Hack! The OMX camera element doesn't correctly flush itself when restaring
@@ -317,11 +327,7 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     g_object_set(G_OBJECT(state->vidsrc), "skip-frames", (guint)0, NULL);
     g_object_set(G_OBJECT(state->vidsrc), "num-buffers", (guint)(args->length + state->phantom), NULL);
 
-    if (state->source.flip) {
-        g_object_set(G_OBJECT(flip), "method", (guint)GST_NEON_FLIP_METHOD_180, NULL);
-    }
-
-    gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, flip, tee, NULL);
+    gst_bin_add_many(GST_BIN(state->pipeline), state->vidsrc, crop, tee, NULL);
 
     /* Add a probe to drop the very first frame from the camera */
     pad = gst_element_get_static_pad(state->vidsrc, "src");
@@ -342,21 +348,29 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
      *=====================================================
      */
     if (args->mode == PIPELINE_MODE_H264) {
-        GstCaps *caps = gst_caps_new_simple ("video/x-raw-yuv",
+        GstCaps *caps = gst_caps_new_simple("video/x-raw-yuv",
                     "format", GST_TYPE_FOURCC,
                     GST_MAKE_FOURCC('N', 'V', '1', '2'),
-                    "width", G_TYPE_INT, state->source.hres,
-                    "height", G_TYPE_INT, state->source.vres,
+                    "width", G_TYPE_INT, state->source.hframe,
+                    "height", G_TYPE_INT, state->source.vframe,
                     "framerate", GST_TYPE_FRACTION, args->framerate, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
-        ret = gst_element_link_filtered(state->vidsrc, flip, caps);
+        ret = gst_element_link_filtered(state->vidsrc, crop, caps);
         if (!ret) {
             gst_object_unref(GST_OBJECT(state->pipeline));
             return NULL;
         }
         gst_caps_unref(caps);
-        gst_element_link_many(flip, tee, NULL);
+        gst_element_link_many(crop, tee, NULL);
+
+        /* Crop and pad the video to accomodate the H.264 encoder limits. */
+        if (state->source.vres < PIPELINE_MIN_VRES) {
+            gint vpad = (PIPELINE_MIN_VRES - state->source.vframe + 3) & ~0x3; /* Round up to a multiple of 4. */
+            g_object_set(G_OBJECT(crop), "top", -vpad / 2, NULL);
+            g_object_set(G_OBJECT(crop), "bottom", -vpad / 2, NULL);
+            state->source.vres = state->source.vframe + vpad;
+        }
 
         /* Create the H.264 sink */
         sinkpad = cam_h264_sink(state, args);
@@ -375,8 +389,8 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     else if ((args->mode == PIPELINE_MODE_DNG) || (args->mode == PIPELINE_MODE_TIFF_RAW)) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
-                    "width", G_TYPE_INT, state->source.hres,
-                    "height", G_TYPE_INT, state->source.vres,
+                    "width", G_TYPE_INT, state->source.hframe,
+                    "height", G_TYPE_INT, state->source.vframe,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
@@ -412,8 +426,8 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     else if ((args->mode == PIPELINE_MODE_RAW16) || (args->mode == PIPELINE_MODE_RAW12)) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-gray",
                     "bpp", G_TYPE_INT, 16,
-                    "width", G_TYPE_INT, state->source.hres,
-                    "height", G_TYPE_INT, state->source.vres,
+                    "width", G_TYPE_INT, state->source.hframe,
+                    "height", G_TYPE_INT, state->source.vframe,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);
@@ -444,8 +458,8 @@ cam_filesave(struct pipeline_state *state, struct pipeline_args *args)
     else if (args->mode == PIPELINE_MODE_TIFF) {
         GstCaps *caps = gst_caps_new_simple ("video/x-raw-rgb",
                     "bpp", G_TYPE_INT, 24,
-                    "width", G_TYPE_INT, state->source.hres,
-                    "height", G_TYPE_INT, state->source.vres,
+                    "width", G_TYPE_INT, state->source.hframe,
+                    "height", G_TYPE_INT, state->source.vframe,
                     "framerate", GST_TYPE_FRACTION, LIVE_MAX_FRAMERATE, 1,
                     "buffer-count-requested", G_TYPE_INT, 4,
                     NULL);

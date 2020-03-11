@@ -293,7 +293,6 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
 {
     struct pipeline_state *state = vobj->state;
     unsigned long diff = 0;
-    unsigned int  flip = cam_dbus_dict_get_boolean(args, "flip", state->source.flip);
     unsigned long cropx = cam_dbus_dict_get_uint(args, "cropx", 0);
     unsigned long cropy = cam_dbus_dict_get_uint(args, "cropy", 0);
     unsigned long startx = cam_dbus_dict_get_uint(args, "startx", 0);
@@ -308,12 +307,10 @@ cam_video_livedisplay(CamVideo *vobj, GHashTable *args, GHashTable **data, GErro
     }
 
     /* Check if resolution has changed. */
-    diff |= (flip ^ state->source.flip);
     diff |= (cropx ^ state->source.cropx);
     diff |= (cropy ^ state->source.cropy);
     diff |= (startx ^ state->source.startx);
     diff |= (starty ^ state->source.starty);
-    state->source.flip = flip;
     state->source.cropx = cropx;
     state->source.cropy = cropy;
     state->source.startx = startx;

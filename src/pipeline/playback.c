@@ -78,10 +78,10 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
     usleep(((unsigned long long)(vPeriod * hPeriod) * 1000000ULL) / pxClock);
 
     /* Calculate the ideal hPeriod and then calculate the matching vPeriod for this framerate. */
-    hPeriod = hSync + hBackPorch + state->source.hres + hFrontPorch;
+    hPeriod = hSync + hBackPorch + state->source.hframe + hFrontPorch;
     vPeriod = pxClock / (hPeriod * maxfps);
-    if (vPeriod < (state->source.vres + vBackPorch + vSync + vFrontPorch)) {
-        vPeriod = (state->source.vres + vBackPorch + vSync + vFrontPorch);
+    if (vPeriod < (state->source.vframe + vBackPorch + vSync + vFrontPorch)) {
+        vPeriod = (state->source.vframe + vBackPorch + vSync + vFrontPorch);
     }
 
     /* Calculate the actual FPS. */
@@ -89,13 +89,13 @@ playback_setup_timing(struct pipeline_state *state, unsigned int maxfps)
     fprintf(stderr, "Setup display timing: %d*%d@%d (%u*%u max: %u)\n",
            (hPeriod - hBackPorch - hSync - hFrontPorch),
            (vPeriod - vBackPorch - vSync - vFrontPorch),
-           state->source.rate, state->source.hres, state->source.vres, maxfps);
+           state->source.rate, state->source.hframe, state->source.vframe, maxfps);
 
     /* Configure the FPGA */
-    state->fpga->display->h_res = state->source.hres;
-    state->fpga->display->h_out_res = state->source.hres;
-    state->fpga->display->v_res = state->source.vres;
-    state->fpga->display->v_out_res = state->source.vres;
+    state->fpga->display->h_res = state->source.hframe;
+    state->fpga->display->h_out_res = state->source.hframe;
+    state->fpga->display->v_res = state->source.vframe;
+    state->fpga->display->v_out_res = state->source.vframe;
 
     state->fpga->display->h_period = hPeriod;
     state->fpga->display->h_sync_len = hSync;
@@ -630,11 +630,11 @@ playback_thread(void *arg)
          *===============================================
          */
         if (state->playstate == PLAYBACK_STATE_LIVE) {
-            if ((state->fpga->imager->hres_count != state->source.hres) ||
-                (state->fpga->imager->vres_count != state->source.vres)) {
+            if ((state->fpga->imager->hres_count != state->source.hframe) ||
+                (state->fpga->imager->vres_count != state->source.vframe)) {
                 /* The video system probably requires a restart. */
-                state->source.hres = state->fpga->imager->hres_count;
-                state->source.vres = state->fpga->imager->vres_count;
+                state->source.hframe = state->fpga->imager->hres_count;
+                state->source.vframe = state->fpga->imager->vres_count;
                 pthread_kill(state->mainthread, SIGHUP);
             }
         }
@@ -679,7 +679,7 @@ playback_thread(void *arg)
             else if (delta == PLAYBACK_PIPE_LIVE) {
                 /* Update the display timing if not already live. */
                 if (state->playstate != PLAYBACK_STATE_LIVE) {
-                    if ((state->source.hres * state->source.vres) >= 1750000) {
+                    if ((state->source.hframe * state->source.vframe) >= 1750000) {
                         /* At about 1.75MP and higher, we must reduce the speed of playback
                          * due to saturation of DDR memory with image data from the sensor.
                          */
@@ -701,7 +701,7 @@ playback_thread(void *arg)
             else {
                 /* Update the display timing if not already in playback. */
                 if (state->playstate != PLAYBACK_STATE_PLAY) {
-                    if ((state->source.hres * state->source.vres) >= 1750000) {
+                    if ((state->source.hframe * state->source.vframe) >= 1750000) {
                         /* At about 1.75MP and higher, we must reduce the speed of playback
                          * due to saturation of DDR memory with image data from the sensor.
                          */

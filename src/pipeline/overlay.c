@@ -49,8 +49,8 @@ overlay_setup(struct pipeline_state *state)
 
         /* Compute the vertical size and offset. */
         state->fpga->overlay->text0_ysize = height;
-        if (state->overlay.yoff > (state->source.vres - height)) {
-            state->fpga->overlay->text0_ypos = (state->source.vres - height);
+        if (state->overlay.yoff > (state->source.vframe - height)) {
+            state->fpga->overlay->text0_ypos = (state->source.vframe - height);
         } else {
             state->fpga->overlay->text0_ypos = state->overlay.yoff;
         }
@@ -60,7 +60,7 @@ overlay_setup(struct pipeline_state *state)
         if (state->overlay.width) {
             state->fpga->overlay->text0_xsize = state->overlay.width;
         } else {
-            state->fpga->overlay->text0_xsize = (state->source.hres - state->overlay.xoff);
+            state->fpga->overlay->text0_xsize = (state->source.hframe - state->overlay.xoff);
         }
 
         /* Text size, margin and colour. */
@@ -223,7 +223,7 @@ overlay_update(struct pipeline_state *state, const struct video_segment *seg)
     if (len > sizeof(textbox)) len = sizeof(textbox);
 
     /* Ensure the text isn't too long for the width of the image. */
-    maxLength = state->source.hres / 16;
+    maxLength = state->source.hframe / 16;
     if(len > maxLength){
         textbox[maxLength] = '\0';
     }
