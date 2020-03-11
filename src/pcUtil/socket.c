@@ -122,7 +122,7 @@ static void *socketConnectionHandler(void *socket_desc)
         else if (!strcmp(str, "GET_POWERUP_MODE"))
         {
             uint8 mode;
-            getPowerupMode(&mode) ? sprintf(str, "powerMode %d\n", mode) : sprintf(str, "powerMode failed\n");
+            getPowerupMode(&mode) ? sprintf(str, "powerMode %d\n", mode) : sprintf(str, "powerMode failed");
         }
         else if (!strcmp(str, "GET_FAN_MODE"))
         {
@@ -155,7 +155,12 @@ static void *socketConnectionHandler(void *socket_desc)
         else if (!strcmp(str, "GET_SHUTDOWN_REASON"))
         {
             uint8 reason;
-            getLastShutdownReason(&reason) ? sprintf(str, "lastShutdownReason %d\n", reason) : sprintf(str, "getLastShutdownReason() failed\n");
+            getLastShutdownReason(&reason) ? sprintf(str, "lastShutdownReason %d\n", reason) : sprintf(str, "getLastShutdownReason() failed");
+        }
+        else if (!strcmp(str, "GET_APP_VERSION"))
+        {
+            uint16 version;
+            getPMICVersion(&version) ? sprintf(str, "pmicFirmwareVersion %d\n", version) : sprintf(str, "getPMICVersion() failed");
         }
         else
         {

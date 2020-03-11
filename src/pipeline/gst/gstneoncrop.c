@@ -274,10 +274,10 @@ static void *fill_luma(void *dst, uint8_t val, unsigned long size)
   asm volatile (
     "   vdup.8 q0, %[v]             \n"
     "   subs %[count],%[count], #16 \n"
-    "neon_crop_memset:              \n"
+    "neon_crop_memset%=:            \n"
     "   vstm %[d]!,{q0}             \n"
     "   subs %[count],%[count], #16 \n"
-    "   bge neon_crop_memset        \n"
+    "   bge neon_crop_memset%=      \n"
     "   add %[count],%[count], #16  \n"
     : [d]"+r"(dst), [count]"+r"(size) : [v]"r"(val) : "cc" );
   return dst;
