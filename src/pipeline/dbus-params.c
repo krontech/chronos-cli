@@ -636,7 +636,7 @@ dbus_param_signature(const struct pipeline_param *p)
             return "i";
 
         case G_TYPE_DOUBLE:
-            return "f";
+            return "d";
 
         case G_TYPE_ENUM:
         case G_TYPE_STRING:
