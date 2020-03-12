@@ -27,9 +27,10 @@
 #include <gst/base/gstbasetransform.h>
 #include <gst/controller/gstcontroller.h>
 #include <gst/video/video.h>
-
 #include "gstneon.h"
 #include <stdint.h>
+
+#include <asm/unistd.h>
 
 GST_DEBUG_CATEGORY_STATIC (gst_neon_crop_debug);
 #define GST_CAT_DEFAULT gst_neon_crop_debug
@@ -372,6 +373,23 @@ static void brev_chroma(void *dst, const void *src, unsigned long size)
     : [dst]"+r"(dst), [end]"+r"(end) : [start]"r"(src) : "cc" );
 }
 
+/*
+ * The cacheflush syscall is not exposed for most architectures,
+ * including ARM, so we have to call it manually to avoid frame
+ * corruption when the pipeline includes hardware accelerators.
+ */
+static void arm_clearcache(char *ptr, size_t len)
+{
+  const int syscall = __ARM_NR_BASE + 2;
+  asm volatile (
+    "mov   r0, %[start]   \n"			
+    "mov   r1, %[end]     \n"
+    "mov   r7, %[syscall] \n"
+    "mov   r2, #0x0       \n"
+    "svc   0x00000000     \n"
+    :: [start]"r"(ptr), [end]"r"(ptr + len), [syscall]"r"(syscall) : "r0", "r1", "r2", "r7" );
+}
+
 static GstFlowReturn
 gst_neon_crop_transform(GstBaseTransform *base, GstBuffer *src, GstBuffer *dst)
 {
@@ -428,6 +446,9 @@ gst_neon_crop_transform(GstBaseTransform *base, GstBuffer *src, GstBuffer *dst)
       /* Chroma */
       dstchroma = fill_chroma(dstchroma, FILL_YUV_U_CB, FILL_YUV_V_CR, xres * bottom / 2);
   }
+
+  /* Ensure the cache is cleared */
+  arm_clearcache(GST_BUFFER_DATA(dst), GST_BUFFER_SIZE(dst));
 
   return GST_FLOW_OK;
 }
