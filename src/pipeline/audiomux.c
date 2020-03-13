@@ -105,8 +105,6 @@ audiomux_thread(void *arg)
     int line_in_val = -1;
     int line_out_val = -1;
 
-    fprintf(stderr, "DEBUG: Launching audiomux thread\n");
-
     /* TODO: Make this use the poll system call to reduce CPU usage. */
     while (1) {
         char buf[2];
@@ -118,13 +116,13 @@ audiomux_thread(void *arg)
             /* Line-in value has changed. */
             line_in_val = buf[0] - '0';
             if (line_in_val) {
-                fprintf(stderr, "DEBUG: Selecting input Mic3\n");
+                fprintf(stderr, "Selecting input Mic3\n");
                 system("amixer sset 'Right PGA Mixer Line1L' off");
                 system("amixer sset 'Right PGA Mixer Line1R' off");
                 system("amixer sset 'Right PGA Mixer Mic3L' on");
                 system("amixer sset 'Right PGA Mixer Mic3R' on");
             } else {
-                fprintf(stderr, "DEBUG: Selecting input Line1\n");
+                fprintf(stderr, "Selecting input Line1\n");
                 system("amixer sset 'Right PGA Mixer Line1L' on");
                 system("amixer sset 'Right PGA Mixer Line1R' on");
                 system("amixer sset 'Right PGA Mixer Mic3L' off");
@@ -139,10 +137,10 @@ audiomux_thread(void *arg)
             /* Line-Out value has changed. */
             line_out_val = buf[0] - '0';
             if (line_out_val) {
-                fprintf(stderr, "DEBUG: Selecting output HPLCOM\n");
+                fprintf(stderr, "Selecting output HPLCOM\n");
                 system("amixer sset 'Right HPCOM Mux' 'differential of HPLCOM'");
             } else {
-                fprintf(stderr, "DEBUG: Selecting output HPLROUT\n");
+                fprintf(stderr, "Selecting output HPLROUT\n");
                 system("amixer sset 'Right HPCOM Mux' 'differential of HPROUT'");
             }
         }

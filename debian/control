@@ -16,7 +16,9 @@ Homepage: https://github.com/krontech/chronos-cli
 
 Package: chronos-video
 Architecture: armel
-Depends: ${shlibs:Depends}, ${misc:Depends}, chronos-fpga,
+Depends: ${shlibs:Depends}, ${misc:Depends},
+        alsa-utils,
+        chronos-fpga,
 	gstreamer0.10-plugins-base, gstreamer0.10-plugins-good,
 	gstreamer0.10-plugins-bad, gstreamer0.10-plugins-ugly
 Description: Video daemon for the Chronos Camera
