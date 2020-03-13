@@ -5,7 +5,6 @@ Description=Power control daemon for the Chronos Camera
 Type=forking
 PIDFile=/var/run/pcUtil.pid
 ExecStartPre=/lib/firmware/scripts/chronos-pmic-loader.sh
-ExecStartPre=/usr/bin/cam-pcUtil -q
 ExecStart=/usr/bin/cam-pcUtil
 StandardOutput=journal+console
 StandardError=inherit
