@@ -287,6 +287,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("setPowerupMode() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 	else if(0 == strcmp("-qpm", argv[1]))	//Query powerup mode
@@ -378,15 +379,19 @@ int main(int argc, const char * argv[])
 	else if(0 == strcmp("-sm", argv[1])) //set shipping mode
 	{
 		BOOL mode = (0 == strcmp("on", argv[2])) ? TRUE : FALSE;
+		retVal = setShippingMode(mode);
 
-		if(mode)
+		if(!retVal)
 		{
-			setShippingMode(mode);
+			printf("setShippingMode() failed\r\n");
+			exitCode = EXIT_FAILURE;
+		}
+		else if(mode)
+		{
 			printf("Enabled shipping mode\r\n");
 		}
 		else
 		{
-			setShippingMode(mode);
 			printf("Disabled shipping mode\r\n");
 		}
 	}
@@ -452,6 +457,7 @@ int main(int argc, const char * argv[])
 		else
 		{
 			printf("getLastShutdownReason() failed\r\n");
+			exitCode = EXIT_FAILURE;
 		}
 	}
 

@@ -28,7 +28,6 @@ BOOL programData(uint8 * data, uint32 length, uint32 address);
 BOOL eraseFlash(uint32 address);
 void fillData(uint8 * b, int offset, uint32 data);
 void txByteMessage(uint8 data);
-BOOL rxDataAvailable(void);
 uint16 rxDataReceive(uint8 *data, uint16 maxlen);
 void txData(uint8 * data, uint16 length);
 void txDataMessage(uint8 command, uint8 * data, uint16 length);
@@ -40,6 +39,7 @@ void UART1Handler(void);
 
 #define BUFFER_SIZE		(128+16)
 #define BUFFER_COUNT	4
+#define RXDATA_TIMEOUT  5
 
 #define SOF_VALUE	0x5A
 

@@ -14,6 +14,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <pthread.h>
+#include <errno.h>
+#include <time.h>
+#include <sys/time.h>
 
 volatile uint8 __attribute__((aligned(4))) rxBuffer[BUFFER_COUNT][BUFFER_SIZE];
 volatile uint16 rxBufferLen[BUFFER_COUNT] = {0};
@@ -35,6 +38,7 @@ BOOL jumpToProgram()
 	txByteMessage(COM_CMD_JUMP_TO_PGM);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_JUMP_TO_PGM == response[0])
 		return TRUE;
 	else
@@ -52,6 +56,7 @@ BOOL jumpToBootloader()
 	txByteMessage(COM_CMD_JUMP_TO_BOOTLOADER);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_JUMP_TO_BOOTLOADER == response[0])
 		return TRUE;
 	else
@@ -65,6 +70,7 @@ BOOL isInBootloader(BOOL * inBootloader)
 	txByteMessage(COM_CMD_IS_IN_BOOTLOADER);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_IS_IN_BOOTLOADER == response[0])
 	{
 		*inBootloader = response[1];
@@ -83,6 +89,7 @@ BOOL setPowerupMode(uint8 mode)
 	txDataMessage(COM_CMD_SET_POWERUP_MODE, &data, sizeof(data));
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_SET_POWERUP_MODE == response[0])
 		return TRUE;
 	else
@@ -96,6 +103,7 @@ BOOL getPowerupMode(uint8 * mode)
 	txByteMessage(COM_CMD_GET_POWERUP_MODE);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_GET_POWERUP_MODE == response[0])
 	{
 		*mode = response[1];
@@ -114,6 +122,7 @@ BOOL setShippingMode(uint8 mode)
 	txDataMessage(COM_CMD_SET_SHIPPING_MODE, &data, sizeof(data));
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_SET_SHIPPING_MODE == response[0])
 		return TRUE;
 	else
@@ -127,6 +136,7 @@ BOOL getShippingMode(uint8 * mode)
 	txByteMessage(COM_CMD_GET_SHIPPING_MODE);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_GET_SHIPPING_MODE == response[0])
 	{
 		*mode = response[1];
@@ -148,6 +158,7 @@ BOOL setFanOverrideMode(BOOL enable, uint8 speed)
 	txDataMessage(COM_CMD_SET_FAN_SPEED_OVERRIDE, dataPkt, sizeof(dataPkt));
 
 	respLen = rxDataReceive(response, sizeof(response));
+	if (respLen == 0) return FALSE;
 	if (COM_CMD_SET_FAN_SPEED_OVERRIDE == response[0])
 		return TRUE;
 	else
@@ -161,6 +172,7 @@ BOOL getFanOverrideMode(BOOL * enable, uint8 * speed)
 	txByteMessage(COM_CMD_GET_FAN_SPEED_OVERRIDE);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_GET_FAN_SPEED_OVERRIDE == response[0])
 	{
 		*enable = response[1];
@@ -179,6 +191,7 @@ BOOL getBatteryData(BatteryData * bd)
 	txByteMessage(COM_CMD_GET_DATA_2);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_GET_DATA_2 == response[0])
 	{
 		i = 1;
@@ -215,6 +228,7 @@ BOOL getPMICVersion(uint16 * version)
 	txByteMessage(COM_CMD_GET_APP_VERSION);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_GET_APP_VERSION == response[0])
 	{
 		*version = response[1] >> 8;
@@ -233,6 +247,7 @@ BOOL getLastShutdownReason(uint8 * reason)
 	txByteMessage(COM_CMD_GET_SHUTDOWN_REASON);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_GET_SHUTDOWN_REASON == response[0])
 	{
 		*reason = response[1];
@@ -382,6 +397,7 @@ BOOL programData(uint8 * data, uint32 length, uint32 address)
 	txData(dataPkt, 1 + 1 + 4 + 2 + length);
 
 	length = rxDataReceive(response, sizeof(response));
+	if (length == 0) return FALSE;
 	if (COM_CMD_WRITE_DATA == response[0])
 		return TRUE;
 	else
@@ -405,6 +421,7 @@ BOOL eraseFlash(uint32 address)
 	txData(data, 1 + 4);
 
 	respLen = rxDataReceive(response, sizeof(response));
+	if (respLen == 0) return FALSE;
 	if (COM_CMD_ERASE_PAGE == response[0])
 		return TRUE;
 	else
@@ -426,21 +443,24 @@ void txByteMessage(uint8 data)
 	txData(&data, 1);
 }
 
-BOOL rxDataAvailable(void)
-{
-	if(rxBufWriteIndex != rxBufReadIndex)
-		return TRUE;
-	else
-		return FALSE;
-}
-
 uint16 rxDataReceive(uint8 *data, uint16 maxlen)
 {
+	struct timeval now;
+	struct timespec timeout;
+	gettimeofday(&now, NULL);
+	timeout.tv_sec = now.tv_sec + RXDATA_TIMEOUT;
+	timeout.tv_nsec = now.tv_usec * 1000;
+
 	pthread_mutex_lock(&rxBufLock);
 	
 	/* Wait until data is available. */
 	while (rxBufWriteIndex == rxBufReadIndex) {
-		pthread_cond_wait(&rxBufCond, &rxBufLock);
+		int n = pthread_cond_timedwait(&rxBufCond, &rxBufLock, &timeout);
+		if (n == ETIMEDOUT) {
+			/* An error occured */
+			pthread_mutex_unlock(&rxBufLock);
+			return 0;
+		}
 	}
 
 	/* Get the next message off the buffer ring */
