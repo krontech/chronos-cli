@@ -1,0 +1,8 @@
+[Unit]
+Description=Automount media device at /media/%i
+
+[Service]
+Type=oneshot
+RemainAfterExit=true
+ExecStart=/lib/udev/automount.sh add %i
+ExecStop=/lib/udev/automount.sh remove %i

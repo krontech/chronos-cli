@@ -1,10 +1,10 @@
-## Process rules for block devices which are not otherwise blacklisted.
+## Process rules for block devices only.
 SUBSYSTEM!="block", GOTO="media_auto_mount_end"
 
-## Invoke a script to do the actual automounting.
+## Invoke a service to handle the mount.
 IMPORT{program}="/sbin/blkid -o udev -p %N"
-ACTION=="add", ENV{ID_FS_TYPE}!="",    RUN+="/lib/udev/automount.sh"
-ACTION=="remove", ENV{ID_FS_TYPE}!="", RUN+="/lib/udev/automount.sh"
+ACTION=="add",    ENV{ID_FS_TYPE}!="", RUN+="/bin/systemctl --no-block start media-automount@%k"
+ACTION=="remove", ENV{ID_FS_TYPE}!="", RUN+="/bin/systemctl --no-block stop media-automount@%k"
 
 ## Terminate the rules.
 LABEL="media_auto_mount_end"

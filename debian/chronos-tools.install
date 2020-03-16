@@ -7,3 +7,4 @@ usr/bin/cam-scgi
 usr/bin/fw-logger
 scripts/automount.sh lib/udev
 scripts/90-media-automount.rules lib/udev/rules.d
+scripts/media-automount@.service lib/systemd/system

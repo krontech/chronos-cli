@@ -4,51 +4,42 @@ MOUNT="/bin/mount"
 PMOUNT="/usr/bin/pmount"
 UMOUNT="/bin/umount"
 MOUNTOPTS="relatime"
-name="`basename "$DEVNAME"`"
 
-case "$ID_FS_TYPE" in
-	vfat|ntfs)
-		MOUNTOPTS="relatime,utf8,gid=100,umask=002"
-		;;
-	*)
-		MOUNTOPTS="relatime"
-		;;
-esac
+# Parse parameters
+if [ $# -lt 2 ]; then
+	echo "Usage: $0 {add|remove} NAME"
+	echo ""
+	echo "Automatically mounts or unmounts a block device at /media/NAME if it"
+	echo "contains a filesystem that we support."
+	exit 1
+fi
+ACTION=$1
+NAME=$(basename $2)
+BLOCKDEV="/dev/${NAME}"
 
 automount() {
-	mkdir -p "/media/$name"
-	if ! mount -t auto $DEVNAME "/media/$name"; then
-		rmdir "/media/$name"
+	mkdir -p "/media/$NAME"
+	if ! mount -t auto $BLOCKDEV "/media/$NAME"; then
+		rmdir "/media/$NAME"
 	else
-		touch "/tmp/.automount-$name"
+		touch "/tmp/.automount-$NAME"
 	fi
 }
 
-if [ "$ACTION" = "add" ] && [ -n "$DEVNAME" ]; then
-	if [ -x "$PMOUNT" ]; then
-		echo $PMOUNT $DEVNAME > /tmp/automount-pmount-$name
-		$PMOUNT $DEVNAME 2> /dev/null
-	elif [ -x $MOUNT ]; then
-		echo $PMOUNT $DEVNAME > /tmp/automount-pmount-$name
-    		$MOUNT $DEVNAME 2> /dev/null
-	fi
+if [ "$ACTION" = "add" ] && [ -n "$BLOCKDEV" ]; then
+	# Get the udev variables
+	eval $(/sbin/blkid -o udev -p ${BLOCKDEV})
 
-	if ! (cat /proc/mounts | awk '{print $1}' && readlink -f /dev/root) | grep -q "^$DEVNAME$"; then
+	# Blacklist filesystems in fstab and the root filesystem.
+	if ! (cat /etc/fstab | awk '{print $1}' && findmnt -n -o SOURCE /) | grep -q "^${BLOCKDEV}$"; then
 		 automount
 	fi
 fi
 
 
 ## Remove automounted directories.
-if [ "$ACTION" = "remove" ] && [ -x "$UMOUNT" ] && [ -n "$DEVNAME" ]; then
-	for mnt in `cat /proc/mounts | grep "$DEVNAME" | cut -f 2 -d " " `
-	do
-		/bin/umount -l $mnt
-	done
-	
-	# Remove empty directories from auto-mounter
-	if [ -e "/tmp/.automount-$name" ]; then
-		rmdir "/media/$name"
-		rm "/tmp/.automount-$name"
-	fi
+if [ "$ACTION" = "remove" ] && [ -x "$UMOUNT" ] && [ -e "/tmp/.automount-$NAME" ]; then
+	for mnt in $(lsblk -n -o MOUNTPOINT ${BLOCKDEV}); do /bin/umount -l $mnt; done
+	rmdir "/media/$NAME"
+	rm "/tmp/.automount-$NAME"
 fi
