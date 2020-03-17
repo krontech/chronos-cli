@@ -1,0 +1,14 @@
+[Unit]
+Description=Disarm PMIC Watchdog
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/cam-pcUtil -i
+RefuseManualStart=yes
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=inherit
+
+[Install]
+WantedBy=rescue.target
+

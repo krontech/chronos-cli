@@ -1,6 +1,54 @@
-chronos-cli (0.4.0~beta) unstable; urgency=medium
+chronos-cli (0.4.0~beta48) unstable; urgency=medium
 
-
+  * Disarm PMIC watchdog in rescue mode.
+  * pcUtil: Add timeout to rxDataReceive()
+  * Add support for automounting FUSE filesystems
+  * Updated PMIC firmware to v9, modified pmic debian service.
+  * Add dependency on alsa-utils for audio mux control.
+  * neoncrop: Add explicit cache flush after transform.
+  * Fix D-Bus types reported for G_TYPE_DOUBLES.
+  * Add crop/padding to source video frame.
+  * gstneoncrop: Add passthrough mode and flip support.
+  * Added special format string to assembly statement.
+  * Updated PMIC firmware file to version 8.
+  * Merge branch 'master' of https://github.com/krontech/chronos-cli
+  * Implemented ability to query PMIC's last shutdown reason.
+  * Add an experimental Gstreamer NEON/crop element.
+  * Return to the previous state at the end of a filesave.
+  * cam-json: Add mode to make API calls using JSON-RPC instead.
+  * Merge branch 'liveRecordDev'
+  * pcUtil: Add check for PMIC firmware on boot.
+  * h264: Support writing to pipes and non-seekable devices.
+  * liverecord: Fix problems in EOS generation with audio.
+  * liverecord: Disable audio setup for now.
+  * Merge branch 'liveRecordDev'
+  * Add tee to the h.264 live stream sink.
+  * Add docstrings to the video describe method.
+  * Removed recording functionality from alsaDaemon.c
+  * Fix compile error in query string parsing.
+  * scgi: Do better checking for malformed query strings.
+  * scgi: accept application/x-www-form-urlencoded too.
+  * scgi: Add url handler to get/set multiple parameters.
+  * scgi: Use introspection to detect signals and methods.
+  * scgi: Also accept query string parameters for API calls.
+  * scgi: Add support for large payloads.
+  * Parse board revision to determine overlay timebase.
+  * Add SCGI service to chronos-tools package.
+  * Add regex pattern matching to scgi service.
+  * Add SCGI daemon for D-Bus to web service conversion.
+  * Improved error handling
+  * Fixed filename conflict.
+  * Fixed sample consumption issues in audio pipeline.
+  * Switched from software aac encoder to omx aac encoder.
+  * Improved software aac encoding for live video.
+  * Implemented thread to control live recording time.
+  * Added free space check and duration in API.
+  * Added handling of start and stop commands.
+  * Improved audio encoding performance.
+  * Added liverecord API to video pipeline.
+  * Added mp3 audio encoding
+  * Added a live recording mode sink to the pipeline that saves ~60fps video and audio to the tmp 
+    directory while the camera is running. Work in progress..
   * Upstream release v0.4.0-beta
 
- -- Owen Kirby <oskirby@gmail.com>  Fri, 24 Jan 2020 05:06:45 -0800
+ -- Owen Kirby <oskirby@gmail.com>  Wed, 18 Mar 2020 10:42:57 -0700
