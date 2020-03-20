@@ -60,27 +60,27 @@ scgi_signal_handler(DBusGProxy* proxy, GHashTable *args, const char *name)
     free(json);
 } /* dbus_handler */
 
-void
-scgi_allow_cors(struct scgi_conn *conn, const char *allowed)
-{
-    scgi_start_response(conn, 200, "OK");
-    scgi_write_header(conn, "Access-Control-Allow-Origin: *");
-    scgi_write_header(conn, "Access-Control-Allow-Methods: %s", allowed);
-    scgi_write_header(conn, "Content-Type: application/json");
-    scgi_write_header(conn, "Access-Control-Max-Age: %d", 2520);
-    scgi_write_header(conn, "");
-}
 
 static void
 scgi_subscribe(struct scgi_conn *conn, const char *method, void *user_data)
 {
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
-        scgi_allow_cors(conn, "GET");
+        scgi_start_response(conn, 200, "OK");
+        scgi_write_xorigin(conn, "GET, OPTION");
+        scgi_write_header(conn, "Content-Type: application/json");
+        scgi_write_header(conn, "");
+        return;
+    }
+    else if (strcmp(method, "GET") != 0) {
+        scgi_start_response(conn, 405, "Method Not Allowed");
+        scgi_write_header(conn, "Accept: GET, OPTION");
+        scgi_write_header(conn, "");
         return;
     }
 
     scgi_start_response(conn, 200, "OK");
+    scgi_write_xorigin(conn, "GET, OPTION");
     scgi_write_header(conn, "Content-type: text/event-stream");
     scgi_write_header(conn, "Cache-Control: no-cache");
     scgi_write_header(conn, "");
@@ -110,7 +110,10 @@ scgi_property(struct scgi_conn *conn, const char *method, void *user_data)
 
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
-        scgi_allow_cors(conn, "GET");
+        scgi_start_response(conn, 200, "OK");
+        scgi_write_xorigin(conn, "GET");
+        scgi_write_header(conn, "Content-Type: application/json");
+        scgi_write_header(conn, "");
         return;
     }
 
@@ -155,6 +158,7 @@ scgi_property(struct scgi_conn *conn, const char *method, void *user_data)
     
     /* Otherwise, keep testing... */
     scgi_start_response(conn, 200, "OK");
+    scgi_write_xorigin(conn, "GET, OPTION");
     scgi_write_header(conn, "Content-type: application/json");
     scgi_write_header(conn, "");
     scgi_take_payload(conn, json, jslen);
@@ -173,7 +177,10 @@ scgi_property_group(struct scgi_conn *conn, const char *method, void *user_data)
 
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
-        scgi_allow_cors(conn, "GET");
+        scgi_start_response(conn, 200, "OK");
+        scgi_write_xorigin(conn, "GET");
+        scgi_write_header(conn, "Content-Type: application/json");
+        scgi_write_header(conn, "");
         return;
     }
 
@@ -268,7 +275,10 @@ scgi_describe(struct scgi_conn *conn, const char *method, void *user_data)
 
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
-        scgi_allow_cors(conn, "GET");
+        scgi_start_response(conn, 200, "OK");
+        scgi_write_xorigin(conn, "GET");
+        scgi_write_header(conn, "Content-Type: application/json");
+        scgi_write_header(conn, "");
         return;
     }
 

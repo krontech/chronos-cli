@@ -421,6 +421,15 @@ scgi_write_header(struct scgi_conn *conn, const char *fmt, ...)
     }
 }
 
+/* Helper to append cross-origin request headers */
+void
+scgi_write_xorigin(struct scgi_conn *conn, const char *allowed)
+{
+    scgi_write_header(conn, "Access-Control-Allow-Origin: *");
+    scgi_write_header(conn, "Access-Control-Allow-Methods: %s", allowed);
+    scgi_write_header(conn, "Access-Control-Max-Age: %d", 2520);
+}
+
 void
 scgi_start_response(struct scgi_conn *conn, int code, const char *status)
 {

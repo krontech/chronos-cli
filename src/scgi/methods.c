@@ -216,10 +216,8 @@ scgi_call_void(struct scgi_conn *conn, const char *method, void *user_data)
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
         scgi_start_response(conn, 200, "OK");
-        scgi_write_header(conn, "Access-Control-Allow-Origin: *");
-        scgi_write_header(conn, "Access-Control-Allow-Methods: GET, OPTION");
+        scgi_write_xorigin(conn, "GET, POST, OPTION");
         scgi_write_header(conn, "Content-Type: application/json");
-        scgi_write_header(conn, "Access-Control-Max-Age: %d", 2520);
         scgi_write_header(conn, "");
         return;
     }
@@ -247,6 +245,7 @@ scgi_call_void(struct scgi_conn *conn, const char *method, void *user_data)
     
     /* Otherwise, keep testing... */
     scgi_start_response(conn, 200, "OK");
+    scgi_write_xorigin(conn, "GET, POST, OPTION");
     scgi_write_header(conn, "Content-type: application/json");
     scgi_write_header(conn, "");
     scgi_take_payload(conn, json, jslen);
@@ -274,11 +273,9 @@ scgi_call_args(struct scgi_conn *conn, const char *method, void *user_data)
     /* Boilerplate to allow cross-origin requests */
     if (strcmp(method, "OPTIONS") == 0) {
         scgi_start_response(conn, 200, "OK");
-        scgi_write_header(conn, "Access-Control-Allow-Origin: *");
-        scgi_write_header(conn, "Access-Control-Allow-Methods: GET, POST, OPTION");
+        scgi_write_xorigin(conn, "GET, POST, OPTION");
         scgi_write_header(conn, "Access-Control-Allow-Headers: Content-Type");
         scgi_write_header(conn, "Content-Type: application/json");
-        scgi_write_header(conn, "Access-Control-Max-Age: %d", 2520);
         scgi_write_header(conn, "");
         return;
     }
@@ -315,6 +312,7 @@ scgi_call_args(struct scgi_conn *conn, const char *method, void *user_data)
     
     /* Otherwise, keep testing... */
     scgi_start_response(conn, 200, "OK");
+    scgi_write_xorigin(conn, "GET, POST, OPTION");
     scgi_write_header(conn, "Content-type: application/json");
     scgi_write_header(conn, "");
     scgi_take_payload(conn, json, jslen);

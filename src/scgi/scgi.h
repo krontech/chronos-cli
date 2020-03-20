@@ -100,6 +100,7 @@ void scgi_start_response(struct scgi_conn *conn, int code, const char *status);
 void scgi_write_header(struct scgi_conn *conn, const char *fmt, ...);
 void scgi_write_payload(struct scgi_conn *conn, const char *fmt, ...);
 void scgi_take_payload(struct scgi_conn *conn, void *data, size_t len);
+void scgi_write_xorigin(struct scgi_conn *conn, const char *allowed);
 
 const char *scgi_header_find(struct scgi_conn *conn, const char *name);
 
@@ -112,6 +113,5 @@ void scgi_error_handler(struct scgi_conn *conn, GError *error);
 GValue *scgi_parse_params(struct scgi_conn *conn, const char *method);
 void scgi_call_void(struct scgi_conn *conn, const char *method, void *user_data);
 void scgi_call_args(struct scgi_conn *conn, const char *method, void *user_data);
-void scgi_allow_cors(struct scgi_conn *conn, const char *allowed);
 
 #endif /* __SCGI_H */
