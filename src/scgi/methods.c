@@ -247,6 +247,7 @@ scgi_call_void(struct scgi_conn *conn, const char *method, void *user_data)
     scgi_start_response(conn, 200, "OK");
     scgi_write_xorigin(conn, "GET, POST, OPTION");
     scgi_write_header(conn, "Content-type: application/json");
+    scgi_write_header(conn, "Cache-control: no-cache");
     scgi_write_header(conn, "");
     scgi_take_payload(conn, json, jslen);
 }
@@ -314,6 +315,7 @@ scgi_call_args(struct scgi_conn *conn, const char *method, void *user_data)
     scgi_start_response(conn, 200, "OK");
     scgi_write_xorigin(conn, "GET, POST, OPTION");
     scgi_write_header(conn, "Content-type: application/json");
+    scgi_write_header(conn, "Cache-control: no-cache");
     scgi_write_header(conn, "");
     scgi_take_payload(conn, json, jslen);
 }
