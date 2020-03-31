@@ -39,7 +39,7 @@ fi
 
 ## Remove automounted directories.
 if [ "$ACTION" = "remove" ] && [ -x "$UMOUNT" ] && [ -e "/tmp/.automount-$NAME" ]; then
-	for mnt in $(lsblk -n -o MOUNTPOINT ${BLOCKDEV}); do /bin/umount -l $mnt; done
+	umount "/media/$NAME"
 	rmdir "/media/$NAME"
 	rm "/tmp/.automount-$NAME"
 fi
