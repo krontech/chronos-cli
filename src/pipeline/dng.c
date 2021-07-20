@@ -174,10 +174,10 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         {4096, state->fpga->display->wbal[2]}
     };
     const struct tiff_srational cmatrix[9] = {
-        /* CIE XYZ to LUX1310 color space conversion matrix. */
-        {17716, 10000}, {-5404, 10000}, {-1674, 10000},
-        {-2845, 10000}, {12494, 10000}, {247,   10000},
-        {-2300, 10000}, {6236,  10000}, {6471,  10000}
+        // this awkward double-casting is used to preserve the proper sign of the number (it's actually just a 16-bit number with leading zeros even if it's negative)
+        {(int32_t)(int16_t)state->fpga->display->ccm_red[0], 4096}, {(int32_t)(int16_t)state->fpga->display->ccm_red[1], 4096}, {(int32_t)(int16_t)state->fpga->display->ccm_red[2], 4096},
+        {(int32_t)(int16_t)state->fpga->display->ccm_green[0], 4096}, {(int32_t)(int16_t)state->fpga->display->ccm_green[1], 4096}, {(int32_t)(int16_t)state->fpga->display->ccm_green[2], 4096},
+        {(int32_t)(int16_t)state->fpga->display->ccm_blue[0], 4096}, {(int32_t)(int16_t)state->fpga->display->ccm_blue[1], 4096}, {(int32_t)(int16_t)state->fpga->display->ccm_blue[2], 4096}
     };
     char fname[64];
     int fd;
