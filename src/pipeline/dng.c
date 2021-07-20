@@ -119,7 +119,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(259, 1),             /* Compression = None */
         TIFF_TAG_SHORT(262, 34892),         /* PhotometricInterpretation = LinearRaw */
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
-        TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
+        TIFF_TAG_STRING(272, (state->board_rev == 0x2100) ? "Chronos 2.1" : "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
@@ -132,7 +132,7 @@ dng_probe_greyscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
-        TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
+        TIFF_TAG_STRING(50708, (state->board_rev == 0x2100) ? "Krontech Chronos 2.1" : "Krontech Chronos 1.4"), /* UniqueCameraModel */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
         TIFF_TAG_VECTOR(50721, TIFF_TYPE_SRATIONAL, cmatrix, sizeof(cmatrix)/sizeof(struct tiff_srational)),
     };
@@ -209,7 +209,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(259, 1),             /* Compression = None */
         TIFF_TAG_SHORT(262, 32803),         /* PhotometricInterpretation = Color Filter Array */
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
-        TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
+        TIFF_TAG_STRING(272, (state->board_rev == 0x2100) ? "Chronos 2.1" : "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
@@ -227,7 +227,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         /* CinemaDNG Tags */
         TIFF_TAG(50706, TIFF_TYPE_BYTE, dng_version),   /* DNGVersion = 1.4.0.0 */
         TIFF_TAG(50707, TIFF_TYPE_BYTE, dng_compatible),/* DNGBackwardVersion = 1.0.0.0 */
-        TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
+        TIFF_TAG_STRING(50708, (state->board_rev == 0x2100) ? "Krontech Chronos 2.1" : "Krontech Chronos 1.4"), /* UniqueCameraModel */
         TIFF_TAG_SHORT(50711, 1),                       /* CFALayout = square */
         TIFF_TAG_SHORT(50717, 0xfff),                   /* WhiteLevel = 12-bit */
         TIFF_TAG_VECTOR(50721, TIFF_TYPE_SRATIONAL, cmatrix, sizeof(cmatrix)/sizeof(struct tiff_srational)),
@@ -337,7 +337,7 @@ tiff_probe_grayscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(259, 1),             /* Compression = None */
         TIFF_TAG_SHORT(262, 1),             /* PhotometricInterpretation = Grayscale */
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
-        TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
+        TIFF_TAG_STRING(272, (state->board_rev == 0x2100) ? "Chronos 2.1" : "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
@@ -347,7 +347,7 @@ tiff_probe_grayscale(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
         TIFF_TAG_SUBIFD(34665, &exif_ifd),              /* Exif IFD Pointer */
         /* CinemaDNG Tags */
-        TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
+        TIFF_TAG_STRING(50708, (state->board_rev == 0x2100) ? "Krontech Chronos 2.1" : "Krontech Chronos 1.4"), /* UniqueCameraModel */
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
@@ -407,7 +407,7 @@ tiff_probe_rgb(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(259, 1),             /* Compression = None */
         TIFF_TAG_SHORT(262, 2),             /* PhotometricInterpretation = RGB */
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
-        TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
+        TIFF_TAG_STRING(272, (state->board_rev == 0x2100) ? "Chronos 2.1" : "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 3),             /* SamplesPerPixel */
@@ -474,7 +474,7 @@ tiff_probe_raw(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(259, 1),             /* Compression = None */
         TIFF_TAG_SHORT(262, 1),             /* PhotometricInterpretation = Grayscale */
         TIFF_TAG_STRING(271, "Kron Technologies"),  /* Make */
-        TIFF_TAG_STRING(272, "Chronos 1.4"),        /* Model */
+        TIFF_TAG_STRING(272, (state->board_rev == 0x2100) ? "Chronos 2.1" : "Chronos 1.4"),        /* Model */
         TIFF_TAG_LONG(273, TIFF_HDR_SIZE),          /* StripOffsets */
         TIFF_TAG_SHORT(274, 1),                     /* Orientation = Zero is top left */
         TIFF_TAG_SHORT(277, 1),             /* SamplesPerPixel */
@@ -484,7 +484,7 @@ tiff_probe_raw(GstPad *pad, GstBuffer *buf, gpointer cbdata)
         TIFF_TAG_SHORT(296, 1),             /* ResolutionUnit = None */
         TIFF_TAG_SUBIFD(34665, &exif_ifd),              /* Exif IFD Pointer */
         /* CinemaDNG Tags */
-        TIFF_TAG_STRING(50708, "Krontech Chronos 1.4"), /* UniqueCameraModel */
+        TIFF_TAG_STRING(50708, (state->board_rev == 0x2100) ? "Krontech Chronos 2.1" : "Krontech Chronos 1.4"), /* UniqueCameraModel */
     };
     struct tiff_ifd image_ifd = {.tags = tags, .count = sizeof(tags)/sizeof(struct tiff_tag)};
 
