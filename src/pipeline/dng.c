@@ -192,7 +192,7 @@ dng_probe_bayer(GstPad *pad, GstBuffer *buf, gpointer cbdata)
     size_t timelen = strftime(timestr, sizeof(timestr), "%Y:%m:%d %T", gmtime_r(&now, &timebuf));
     const struct tiff_tag exif[] = {
         TIFF_TAG_RATIONAL(33434, seg->metadata.exposure, seg->metadata.timebase),   /* ExposureTime */
-        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVersion = 2.2 */
+        TIFF_TAG(36864, TIFF_TYPE_UNDEFINED, exif_version),                         /* ExifVgersion = 2.2 */
         TIFF_TAG_VECTOR(36868, TIFF_TYPE_ASCII, timestr, timelen + 1),              /* DateTimeDigitized */
         TIFF_TAG_STRING(42033, state->serial),                                      /* SerialNumber */
         TIFF_TAG_SRATIONAL(51044, seg->metadata.timebase, seg->metadata.interval),  /* FrameRate */
