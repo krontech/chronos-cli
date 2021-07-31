@@ -80,7 +80,7 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
 {
     GstElement *encoder, *queue, *neon, *parser, *mux, *sink;
     unsigned int minrate = (state->source.hframe * state->source.vframe * args->framerate / 4); /* Set a minimum quality of 0.25 bpp. */
-    int flags = O_RDWR | O_CREAT | O_TRUNC;
+    int flags = O_RDWR | O_CREAT | O_TRUNC | O_CREAT | O_EXCL; // add flags so that the file can't be overwritten
 
 #if defined(O_LARGEFILE)
     flags |= O_LARGEFILE;
@@ -91,6 +91,7 @@ cam_h264_sink(struct pipeline_state *state, struct pipeline_args *args)
     /* Open the file for writing. */
     state->write_fd = open(args->filename, flags, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
     if (state->write_fd < 0) {
+	strcpy(state->error, strerror(errno)); // make sure any errors get passed back up through dbus calls
         fprintf(stderr, "Unable to open %s for writing (%s)\n", args->filename, strerror(errno));
         return NULL;
     }
