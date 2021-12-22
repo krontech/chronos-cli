@@ -56,7 +56,6 @@ rtsp_method_getparam(struct rtsp_ctx *ctx, struct rtsp_conn *conn, const char *p
 
     /* We don't actually support any parameters. */
     rtsp_start_response(conn, 200, "OK");
-    rtsp_write_header(conn, "start GET_PARAMETER test ...");
     rtsp_write_header(conn, "");
 }
 

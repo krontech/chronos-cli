@@ -268,7 +268,6 @@ rtsp_client_error(struct rtsp_conn *conn, int code, const char *message)
     memset(&conn->tx, 0, sizeof(conn->tx));
 
     rtsp_write_header(conn, "RTSP/1.0 %d %s", code, message);
-    
     rtsp_write_header(conn, "");
 
     /* Send the client data. */
@@ -412,8 +411,6 @@ static void
 rtsp_client_recv(struct rtsp_ctx *ctx, struct rtsp_conn *conn)
 {
     int len;
-
-    fprintf(stderr, "receive function test.\n");
 
     while (conn->tx.length == 0) {
         if (conn->rxlength == sizeof(conn->rxbuffer)) {
