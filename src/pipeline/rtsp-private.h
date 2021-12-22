@@ -25,7 +25,7 @@
 
 #define RTSP_SERVER_PORT        554
 #define RTSP_SOCKET_BACKLOG     4
-#define RTSP_SESSION_TIMEOUT    60
+#define RTSP_SESSION_TIMEOUT    60000 // 60: 3~5 min; 600: ~45 min
 
 /* Client states. */
 #define RTSP_CLIENT_START   0   /* Waiting for the RTSP request line. */
