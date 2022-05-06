@@ -26,22 +26,22 @@
 
 #include "pipeline.h"
 
-void
-overlay_clear(struct pipeline_state *state)
+void overlay_clear(struct pipeline_state *state)
 {
     state->fpga->overlay->control = 0;
     state->fpga->overlay->text0_xsize = 1; /* BUG: waiting for an FPGA fix. */
     state->fpga->overlay->text1_xsize = 1; /* BUG: waiting for an FPGA fix. */
 }
 
-void
-overlay_setup(struct pipeline_state *state)
+
+
+void overlay_setup(struct pipeline_state *state)
 {
     if (!state->overlay.enable) {
         overlay_clear(state);
     }
     else {
-        /* Default font sizing. */
+        /* Default font sizing height and widths in pixels */
         unsigned int fontsize = 25;
         unsigned int margin = 8;
         unsigned int height = state->overlay.height;
@@ -62,6 +62,10 @@ overlay_setup(struct pipeline_state *state)
         } else {
             state->fpga->overlay->text0_xsize = (state->source.hframe - state->overlay.xoff);
         }
+
+        /* Calculate the ratio of the overlay to the frame size, and if it exceeds the minimum threshold (25%) turn off
+         * the overlay*/
+        /*if (overlay_ratio(state) > state->overlay.min_threshold) overlay_clear(state);*/
 
         /* Text size, margin and colour. */
         state->fpga->overlay->text0_xoffset = margin;
@@ -221,12 +225,11 @@ overlay_update(struct pipeline_state *state, const struct video_segment *seg)
 
     /* Write the text and enable. */
     if (len > sizeof(textbox)) len = sizeof(textbox);
-
     /* Ensure the text isn't too long for the width of the image. */
     maxLength = state->source.hframe / 16;
     if(len > maxLength){
         textbox[maxLength] = '\0';
     }
 
-    strncpy((char *)state->fpga->overlay->text0_buffer, textbox, len);
+    strncpy((char *)state->fpga->overlay->text0_buffer, textbox, len); // writing data to screen.
 }

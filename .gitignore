@@ -51,3 +51,7 @@ Makefile.in
 
 /texinfo.tex
 
+# Local Build info for chronos-CLI
+
+/build
+

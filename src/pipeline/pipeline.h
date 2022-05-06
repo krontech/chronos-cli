@@ -37,10 +37,10 @@
 #define CAM_LCD_VRES    480
 
 #define PIPELINE_MAX_HRES   1920
-#define PIPELINE_MAX_VRES   1080
+#define PIPELINE_MAX_VRES   1120 /* Added 40px to 1080 to see if that adds in a black bar for the overlay.*/
 #define PIPELINE_MIN_VRES   96
-#define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES * 4)
-
+#define PIPELINE_SCRATCHPAD_SIZE (PIPELINE_MAX_HRES * PIPELINE_MAX_VRES-40 * 4) /* -40px to accommodate for black bar
+ * within the Active Display area.*/
 #define NETWORK_STREAM_PORT 5000
 
 struct CamVideo;
@@ -127,6 +127,7 @@ struct overlay_config {
     unsigned long yoff;
     unsigned long width;
     unsigned long height;
+    unsigned int min_threshold;
     char format[512];
 };
 
@@ -256,6 +257,7 @@ void audiomux_cleanup(struct pipeline_state *state);
 /* Video overlay control. */
 void overlay_clear(struct pipeline_state *state);
 void overlay_setup(struct pipeline_state *state);
+void overlay_ratio(struct pipeline_state *state);
 void overlay_update(struct pipeline_state *state, const struct video_segment *seg);
 
 /* RTSP live streaming */
